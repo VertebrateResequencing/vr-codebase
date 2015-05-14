@@ -49,7 +49,8 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'smalt');
+    my $self = $class->SUPER::new(exe => 'smalt', @args);
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -67,7 +68,7 @@ sub new {
 sub version {
     my $self = shift;
     
-    my $exe = $self->exe;
+    my $exe = $self->{orig_exe};
     open(my $fh, "$exe version 2>&1 |") || $self->throw("Could not start $exe");
     my $version = 0;
     while (<$fh>) {
@@ -86,6 +87,8 @@ sub version {
  Title   : setup_reference
  Usage   : $obj->setup_reference($ref_fasta);
  Function: Do whatever needs to be done with the reference to allow mapping.
+           Removed in favour of setting-up reference index on demand using
+           setup_custom_reference_index().
  Returns : boolean
  Args    : n/a
 
@@ -93,32 +96,34 @@ sub version {
 
 sub setup_reference {
     my ($self, $ref) = @_;
-    
-    my @suffixes = qw(small.sma small.smi large.sma large.smi);
-    my $indexed = 0;
-    foreach my $suffix (@suffixes) {
-        if (-s "$ref.$suffix") {
-            $indexed++;
-        }
-    }
-    
-    unless ($indexed == @suffixes) {
-        # we produce multiple sets of hashes, one for <70bp reads, one for >70bp,
-        # one for >=100bp and one for >500bp
-        $self->simple_run("index -k 13 -s 4 $ref.small $ref");
-        $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
-        $self->simple_run("index -k 20 -s 13 $ref.large $ref");
-        
-        $indexed = 0;
-        foreach my $suffix (@suffixes) {
-            if (-s "$ref.$suffix") {
-                $indexed++;
-            }
-        }
-    }
-    
-    return $indexed == @suffixes ? 1 : 0;
+    return 1;
 }
+
+
+=head2 setup_reference
+
+ Title   : setup_reference
+ Usage   : $obj->setup_reference($ref_fasta);
+ Function: Do whatever needs to be done with the reference to allow mapping.
+ Returns : boolean
+ Args    : n/a
+
+=cut
+
+sub setup_custom_reference_index {
+    my ($self, $ref, $mapper_index_params, $mapper_index_suffix) = @_;
+    if(! ((-s "$ref.$mapper_index_suffix.sma") && (-s "$ref.$mapper_index_suffix.smi")) )
+    {
+      $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
+    else {
+        # Record command line for sam/bam header.
+        my $exe = $self->exe;
+        $self->_add_command_line("$exe index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
+}
+    
+    
 
 =head2 setup_fastqs
 
@@ -140,14 +145,26 @@ sub setup_fastqs {
             
             unless (-s $fq_new) {
                 my $i = VertRes::IO->new(file => $fq);
-                my $o = VertRes::IO->new(file => ">$fq_new");
+                my $o = VertRes::IO->new(file => ">$fq_new.tmp");
                 my $ifh = $i->fh;
                 my $ofh = $o->fh;
+                my $lines = 0;
                 while (<$ifh>) {
+                    $lines++;
                     print $ofh $_;
                 }
                 $i->close;
                 $o->close;
+                
+                # check the decompressed fastq isn't truncated
+                $i = VertRes::IO->new(file => "$fq_new.tmp");
+                my $actual_lines = $i->num_lines;
+                if ($actual_lines == $lines) {
+                    move("$fq_new.tmp", $fq_new);
+                }
+                else {
+                    $self->throw("Made $fq_new.tmp, but it only had $actual_lines instead of $lines lines");
+                }
             }
         }
     }
@@ -171,7 +188,7 @@ sub generate_sam {
     
     unless (-s $out) {
         # settings change depending on read length
-        my $max_length = 0;
+        my $max_length = $self->{read_length};
         foreach my $fq ($fq1, $fq2) {
             $fq || next;
             if (-s "$fq.fastqcheck") {
@@ -186,13 +203,21 @@ sub generate_sam {
             }
         }
         my $hash_name;
-        if ($max_length < 70) {
+        if(defined($other_args{mapper_index_suffix}) && defined($other_args{mapper_index_params}))
+        {
+            $self->setup_custom_reference_index($ref,$other_args{mapper_index_params},$other_args{mapper_index_suffix});
+            $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
+        }
+        elsif ($max_length < 70) {
+            $self->setup_custom_reference_index($ref,'-k 13 -s 4','small');
             $hash_name = $ref.'.small';
         }
         elsif ($max_length >= 100) {
+            $self->setup_custom_reference_index($ref,'-k 20 -s 13','large');
             $hash_name = $ref.'.large';
         }
         else {
+            $self->setup_custom_reference_index($ref,'-k 13 -s 6','medium');
             $hash_name = $ref.'.medium';
         }
         
@@ -202,11 +227,18 @@ sub generate_sam {
         }
         
         my $insert_size_arg = '';
-        if (defined $other_args{i}) {
+        if((defined $other_args{is_paired}) && ! $other_args{is_paired} || (! defined($fq2)))
+        {}
+        elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
         }
+        my $additional_mapper_params = '';
+        if(defined($other_args{additional_mapper_params}))
+        {
+          $additional_mapper_params = $other_args{additional_mapper_params};
+        }
         
-        $self->simple_run("map -f samsoft$insert_size_arg -o $out $hash_name $fq1 $fq2");
+        $self->simple_run("map -f samsoft$insert_size_arg $additional_mapper_params -o $out $hash_name $fq1 $fq2");
     }
     
     return -s $out ? 1 : 0;

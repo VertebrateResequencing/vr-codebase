@@ -1,7 +1,8 @@
 package Sfind::Sfind;
+
 =head1 NAME
 
-Sfind::Sfind - API for the denormalised SeqScape & NPG tracking database
+Sfind::Sfind - API for the v2 denormalised SeqScape & NPG tracking database
 
 =head1 SYNOPSIS
     my $sfind = Sfind::Sfind->new();
@@ -14,7 +15,7 @@ Sfind::Sfind - API for the denormalised SeqScape & NPG tracking database
 
 =head1 DESCRIPTION
 
-Retrieves data from the sequencing warehouse database.
+Retrieves data from the sequencing warehouse_two database.
 
 =head1 CONTACT
 
@@ -24,39 +25,28 @@ jws@sanger.ac.uk
 
 =cut
 
-use strict;
-use warnings;
-no warnings 'uninitialized';
+use Moose;
+use namespace::autoclean;
 use DBI;
 use Sfind::Study;
 
 
+has '_dbh' => (
+    is          => 'ro',
+    isa         => 'DBI::db',
+    required    => 1,
+    lazy        => 1,
+    builder     => '_db_connect',
+    init_arg    => undef,
+);
 
-=head2 new
 
-  Arg [1]    : None
-  Example    : my $sfind = Sfind::Sfind->new()
-  Description: Returns Sfind object if can connect to database
-  Returntype : Sfind::Sfind object
+sub _db_connect { 
+    my ($self) = @_; 
+    my $dbh = DBI->connect("DBI:mysql:host=seqw-db:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+    return $dbh;
+} 
 
-=cut
-
-sub new {
-    my ($class) = @_;
-
-    my $self = {};
-    bless ($self, $class);
-    #my $dbh = DBI->connect("DBI:mysql:host=mcs2a:port=3313;database=warehouse_staging", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-    #my $dbh = DBI->connect("DBI:mysql:host=psdp:port=3305;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-    # changed feb 3rd 2010
-    # my $dbh = DBI->connect("DBI:mysql:host=psdp:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-    # changed Mar 31 2010
-    my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-#    my $dbh = DBI->connect("DBI:mysql:host=mcs6:port=3321;database=warehouse_staging", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-    $self->{_dbh} = $dbh;
-
-    return $self;
-}
 
 
 =head2 get_study_by_id
@@ -70,9 +60,11 @@ sub new {
 
 sub get_study_by_id {
     my ($self, $id) = @_;
-    my $obj = Sfind::Study->new($self->{_dbh},$id);
+    my $obj = Sfind::Study->new({dbh   => $self->_dbh,
+                                 id     => $id});
     return $obj;
 }
+
 
 =head2 get_study_by_name
 
@@ -86,14 +78,14 @@ sub get_study_by_id {
 
 sub get_study_by_name {
     my ($self, $name) = @_;
-    my $sql = qq[select study_id from study_information where study_name=?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($name));
+    my $sql = qq[select internal_id from current_studies where name=? ];
+    my $id_ref = $self->_dbh->selectrow_hashref($sql, undef, ($name));
     unless ($id_ref){
 	warn "No study with name $name\n";
 	return undef;
     }
 
-    my $id = $id_ref->{study_id};
+    my $id = $id_ref->{internal_id};
     return $self->get_study_by_id($id);
 }
 
@@ -112,9 +104,9 @@ sub study_names {
     my ($self) = @_;
 
     unless ($self->{'study_names'}){
-	my $sql = qq[select distinct study_name from study_information];
+	my $sql = qq[select distinct name from current_studies ];
 	my @studies;
-	my $sth = $self->{_dbh}->prepare($sql);
+	my $sth = $self->_dbh->prepare($sql);
 
 	$sth->execute();
 	foreach(@{$sth->fetchall_arrayref()}){
@@ -137,6 +129,7 @@ sub study_names {
 =cut
 
 sub get_sample_by_name {
+    die "NOT YET IMPLEMENTED";
     my ($self, $name, $studyname) = @_;
     my ($sample_id, $study_id) = $self->get_sample_study_id_by_name($name,$studyname);
     my $obj;
@@ -158,6 +151,7 @@ sub get_sample_by_name {
 =cut
 
 sub get_sample_study_id_by_name {
+    die "NOT YET IMPLEMENTED";
     my ($self, $name, $studyname) = @_;
     my ($sample_id, $study_id);
     if($studyname){
@@ -165,7 +159,7 @@ sub get_sample_study_id_by_name {
                      from requests 
                      where sample_name=? 
                      and study_id=(select distinct study_id from study_information where study_name=?)];
-	my $id_ref = $self->{_dbh}->selectall_arrayref($sql, undef, ($name, $studyname));
+	my $id_ref = $self->_dbh->selectall_arrayref($sql, undef, ($name, $studyname));
 	if (scalar @$id_ref == 0){
 	    #warn "No sample with name $name in $studyname\n";
 	}
@@ -181,7 +175,7 @@ sub get_sample_study_id_by_name {
 	# no study name supplied, so need to check if more than one	
 	# study for this sample
 	my $sql = qq[select distinct sample_id, study_id from requests where sample_name=?];
-	my $id_ref = $self->{_dbh}->selectall_arrayref($sql, undef, ($name));
+	my $id_ref = $self->_dbh->selectall_arrayref($sql, undef, ($name));
 	if (scalar @$id_ref == 0){
 	    # warn "No sample with name $name\n";
 	}
@@ -208,9 +202,10 @@ sub get_sample_study_id_by_name {
 =cut
 
 sub get_library_by_name {
+    die "NOT YET IMPLEMENTED";
     my ($self, $name) = @_;
     my $sql = qq[select distinct item_id from requests where item_name=?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($name));
+    my $id_ref = $self->_dbh->selectrow_hashref($sql, undef, ($name));
     unless ($id_ref){
 	warn "No library with name $name\n";
 	return undef;
@@ -231,8 +226,9 @@ sub get_library_by_name {
 =cut
 
 sub get_library_by_id {
+    die "NOT YET IMPLEMENTED";
     my ($self, $id) = @_;
-    my $obj = Sfind::Library->new($self->{_dbh},$id);
+    my $obj = Sfind::Library->new($self->_dbh,$id);
     return $obj;
 }
 
@@ -248,8 +244,9 @@ sub get_library_by_id {
 =cut
 
 sub get_sample_by_id_study {
+    die "NOT YET IMPLEMENTED";
     my ($self, $id, $studyid) = @_;
-    my $obj = Sfind::Sample->new($self->{_dbh},$id, $studyid);
+    my $obj = Sfind::Sample->new($self->_dbh,$id, $studyid);
     return $obj;
 }
 
@@ -265,10 +262,10 @@ sub get_sample_by_id_study {
 sub get_studies_by_organism {
     my ($self, $org) = @_;
     $org ="%$org%";   
-    my $sql = qq[select distinct study_name from study_information join study_sample_reports on study_information.study_id = study_sample_reports.study_id join property_information on study_sample_reports.sample_id= property_information.obj_id where `key` like "sample_common_name" and  property_information.value like ?];
+    my $sql = qq[select distinct current_studies.name from current_studies join current_study_samples on current_studies.internal_id = current_study_samples.study_internal_id join current_samples on current_study_samples.sample_internal_id= current_samples.internal_id where current_samples.common_name like ? ];
 
     my @studies;
-    my $sth = $self->{_dbh}->prepare($sql);
+    my $sth = $self->_dbh->prepare($sql);
     $sth->execute($org);
     foreach(@{$sth->fetchall_arrayref()}){
 	push @studies, $_->[0] if $_->[0];
@@ -288,16 +285,10 @@ sub get_studies_by_organism {
 sub get_taxonid_for_organism {
     my ($self, $org) = @_;
     
-    my $sql = qq[select distinct(sample.value) 
-    		     from property_information sample 
-    		     join property_information organism using (obj_id) 
-    		     where organism.`key`="sample_common_name" 
-    		     and organism.value=? 
-    		     and sample.`key`="sample_taxon_id" 
-    		     and sample.obj_type="Sample"
-    		     limit 1;]; #TODO: Is this query faster if we use a subquery instead?
+    my $sql = qq[select distinct taxon_id from current_samples 
+            where common_name=? and taxon_id is not null limit 1;];
 
-   	my $sth = $self->{_dbh}->prepare($sql); 								
+   	my $sth = $self->_dbh->prepare($sql);
    	$sth->execute($org);
    	            
 	my ($taxon_id) = $sth->fetchrow_array();
@@ -305,12 +296,15 @@ sub get_taxonid_for_organism {
 		warn "No taxon_id found for $org\n";
 		return undef;
     }
-#    Some taxon ids in the warehouse have a .0 at the end which seems to be incorrect
-#    We check and remove them here
+
+    # Some taxon ids in the warehouse have a .0 at the end which seems to be
+    # incorrect We check and remove them here
+
     $taxon_id =~ s/(\d+)\.0/$1/g;
 	
     return $taxon_id;
 }
 
+__PACKAGE__->meta->make_immutable;
 
 1;

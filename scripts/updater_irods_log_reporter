@@ -1,0 +1,56 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Carp;
+use Getopt::Long;
+use Data::Dumper;
+use Mail::Send;
+
+my ($dbfile, $recip, $help);
+
+GetOptions(
+    'd|dbs=s'     =>  \$dbfile,
+    'r|recip=s'   =>  \$recip,
+    'h|help'	  =>  \$help,
+);
+
+($dbfile && $recip && !$help) or die <<USAGE;
+Usage options: 
+    Check the update logs for the databases listed in a file and report via email if errors are found:
+    	$0 -d <file_of_dbs> -r <email recipient(s) - comma-separated>
+USAGE
+
+my @recipients = split(',', $recip);
+my @error_message;
+my $separator = "\n-------------------------------\n";
+open DBFILE, '<', $dbfile;
+while ( <DBFILE> ) {
+	chomp;
+	my $db = $_;
+	my $log = "/lustre/scratch105/log/update_$db.out";
+	if ( -e $log ) {
+		my $logsize = -s $log;
+		if ( $logsize > 0 ) {
+			open LOG, "<", $log;
+			push @error_message, "Log report for $db:\n";
+			while ( <LOG> ) {
+				chomp;
+				push @error_message, $_;
+			}
+			push @error_message, $separator;
+		}
+	}
+}
+close DBFILE;
+
+if ( scalar @error_message > 0 ) {
+    my $msg = new Mail::Send;
+	$msg->to(join(',',@recipients));
+	$msg->subject('Vrpipe iRODS updater log report');
+	my $fh = $msg->open('sendmail'); 
+	print $fh "Log reports for the vrpipe updater script from iRODS have been found and are reported below.\n\n";
+	print $fh join("\n", @error_message);
+	$fh->close; 
+}

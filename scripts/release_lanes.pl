@@ -48,6 +48,7 @@ if all that sample's lanes have been mapped (ignoring lanes matching an
 Usage: $0 --db my_vrtrack_meta --all_samples --root /abs/path/to/META
         --db               <database name>
         --all_samples      get all lane paths in the database
+        --root             root directory of the tracking database
         --qc               get only lanes that are set as qc passed
         --samples          <sample name> [<sample name> ...]
         --ignore_platform  <SLX|454|SOLID> ignore lanes sequenced with this

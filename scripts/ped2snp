@@ -1,0 +1,155 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+#   Converts the .map+.ped SNP data into multiple one-column SNP files. Columns are tab separated.
+#   http://pngu.mgh.harvard.edu/~purcell/plink/cnv.shtml
+#
+#   IN 
+#   .map
+#       # chrom, ID, genetic distance, position
+#       1       rs11510103    0   557616
+#       1       rs12565286    0   711153
+#       1       rs3094315     0   742429
+#   
+#   .ped
+#       #  [Family ID], [Individual ID], [Chromosome], [Start position (base-pair)], [End position (base-pair)], [Type of variant, e.g. 0,1 or 3,4 copies]
+#       NA18939 NA18939 0       0       2   2.5 A A C C   .. .. ...
+#       NA18940 NA18940 0       0       1   2.5 A A C C   .. .. ... 
+#       NA18942 NA18942 0       0       2   2.5 A A C C   .. .. ...
+#       NA18943 NA18943 0       0       1   2.5 A A C C   .. .. ...
+#   where 0 means N/A
+#
+#   OUT
+#       1   557616  NN
+#       1   711153  NN
+#       1   742429  AA
+#
+
+use strict;
+use warnings;
+use Carp;
+
+my $opts = parse_params();
+
+`mkdir -p $$opts{'dir'}`;
+convert($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess(@msg); }
+    die
+        "Usage: ped2snp [OPTIONS]\n",
+        "       ped2snp -m ped/in.map -p ped/in.ped -d out/\n",
+        "Options:\n",
+        "   -a, --alleles <file>          For each site, output the observed alleles. (Useful for sanity checking and\n",
+        "                                   later conversion from TOP/BOT to FWD strand.)\n",
+        "   -d, --dir <dir>               The output directory.\n",
+        "   -m, --map <file>              The map file.\n",
+        "   -p, --ped <file>              The ped file.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-a' || $arg eq '--alleles' ) { $$opts{'alleles_file'} = shift(@ARGV); next }
+        if ( $arg eq '-d' || $arg eq '--dir' ) { $$opts{'dir'} = shift(@ARGV); next }
+        if ( $arg eq '-p' || $arg eq '--ped' ) { $$opts{'ped_file'} = shift(@ARGV); next }
+        if ( $arg eq '-m' || $arg eq '--map' ) { $$opts{'map_file'} = shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -? for help.\n");
+    }
+    if ( !exists($$opts{'dir'}) ) { error("Missing the -d option.\n") }
+    if ( !exists($$opts{'map_file'}) ) { error("Missing the -m option.\n") }
+    if ( !exists($$opts{'ped_file'}) ) { error("Missing the -p option.\n") }
+    return $opts;
+}
+
+
+sub convert
+{
+    my ($opts) = @_;
+
+    my $map_file     = $$opts{'map_file'};
+    my $ped_file     = $$opts{'ped_file'};
+    my $outdir       = $$opts{'dir'};
+
+    my @chroms = ();
+    my @positions = ();
+
+    # Read positions
+    open(my $in_fh,'<',$map_file) or error("$map_file: $!");
+    while (my $line=<$in_fh>)
+    {
+        my @items = split(/\t/, $line);
+        chomp($items[-1]);
+        if ( @items != 4 ) { error("$map_file: could not parse the line: $line"); }
+
+        push @chroms, $items[0];
+        push @positions, $items[3]; 
+    }
+    close($in_fh) or error("close $map_file");
+
+    my @alleles;
+    my $nskip=6;
+    my $iline=0;
+    my $npositions = scalar @positions;
+    open($in_fh, '<', $ped_file) or error("$ped_file: $!");
+    while (my $line=<$in_fh>)
+    {
+        $iline++;
+        chomp($line);
+        my @items = split /\s/, $line;
+        if ( scalar @items != 2*$npositions+$nskip ) 
+        { 
+            error("[Line $iline] Expected different number of fields: Found ", scalar @items, ', expected ', 2*$npositions+$nskip,"\n");
+        }
+
+        my $id = $items[1];
+        #print STDERR "$id.snp...\n";
+
+        open(my $snp_fh, '>>', "$outdir/$id.snp") or error("$outdir/$id.snp: $!");
+        for (my $i=0; $i<$npositions; $i++)
+        {
+            my $chrm = $chroms[$i];
+            my $pos  = $positions[$i];
+
+            my $base1 = $items[$nskip+$i*2];
+            my $base2 = $items[$nskip+$i*2+1];
+            if ( $base1 eq '0' ) { $base1='N'; } 
+            if ( $base2 eq '0' ) { $base2='N'; } 
+
+            print $snp_fh "$chrm\t$pos\t$base1$base2\n";
+
+            $alleles[$i]{$base1} = 1;
+            $alleles[$i]{$base2} = 1;
+        }
+        close($snp_fh) or error("close $outdir/$id.snp");
+    }
+    close($in_fh) or error("close $ped_file");
+
+    if ( exists($$opts{alleles_file}) )
+    {
+        open(my $afh,'>',$$opts{alleles_file}) or error("$$opts{alleles_file}: $!");
+        for (my $i=0; $i<$npositions; $i++)
+        {
+            my $chr = $chroms[$i];
+            my $pos = $positions[$i];
+            my $als = join(',',sort keys %{$alleles[$i]});
+            print $afh "$chr\t$pos\t$als\n";
+        }
+        close($afh) or error("close $$opts{alleles_file}");
+    }
+}
+
+
+

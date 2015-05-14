@@ -15,6 +15,7 @@ my $n = $parser->nrecords();
 for (my $i=0; $i<$n; $i++) {
     my $status = $parser->get('status',$i);
     my $memory = $parser->get('memory',$i);
+    my $queue  = $parser->get('queue',$i);
 }
 
 
@@ -94,6 +95,9 @@ sub new {
            [3]  time
            [4]  cpu_time
            [5]  idle_factor
+           [6]  queue
+           [7]  start_time (seconds since the epoch)
+           [8]  end_time (seconds since the epoch)
  Args    : n/a
 
 =cut
@@ -120,7 +124,7 @@ sub next_result {
     # prefaced by an unlimited amount of output from the program that LSF ran,
     # so we go line-by-line to find our little report
     my ($found_report_start, $found_report_end, $next_is_cmd);
-    my ($started, $finished, $cmd, $mem, $status);
+    my ($started, $finished, $cmd, $mem, $status,$queue);
     my $cpu = 0;
     while (<$fh>) {
         if (/^Sender: LSF System/) {
@@ -133,6 +137,7 @@ sub next_result {
         
         if ($found_report_start) {
             if (/^Started at \S+ (.+)$/) { $started = $1; }
+            elsif (/^Job was executed.+in queue \<([^>]+)\>/) { $queue = $1; }
             elsif (/^Results reported at \S+ (.+)$/) { $finished = $1; }
             elsif (/^# LSBATCH: User input/) { $next_is_cmd = 1; }
             elsif ($next_is_cmd) {
@@ -169,12 +174,12 @@ sub next_result {
     chomp($cmd) if $cmd;
     
     # calculate wall time and idle factor
-    my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+)/;
-    my ($smo, $sd, $sh, $sm, $ss) = $started =~ /$date_regex/;
-    my ($emo, $ed, $eh, $em, $es) = $finished =~ /$date_regex/;
-    my $dt = DateTime->new(year => 2010, month => $months{$smo}, day => $sd, hour => $sh, minute => $sm, second => $ss);
+    my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+) (\d+)/;
+    my ($smo, $sd, $sh, $sm, $ss,$sy) = $started =~ /$date_regex/;
+    my ($emo, $ed, $eh, $em, $es,$ey) = $finished =~ /$date_regex/;
+    my $dt = DateTime->new(year => $sy, month => $months{$smo}, day => $sd, hour => $sh, minute => $sm, second => $ss);
     my $st = $dt->epoch;
-    $dt = DateTime->new(year => 2010, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
+    $dt = DateTime->new(year => $ey, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
     my $et = $dt->epoch;
     my $wall = $et - $st;
     my $idle = sprintf("%0.2f", ($cpu < 1 ? 1 : $cpu) / ($wall < 1 ? 1 : $wall));
@@ -187,13 +192,19 @@ sub next_result {
     $self->{_result_holder}->[3] = $wall;
     $self->{_result_holder}->[4] = $cpu;
     $self->{_result_holder}->[5] = $idle;
+    $self->{_result_holder}->[6] = $queue;
+    $self->{_result_holder}->[7] = $st;
+    $self->{_result_holder}->[8] = $et;
     unless ($self->{"saw_last_record_$fh_id"}) {
         push(@{$self->{results}}, {cmd => $cmd,
                                    status => $status,
                                    memory => $mem,
                                    time => $wall,
                                    cpu_time => $cpu,
-                                   idle_factor => $idle});
+                                   idle_factor => $idle,
+                                   queue => $queue,
+                                   start_time => $st,
+                                   end_time => $et});
     }
     
     return 1;
@@ -320,6 +331,21 @@ sub memory {
 sub cmd {
     my $self = shift;
     return $self->get('cmd', -1);
+}
+
+=head2 queue
+
+ Title   : queue
+ Usage   : my $queue = $obj->queue();
+ Function: Get the command-line of the last job reported in the LSF file.
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub queue {
+    my $self = shift;
+    return $self->get('queue', -1);
 }
 
 1;

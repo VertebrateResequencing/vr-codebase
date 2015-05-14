@@ -121,23 +121,112 @@ sub new_by_name_project {
   
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : name
-  Example    : my $file = VRTrack::Sample->create($vrtrack, $name)
+  Arg [3]    : project id (optional)
+  Example    : my $file = VRTrack::Sample->create($vrtrack, $name, $project_id)
   Description: Class method.  Creates new Sample object in the database.
+               Overrides Core_obj method to allow allow creating samples with the 
+               same name, but different project ids  .
   Returntype : VRTrack::Sample object
    
 =cut
 
+sub create {
+    my ($class, $vrtrack, $name, $pid) = @_;
+    confess "Need to call with a vrtrack handle" unless $vrtrack;
+    confess "The interface has changed, expected vrtrack reference." if $vrtrack->isa('DBI::db');
+    
+    my $dbh = $vrtrack->{_dbh};
+    my $table = $class->_class_to_table;
+    
+    # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
+    if ($name && $class->is_name_in_database($vrtrack, $name, $name, $pid)){
+        confess "Already a $table entry with value $name";
+    }
+    
+    my $next_id;
+    my $success = $vrtrack->transaction(sub {
+	# insert a fake record to obtain a unique id (row_id)
+	my $query = qq[INSERT INTO $table SET ${table}_id=0];
+	my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+	my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
+	
+	# now update the inserted record
+	$next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
+	
+	if ($name) {
+	    my $hierarchy_name;
+	    
+	    my $fieldsref = $class->fields_dispatch();
+	    if ( exists($fieldsref->{hierarchy_name}) )
+	    {
+		$hierarchy_name = $name;
+		$hierarchy_name =~ s/\W+/_/g;
+	    }
+	    
+	    $name = qq[name='$name' ];
+	    if ($hierarchy_name) {
+		$name .= qq[, hierarchy_name='$hierarchy_name' ];
+	    }
+	}
+	
+	$query = qq[UPDATE $table SET ${table}_id=$next_id];
+	if ($name){
+	    $query .= qq[, $name ];     # add name, hierarchy_name clause
+	}
+	
+	$query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
+	$sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+	$sth->execute or confess qq[The query "$query" failed: $!];
+    });
+    
+    unless ($success) {
+	confess $vrtrack->{transaction_error};
+    }
+    
+    return $class->new($vrtrack, $next_id);
+}
 
 =head2 is_name_in_database
 
-  Arg [1]    : project name
+  Arg [1]    : sample name
   Arg [2]    : hierarchy name
-  Example    : if(VRTrack::Project->is_name_in_database($vrtrack, $name,$hname)
-  Description: Class method. Checks to see if a name or hierarchy name is already used in the project table.
+  Arg [3]    : project id (optional)
+  Example    : if(VRTrack::Sample->is_name_in_database($vrtrack, $name, $hname, $project_id)
+  Description: Class method. Checks to see if a name or hierarchy name is already used in the sample table.
+               Overrides Core_obj method.
   Returntype : boolean
 
 =cut
 
+sub is_name_in_database {
+    my ($class, $vrtrack, $name, $hname, $pid) = @_;
+    confess "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
+    if ($vrtrack->isa('DBI::db')) {
+        confess "The interface has changed, expected vrtrack reference.\n";
+    }
+    
+    my $table = $class->_class_to_table;
+    
+    my $dbh = $vrtrack->{_dbh};
+    my $sql = qq[select ${table}_id from $table where latest=true and (name = ? or hierarchy_name = ?)];
+    if ($pid) {
+        $sql .= qq[ and project_id = $pid];
+    }
+    my $sth = $dbh->prepare($sql);
+    
+    my $already_used = 0;
+    if ($sth->execute($name, $hname)) {
+        my $data = $sth->fetchrow_hashref;
+        if ($data) {
+            $already_used = 1;
+        }
+    }
+    else {
+        confess "Cannot retrieve $table by $name: ".$DBI::errstr;
+    }
+    
+    return $already_used;
+}
 
 
 ###############################################################################

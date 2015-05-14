@@ -4,7 +4,7 @@ package Sfind::Library_Request;
 Sfind::Library_Request - Sequence Tracking Library_Request object
 
 =head1 SYNOPSIS
-    my $librequest= Sfind::Library_Request->new($dbh, $request_id);
+    my $librequest= Sfind::Library_Request->new({dbh => $dbh, id => $request_id});
 
     my $id = $librequest->id();
     my $status = $librequest->status();
@@ -15,209 +15,256 @@ An object describing the tracked properties of a library request.
 
 =head1 CONTACT
 
-rn2@sanger.ac.uk
+jws@sanger.ac.uk
 
 =head1 METHODS
 
-=cut
-
-use strict;
-use warnings;
-no warnings 'uninitialized';
-
 =head2 new
 
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : library request id
-  Example    : my $librequest= Sfind::Sfind->new($dbh, $id)
+  Arg [1]    : hashref: dbh => database handle to seqtracking database
+                        id  => library_request_id
+  Example    : my $librequest= Sfind::Library_Request->new({dbh=>$dbh, id=>$id};)
   Description: Returns Library_Request object by lib_request_id
   Returntype : Sfind::Library_Request object
 
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select type, state, created_at, read_length from requests_new where request_id = ?];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    $sth->execute($id);
-    # note, while-ing over this array would give all attempts
-    my $data = $sth->fetchall_arrayref()->[0];
-    unless ($data){
-	return undef;
-    }
-    $self->id($id);
-    $self->type($data->[0]);
-    $self->created($data->[2]);
-    $self->read_len($data->[3]);
-
-    # cancelled requests are currently in the database with no status
-    if ($data->[1]){
-        $self->status($data->[1]);
-    }
-    else {
-        $self->status('cancelled');
-    }
-
-    return $self;
-}
-
-
 =head2 id
 
-  Arg [1]    : id (optional)
+  Arg [1]    : none
   Example    : my $id = $request->id();
-	       $request->id('104');
-  Description: Get/Set for ID of a request
-  Returntype : SequenceScape ID (usu. integer)
+  Description: Retrieve ID of a request
+  Returntype : Integer
 
-=cut
+=head2 type
 
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
-	$self->{'id'} = $id;
-    }
-    return $self->{'id'};
-}
+  Arg [1]    : none
+  Example    : my $type = $request->type();
+  Description: Retrieve type of request, e.g "Paired end sequencing"
+  Returntype : String
+
+=head2 status
+
+  Arg [1]    : none
+  Example    : my $status = $request->status();
+  Description: Retrieve request status
+  Returntype : string
+
+
+=head2 fragment_size_from
+
+  Arg [1]    : none
+  Example    : my $frag_from = $request->fragment_size_from();
+  Description: Retrieve fragment size from on request
+  Returntype : integer
+
+
+=head2 fragment_size_to
+
+  Arg [1]    : none
+  Example    : my $frag_to = $request->fragment_size_to();
+  Description: Retrieve fragment size to on request
+  Returntype : integer
 
 
 =head2 created
 
-  Arg [1]    : created (optional)
-  Example    : my $created = $request->created();
-	       $request->created('2008-10-24 11:40:59');
-  Description: Get/Set for created timestamp
-  Returntype : timestamp string
+  Arg [1]    : none
+  Example    : my $libreq_when = $request->created();
+  Description: Retrieves request creation datetime
+  Returntype : DateTime object
 
-=cut
-
-sub created {
-    my ($self,$created) = @_;
-    if (defined $created and $created ne $self->{'created'}){
-	$self->{'created'} = $created;
-    }
-    return $self->{'created'};
-}
-
-
-=head2 type
-
-  Arg [1]    : type (optional)
-  Example    : my $type = $request->type();
-	       $request->type('Paired end sequencing');
-  Description: Get/Set for type of request
-  Returntype : sequencescape request type string
-
-=cut
-
-sub type {
-    my ($self,$type) = @_;
-    if (defined $type and $type ne $self->{'type'}){
-	$self->{'type'} = $type;
-    }
-    return $self->{'type'};
-}
-
-=head2 read_len
-
-  Arg [1]    : read_len (optional)
-  Example    : my $read_len = $request->read_len();
-	       $request->read_len(54);
-  Description: Get/Set for request read_len
-  Returntype : integer
-
-=cut
-
-sub read_len {
-    my ($self,$read_len) = @_;
-    if (defined $read_len and $read_len ne $self->{'read_len'}){
-	$self->{'read_len'} = $read_len;
-    }
-    return $self->{'read_len'};
-}
-
-
-=head2 status
-
-  Arg [1]    : status (optional)
-  Example    : my $status = $request->status();
-	       $request->status('pending');
-  Description: Get/Set for request status
-  Returntype : string
-
-=cut
-
-sub status {
-    my ($self,$status) = @_;
-    if (defined $status and $status ne $self->{'status'}){
-	$self->{'status'} = $status;
-    }
-    return $self->{'status'};
-}
 
 =head2 libraries
 
-  Arg [1]    : None
+  Arg [1]    : none
   Example    : my $libraries = $library_request->libraries();
   Description: Returns a ref to an array of the library objects that are associated with this library_request.
   Returntype : ref to array of Sfind::Library objects
 
-=cut
-
-sub libraries {
-    my ($self) = @_;
-
-    unless ($self->{'libraries'}){
-	my @libraries;
-    	foreach my $id (@{$self->library_ids()}){
-	    my $obj = Sfind::Library->new($self->{_dbh},$id);
-	    push @libraries, $obj; 
-	}
-	@libraries = sort {$a <=> $b} @libraries;
-	$self->{'libraries'} = \@libraries;
-    }
-
-    return $self->{'libraries'};
-}
-
 
 =head2 library_ids
 
-  Arg [1]    : None
+  Arg [1]    : none
   Example    : my $library_ids = $library_request->library_ids();
   Description: Returns a ref to an array of the library IDs that are associated with this library_request
   Returntype : ref to array of integer library IDs
 
 =cut
 
-sub library_ids {
-    my ($self) = @_;
+use Moose;
+use namespace::autoclean;
+use Sfind::Types qw(MysqlDateTime);
+use Sfind::Library;
+use Sfind::Well_Library;
 
+has '_dbh'  => (
+    is          => 'ro',
+    isa         => 'DBI::db',
+    required    => 1,
+    init_arg    => 'dbh',
+);
 
-    # check if this is a multiplex library creation request
-    # return the asset_ids as as library_ids
-  
-    # select all library_tube asset ids associated with this request
-    my $sql= qq[select target_asset_id from requests_new where request_id=?];
-          
-    unless ($self->{'library_ids'}){
-	my @libraries;
-	my $sth = $self->{_dbh}->prepare($sql);
+has 'id'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 1,
+);
 
-	$sth->execute($self->id);
-	foreach(@{$sth->fetchall_arrayref()}){
-	    push @libraries, $_->[0] if $_->[0];
-	}
-	$self->{'library_ids'} = \@libraries;
-    }
+has 'uuid'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+);
+
+has 'type'  => (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'request_type',
+);
+
+has 'fragment_size_from'  => (
+    is          => 'ro',
+#    isa         => 'Maybe[Int]',
+    isa         => 'Maybe[Str]',
+);
+
+has 'fragment_size_to'  => (
+    is          => 'ro',
+#    isa         => 'Maybe[Int]',
+    isa         => 'Maybe[Str]',
+);
+
+has 'status'  => (
+    is          => 'ro',
+    isa         => 'Maybe[Str]',
+    init_arg    => 'state',
+);
+
+has 'library_ids'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Int]',
+    lazy        => 1,
+    builder     => '_get_library_ids',
+);
+
+has 'libraries'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Sfind::Library]',
+    lazy        => 1,
+    builder     => '_get_libraries',
+);
+
+has 'created' => (
+    is          => 'ro',
+    isa         => MysqlDateTime,
+    coerce      => 1,   # accept mysql dates
+);
+
+# Populate the parameters from the database
+around BUILDARGS => sub {
+    my $orig  = shift;
+    my $class = shift;
     
-    return $self->{'library_ids'};
+    my $argref = $class->$orig(@_);
+
+    die "Need to call with a library_request id" unless $argref->{id};
+    my $sql = qq[select * from current_requests where internal_id = ?];
+    my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
+    if ($id_ref){
+        foreach my $field(keys %$id_ref){
+            $argref->{$field} = $id_ref->{$field};
+        }
+    };
+    return $argref;
+};
+
+
+###############################################################################
+# BUILDERS
+###############################################################################
+
+sub _get_libraries { 
+    my ($self) = @_;
+    my @libraries;
+    foreach my $id (@{$self->library_ids()}){
+        my $obj;
+		if ($self->type =~ /^(illumina-a )?pulldown/i){
+            $obj = Sfind::Well_Library->new({dbh=>$self->{_dbh},id=>$id});
+        }
+        else {
+            $obj = Sfind::Library->new({dbh=>$self->{_dbh},id=>$id});
+        }
+        push @libraries, $obj; 
+    }
+
+    return \@libraries;
 }
 
+
+sub _get_library_ids {
+    my ($self) = @_;
+
+    # If this request is "normal" then the library ids will be library_tube
+    # asset ids.
+    
+    # If this is a cherrypick pulldown request, then the library is
+    # in a well on a plate so the warehouse queries are different and the
+    # library_ids aren't for library_tubes but for wells
+
+    my @lib_ids;
+	if ($self->type =~ /^(illumina-a )?pulldown/i){
+    my $sql = qq[
+        SELECT 
+          aliquots.library_internal_id
+        FROM 
+          current_aliquots AS aliquots
+        JOIN current_requests AS requests ON
+          aliquots.receptacle_internal_id = requests.target_asset_internal_id AND
+          aliquots.sample_internal_id = requests.source_asset_sample_internal_id
+        WHERE
+         (
+           (aliquots.receptacle_type = 'pulldown_multiplexed_library_tube' AND requests.request_type = 'Pulldown Multiplex Library Preparation') OR
+           (aliquots.receptacle_type = 'multiplexed_library_tube' AND (requests.request_type LIKE '%Pulldown WGS' OR requests.request_type LIKE '%Pulldown SC'))
+         )
+        AND requests.internal_id = ?;
+        ];
+          
+        #my $sql= qq[select descendant_internal_id from asset_links, current_requests where current_requests.source_asset_internal_id = asset_links.ancestor_internal_id and descendant_type="wells" and current_requests.internal_id=? and asset_links.is_current=1];
+        my $sth = $self->{_dbh}->prepare($sql);
+
+        $sth->execute($self->id);
+        foreach(@{$sth->fetchall_arrayref()}){
+            if ($_->[0]){
+                push @lib_ids, $_->[0];
+            }
+        }
+    }
+    else {
+        # the target of the request should be either a standard library tube
+        # for a non-multiplex request, or the indexed library tube that will be
+        # pooled for a multiplexed request
+
+        my $sql= qq[select distinct aliquot.library_internal_id as target_asset_internal_id, 
+                    aliquot.receptacle_type as target_asset_type  
+                    from current_aliquots as aliquot 
+                    join current_requests as request 
+                    on request.target_asset_internal_id = aliquot.receptacle_internal_id 
+                    where request.internal_id = ?];
+
+        my $sth = $self->{_dbh}->prepare($sql);
+
+        $sth->execute($self->id);
+        foreach(@{$sth->fetchall_arrayref()}){
+            if ($_->[0]){
+                die "Unexpected target type ".$_->[1]." for ".$self->id unless $_->[1] eq 'library_tube';
+                push @lib_ids, $_->[0];
+            }
+        }
+    }
+    
+    return \@lib_ids;
+}
+
+
+__PACKAGE__->meta->make_immutable;
 1;
+

@@ -55,7 +55,9 @@ sub fields_dispatch {
                raw_reads         => sub { $self->raw_reads(@_)},
                raw_bases         => sub { $self->raw_bases(@_)},
                mean_q            => sub { $self->mean_q(@_)},
+               reference         => sub { $self->reference(@_)},
                md5               => sub { $self->md5(@_)});
+               
     
     return \%fields;
 }
@@ -234,12 +236,13 @@ sub is_processed {
 
 =head2 type
 
-  Arg [1]    : type (optional) [0,1,2,3]
+  Arg [1]    : type (optional) [0,1,2,3,4,5,6]
   Example    : my $type = $file->type();
 	       $file->type(1);
   Description: Get/Set for file type - 0 is single-end, 1 fwd, 2 rev
                 3 is for _s_ files, i.e. fwd & rev concatenated on one
-                line, 4 is for bam files containing both fwd & rev
+                line, 4 is for bam files containing both fwd & rev, 5 is for
+		VRPipe::File ids of improved bams, and 6 is for cram files
   Returntype : integer
 
 =cut
@@ -279,6 +282,21 @@ sub raw_reads {
 sub raw_bases {
     my $self = shift;
     return $self->_get_set('raw_bases', 'number', @_);
+}
+
+=head2 reference
+
+  Arg [1]    : path to reference 
+  Example    : my $num_bp = $file->reference();
+	       $file->reference('abc');
+  Description: Get/Set for path to reference 
+  Returntype : string
+
+=cut
+
+sub reference {
+    my $self = shift;
+    return $self->_get_set('reference', 'string', @_);
 }
 
 

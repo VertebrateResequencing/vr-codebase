@@ -26,6 +26,10 @@ db  => {
 # (the ftp_limit option is the maximum number of lanes worth of fastqs to
 #  download at once)
 
+# set the skip_exomes option to skip projects with exome in their hierarchy 
+# name.
+skip_exomes => 1,
+
 # run the pipeline:
 run-pipeline -c pipeline.config -s 1
 
@@ -99,7 +103,8 @@ use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
 use VRTrack::Sample;
-use LSF;
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -231,10 +236,6 @@ sub fix_swaps {
         # old_path to lane_path. We can't just move the contents of old_path
         # to inside lane_path, because old_path may be a symlink to contents
         # on an archival disc, and must remain there.
-        my $ok = $self->{fsu}->copy($lane_path, $old_path);
-        unless ($ok) {
-            $self->throw("Could not copy contents of $lane_path to $old_path\n");
-        }
         
         my $cwd = cwd();
         chdir(File::Spec->tmpdir) if $cwd eq $lane_path;
@@ -270,6 +271,7 @@ sub fix_swaps {
         opendir(my $dfh, $lane_path) || $self->throw("Could not open dir '$lane_path'");
         my (@bams, @bass);
         foreach (readdir($dfh)) {
+            next if /^\./;
             if (/\.bam$/) {
                 push(@bams, $self->{fsu}->catfile($lane_path, $_));
             }
@@ -301,7 +303,7 @@ sub fix_swaps {
                 $needed_rewrite = 1;
                 my $basename = basename($bam);
                 my $isize = $info{insert_size} || 0; # can be NULL in the db
-                LSF::run($action_lock, $lane_path, $self->{prefix}.$basename.'_header_rewrite', $self,
+                VertRes::LSF::run($action_lock, $lane_path, $self->{prefix}.$basename.'_header_rewrite', $self,
                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rewrite_bam_header(qq[$bam], $info{lane} => { sample_name => qq[$info{sample}], library => qq[$info{library_true}], platform => qq[$info{technology}], centre => qq[$info{centre}], insert_size => qq[$isize], study => qq[$info{study}] }) || die qq[Failed to correct the header of '$bam'\n];"});
             }
         }
@@ -735,7 +737,7 @@ exit;
         $self->archive_bsub_files($lane_path, $job_name);
         
         $script_name =~ s/ /\\ /g;
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     my $male_file = $self->{fsu}->catfile($lane_path, 'MALE');

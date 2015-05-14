@@ -33,7 +33,7 @@ jws@sanger.ac.uk
 # author: jws
 use strict;
 use warnings;
-use Carp;
+use Carp qw(confess croak cluck);
 no warnings 'uninitialized';
 use DBI;
 use File::Spec;
@@ -44,10 +44,17 @@ use VRTrack::Seq_request;
 use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
+use VRTrack::History;
 
-use constant SCHEMA_VERSION => '12';
+use constant SCHEMA_VERSION => '28';
 
 our $DEFAULT_PORT = 3306;
+
+our %platform_aliases = (ILLUMINA => 'SLX',
+                         Illumina => 'SLX',
+                         LS454 => '454');
+
+our @schema_sql;
 
 =head2 new
 
@@ -72,8 +79,7 @@ sub new {
                                       $dbparams->{'password'},
                              {'RaiseError' => 0, 'PrintError'=>0}
                            );
-    #my ($dbname) = $dbh->selectrow_array("select DATABASE()");
-    #warn $dbname;
+    
     if ($DBI::err){
           warn(sprintf('DB connection failed: %s', $DBI::errstr));
           return undef;
@@ -109,7 +115,7 @@ sub new {
 =cut
 
 sub schema {
-    my @sql;
+    return @schema_sql if @schema_sql;
     
     my $line = '';
     while (<DATA>) {
@@ -118,15 +124,15 @@ sub schema {
         next unless /\S/;
         $line .= $_;
         if (/;\s*$/) {
-            push(@sql, $line."\n");
+            push(@schema_sql, $line."\n");
             $line = '';
         }
     }
     if ($line =~ /;\s*$/) {
-        push(@sql, $line);
+        push(@schema_sql, $line);
     }
     
-    return @sql;
+    return @schema_sql;
 }
 
 =head2 schema_version
@@ -342,6 +348,39 @@ sub hierarchy_path_of_lane {
     my ($self, $lane, $template) = @_;
     ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) || confess "A VRTrack::Lane must be supplied\n";
 
+    return $self->hierarchy_path_of_object($lane,$template);
+}
+
+=head2 hierarchy_path_of_object
+
+  Arg [1]    : VRTrack::Project, VRTrack::Sample, VRTrack::Library or VRTrack::Lane object
+  Arg [2]    : hierarchy template (Optional)
+  Example    : my $lane_hier = $track->hierarchy_path_of_object($vrlane);
+  Description: Retrieve the hierarchy path for a project, sample, library or lane according 
+               to the template defined by environment variable 'DATA_HIERARCHY', to the
+               root of the hierarchy. Template defaults to:
+               'project:sample:technology:library:lane'
+               Possible terms are 'genus', 'species-subspecies', 'strain',
+               'individual', 'project', 'projectid', 'sample', 'technology',
+               'library', 'lane'. ('strain' and 'individual' are synonymous)
+               Does not check the filesystem.
+               Returns undef if hierarchy cannot be built.
+  Returntype : string
+
+=cut
+
+sub hierarchy_path_of_object {
+    my ($self, $object, $template) = @_;
+
+    # Object types
+    my %object_type = ('VRTrack::Project' => 'project',
+		       'VRTrack::Sample'  => 'sample',
+		       'VRTrack::Library' => 'library',
+		       'VRTrack::Lane'    => 'lane');
+
+    (defined($object) && exists($object_type{ref($object)})) || confess "A recognised object type must be supplied\n";
+
+
     # For all acceptable terms, we generate the corresponding word, but for
     # others we just append the term itself to the hierarchy. This allows for
     # words like DATA or TRACKING to be injected into the hierarchy without much
@@ -350,12 +389,15 @@ sub hierarchy_path_of_lane {
     # Since not all possible terms might be used in the template, we will only
     # create objects if necessary (accessing db is expensive).
     my %objs;
-    my $get_lane = sub { return $lane; };
-    my $get_lib = sub { $objs{library} ||= VRTrack::Library->new($self, $lane->library_id); return $objs{library}; };
-    my $get_sample = sub { $objs{sample} ||= VRTrack::Sample->new($self, &{$get_lib}->sample_id); return $objs{sample}; };
-    my $get_project = sub { $objs{project} ||= VRTrack::Project->new($self, &{$get_sample}->project_id); return $objs{project}; };
-    my $get_individual = sub { $objs{individual} ||= VRTrack::Individual->new($self, &{$get_sample}->individual_id); return $objs{individual}; };
-    my $get_species = sub { $objs{species} ||= VRTrack::Species->new($self, &{$get_individual}->species_id); return $objs{species}; };
+
+    $objs{$object_type{ref($object)}} = $object; # set input object
+
+    my $get_lane = sub { return $objs{lane}; };
+    my $get_lib = sub { $objs{library} ||= eval { VRTrack::Library->new($self, &{$get_lane}->library_id) }; return $objs{library}; };
+    my $get_sample = sub { $objs{sample} ||= eval { VRTrack::Sample->new($self, &{$get_lib}->sample_id) };  return $objs{sample}; };
+    my $get_project = sub { $objs{project} ||= eval { VRTrack::Project->new($self, &{$get_sample}->project_id) }; return $objs{project}; };
+    my $get_individual = sub { $objs{individual} ||= eval { VRTrack::Individual->new($self, &{$get_sample}->individual_id) }; return $objs{individual}; };
+    my $get_species = sub { $objs{species} ||= eval { VRTrack::Species->new($self, &{$get_individual}->species_id) }; return $objs{species}; };
     my %terms = (genus => $get_species,
                  'species-subspecies' => $get_species,
                  strain => $get_individual,
@@ -372,7 +414,7 @@ sub hierarchy_path_of_lane {
         $template = $ENV{DATA_HIERARCHY} || 'project:sample:technology:library:lane';
     }
     my @path = split(/:/, $template);
-    
+
     my @hier_path_bits;
     foreach my $term (@path) {
         my $get_method = $terms{$term};
@@ -410,6 +452,8 @@ sub hierarchy_path_of_lane {
         else {
             push(@hier_path_bits, $term);
         }
+
+	last if $term eq $object_type{ref($object)}; # Finish at object directory
     }
     
     return File::Spec->catdir(@hier_path_bits);
@@ -420,8 +464,8 @@ sub hierarchy_path_of_lane {
 
   Arg [1]    : list of flags and values
   Example    : my $all_lanes   = $track->processed_lane_hnames();
-               my $qc_lanes    = $track->qc_filtered_lane_hnames('qc'=>1);
-               my $no_qc_lanes = $track->qc_filtered_lane_hnames('qc'=>0);
+               my $qc_lanes    = $track->processed_lane_hnames('qc'=>1);
+               my $no_qc_lanes = $track->processed_lane_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
@@ -430,6 +474,54 @@ sub hierarchy_path_of_lane {
 
 sub processed_lane_hnames {
     my ($self,@filter) = @_;
+    return $self->processed_lane_hnames_with_lane_limit(-1,"",@filter);
+}
+
+=head2 processed_lane_hnames_with_limits
+
+  Arg [1]    : list of flags and values
+  Example    : my $all_lanes   = $track->processed_lane_hnames_with_limits();
+               my $qc_lanes    = $track->processed_lane_hnames_with_limits('qc'=>1);
+               my $no_qc_lanes = $track->processed_lane_hnames_with_limits('qc'=>0);
+  Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names. 
+               It filters applies another filter on the names of projects/samples/libraries/lanes at the sql level to reduce the 
+               dataset and speedup post processing
+  Returntype : arrayref
+
+=cut
+sub processed_lane_hnames_with_limits {
+    my ($self,$max_lanes, $limits, @filter) = @_;
+    
+    my $additional_limits = "";
+    my @additional_limit_terms;
+    foreach my $limit_type (qw(project sample library lane)) {
+        if (defined $limits->{$limit_type}) {
+            my $array = $limits->{$limit_type};
+            unless (ref($array) && ref($array) eq 'ARRAY') {
+                die "In your config file, the limits->$limit_type is supposed to be an array ref\n";
+            }
+            
+            for my $search_term (@{$limits->{$limit_type}})
+            {
+                my $escaped_search_term  = $search_term;
+                $escaped_search_term =~ s!\\!\\\\!g;
+                push(@additional_limit_terms, $limit_type.'.name REGEXP "^'.$escaped_search_term.'$"');
+            }
+        }
+    }
+    
+    if(@additional_limit_terms > 0)
+    {
+      $additional_limits = join(" OR ", @additional_limit_terms);
+      $additional_limits = ' AND ('.$additional_limits.') ';
+    }
+    
+    return $self->processed_lane_hnames_with_lane_limit(-1,$additional_limits, @filter);
+}
+
+
+sub processed_lane_hnames_with_lane_limit {
+    my ($self,$max_lanes,$additional_limits, @filter) = @_;
     if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
     my @goodfilters;
@@ -443,6 +535,13 @@ sub processed_lane_hnames {
     {
         $filterclause = ' AND ' . join(' AND ', @goodfilters);
     }
+    my $max_lanes_clause = '';
+    if(defined($max_lanes) && $max_lanes > 0)
+    {
+      $max_lanes_clause = " limit $max_lanes ";
+    }
+    
+    
     my @lane_names;
     my $sql =qq[select lane.hierarchy_name 
                 from latest_project as project,
@@ -452,11 +551,13 @@ sub processed_lane_hnames {
                 where lane.library_id = library.library_id 
                       and library.sample_id = sample.sample_id 
                       and sample.project_id = project.project_id 
+                      $additional_limits
                 $filterclause 
                 order by project.hierarchy_name, 
                         sample.name, 
                         library.hierarchy_name, 
-                        lane.hierarchy_name];
+                        lane.hierarchy_name
+                        $max_lanes_clause];
     my $sth = $self->{_dbh}->prepare($sql);
 
     my $tmpname;
@@ -471,6 +572,97 @@ sub processed_lane_hnames {
     return \@lane_names;
 }
 
+
+sub lanes_with_mapping_filtered_by_limits {
+    my ($self,$max_lanes, $limits,$prefix, $mapper, $assembly_name, @filter) = @_;
+    
+    my $additional_limits = "";
+    my @additional_limit_terms;
+    foreach my $limit_type (qw(project sample library lane)) {
+        if (defined $limits->{$limit_type}) {
+            my $array = $limits->{$limit_type};
+            unless (ref($array) && ref($array) eq 'ARRAY') {
+                die "In your config file, the limits->$limit_type is supposed to be an array ref\n";
+            }
+            
+            for my $search_term (@{$limits->{$limit_type}})
+            {
+                my $escaped_search_term  = $search_term;
+                $escaped_search_term =~ s!\\!\\\\!g;
+                push(@additional_limit_terms, $limit_type.'.name REGEXP "^'.$escaped_search_term.'$"');
+            }
+        }
+    }
+    
+    if(@additional_limit_terms > 0)
+    {
+      $additional_limits = join(" OR ", @additional_limit_terms);
+      $additional_limits = ' AND ('.$additional_limits.') ';
+    }
+    
+    return $self->lanes_with_mapping_filtered_by_lane_limits(-1,$additional_limits,$prefix, $mapper, $assembly_name, @filter);
+}
+
+
+sub lanes_with_mapping_filtered_by_lane_limits {
+    my ($self, $max_lanes, $additional_limits, $prefix, $mapper, $assembly_name, @filter) = @_;
+    if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
+    my %flags = VRTrack::Core_obj->allowed_processed_flags();
+    my @goodfilters;
+    my $filterclause = '';
+    while (my ($key,$value)=splice(@filter,0,2))
+    {
+        if ( !exists($flags{$key}) ) { croak qq[The flag "$key" not recognised.\n]; }
+        push @goodfilters, ($value ? '' : '!') . qq[(lane.processed & $flags{$key})];
+    }
+    if ( scalar @goodfilters )
+    {
+        $filterclause = ' AND ' . join(' AND ', @goodfilters);
+    }
+    my $max_lanes_clause = '';
+    if(defined($max_lanes) && $max_lanes > 0)
+    {
+      $max_lanes_clause = " limit $max_lanes ";
+    }
+    
+    
+    my @lane_names;
+    my $sql =qq[select  distinct(lane.hierarchy_name) 
+                from latest_project as project,
+                    latest_sample as sample,
+                    latest_library as library,
+                    latest_lane as lane 
+                    inner join latest_mapstats as mapstats on mapstats.lane_id = lane.lane_id
+    								inner join assembly as assembly on assembly.assembly_id = mapstats.assembly_id
+    								inner join mapper as mapper on mapstats.mapper_id = mapper.mapper_id
+                where lane.library_id = library.library_id 
+                      and library.sample_id = sample.sample_id 
+                      and sample.project_id = project.project_id 
+                      AND mapstats.is_qc = 0 
+                      AND mapstats.raw_reads is not NULL
+                      AND	mapstats.prefix = "$prefix" 
+                      AND mapper.name = "$mapper"
+                      AND assembly.name = "$assembly_name"
+                      $additional_limits
+                $filterclause 
+                order by project.hierarchy_name, 
+                        sample.name, 
+                        library.hierarchy_name, 
+                        lane.hierarchy_name
+                        $max_lanes_clause];
+    my $sth = $self->{_dbh}->prepare($sql);
+
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @lane_names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve projects: %s', $DBI::errstr));
+    }
+
+    return \@lane_names;
+}
 
 =head2 qc_filtered_lane_hnames
 
@@ -596,8 +788,8 @@ sub qc_filtered_lib_hnames {
 
   Arg [1]    : list of flags and values
   Example    : my $all_files   = $track->processed_file_hnames();
-               my $qc_files    = $track->qc_filtered_file_hnames('qc'=>1);
-               my $no_qc_files = $track->qc_filtered_file_hnames('qc'=>0);
+               my $qc_files    = $track->processed_file_hnames('qc'=>1);
+               my $no_qc_files = $track->processed_file_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all file hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
@@ -683,6 +875,574 @@ sub individual_names {
     return \@individual_names;
 }
 
+=head2 lane_info
+
+ Title   : lane_info
+ Usage   : my %info = $obj->lane_info('lane_name');
+ Function: Get information about a lane from the database.
+ Returns : hash of information, with keys:
+           hierarchy_path => string,
+           study          => string, (the true project code)
+           project        => string, (may not be the true project code)
+           sample         => string,
+           individual     => string,
+           individual_alias => string,
+           individual_acc => string,
+           individual_coverage => float, (the coverage of this lane's individual)
+           population     => string,
+           technology     => string, (aka platform, the way DCC puts it, eg.
+                                      'ILLUMINA' instead of 'SLX')
+           seq_tech       => string, (aka platform, the way Sanger puts it, eg.
+                                      'SLX' instead of 'ILLUMINA')
+           library        => string, (the hierarchy name, which is most likely
+                                      similar to the true original library name)
+           library_raw    => string, (the name stored in the database, which may
+                                      be a uniquified version of the original
+                                      library name)
+           library_true   => string, (an attempt at getting the true original
+                                      library name, as it was before it was
+                                      munged in various ways to create library
+                                      and library_raw)
+           lane           => string, (aka read group)
+           centre         => string, (the sequencing centre name)
+           species        => string, (may be undef)
+           insert_size    => int, (can be undef if this lane is single-ended)
+           withdrawn      => boolean,
+           imported       => boolean,
+           mapped         => boolean,
+           vrlane         => VRTrack::Lane object
+           (returns undef if lane name isn't in the database)
+ Args    : lane name (read group) OR a VRTrack::Lane object.
+
+           optionally, pre_swap => 1 to get info applicable to the lane in its
+           state immediately prior to the last time is_processed('swapped', 1)
+           was called on it.
+
+           optionally, get_coverage => 1 to calculate (can be very slow!)
+           individual_coverage. To configure this, supply the optional args
+           understood by individual_coverage()
+
+=cut
+
+sub lane_info {
+    my ($vrtrack, $lane, %args) = @_;
+    
+    my $hist = VRTrack::History->new();
+    my $orig_time_travel = $hist->time_travel;
+    
+    my ($rg, $vrlane);
+    if (ref($lane) && $lane->isa('VRTrack::Lane')) {
+        $vrlane = $lane;
+        $rg = $vrlane->hierarchy_name;
+        $lane = $rg;
+    }
+    else {
+        $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane);
+        $rg = $lane;
+    }
+    
+    return unless ($rg && $vrlane);
+    
+    my $datetime = 'latest';
+    if ($args{pre_swap}) {
+        $datetime = $hist->was_processed($vrlane, 'swapped');
+    }
+    # make sure we've got a lane of the correct time period
+    $hist->time_travel($datetime);
+    $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane) || confess("Could not get a vrlane with name $lane prior to $datetime");
+    
+    my %info = (lane => $rg, vrlane => $vrlane);
+    
+    $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane($vrlane);
+    $info{withdrawn} = $vrlane->is_withdrawn;
+    $info{imported} = $vrlane->is_processed('import');
+    $info{mapped} = $vrlane->is_processed('mapped');
+    
+    my %objs = $vrtrack->lane_hierarchy_objects($vrlane);
+    
+    $info{insert_size} = $objs{library}->insert_size;
+    $info{library} = $objs{library}->hierarchy_name || confess("library hierarchy_name wasn't known for $rg");
+    my $lib_name = $objs{library}->name || confess("library name wasn't known for $rg");
+    $info{library_raw} = $lib_name;
+    ($lib_name) = split(/\|/, $lib_name);
+    $info{library_true} = $lib_name;
+    $info{centre} = $objs{centre}->name || confess("sequencing centre wasn't known for $rg");
+    my $seq_tech = $objs{platform}->name || confess("sequencing platform wasn't known for $rg");
+    $info{seq_tech} = $seq_tech;
+    if ($seq_tech =~ /illumina|slx/i) {
+        $info{technology} = 'ILLUMINA';
+    }
+    elsif ($seq_tech =~ /solid/i) {
+        $info{technology} = 'ABI_SOLID';
+    }
+    elsif ($seq_tech =~ /454/) {
+        $info{technology} = 'LS454';
+    }
+    $info{sample} = $objs{sample}->name || confess("sample name wasn't known for $rg");
+    $info{individual} = $objs{individual}->name || confess("individual name wasn't known for $rg");
+    $info{individual_alias} = $objs{individual}->alias;
+    $info{species} =  $objs{species}->name if $objs{species};#|| $self->throw("species name wasn't known for $rg");
+    $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
+    if ($args{get_coverage}) {
+        $info{individual_coverage} = $vrtrack->hierarchy_coverage(individual => [$info{individual}],
+                                                                  $args{genome_size} ? (genome_size => $args{genome_size}) : (),
+                                                                  $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
+                                                                  $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
+                                                                  $args{mapped} ? (mapped => $args{mapped}) : ());
+    }
+    $info{population} = $objs{population}->name;
+    $info{project} = $objs{project}->name;
+    $info{study} = $objs{study} ? $objs{study}->acc : $info{project};
+    
+    $hist->time_travel($orig_time_travel);
+    
+    return %info;
+}
+
+=head2 lane_hierarchy_objects
+
+ Title   : lane_hierarchy_objects
+ Usage   : my %objects = $obj->lane_hierarchy_objects($lane);
+ Function: Get all the parent objects of a lane, from the library up to the
+           project.
+ Returns : hash with these key and value pairs:
+           study => VRTrack::Study object
+           project => VRTrack::Project object
+           sample => VRTrack::Sample object
+           individual => VRTrack::Individual object
+           population => VRTrack::Population object
+           platform => VRTrack::Seq_tech object
+           centre => VRTrack::Seq_centre object
+           library => VRTrack::Library object
+           species => VRTrack::Species object
+ Args    : VRTrack::Lane object
+
+=cut
+
+sub lane_hierarchy_objects {
+    my ($vrtrack, $vrlane) = @_;
+    
+    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
+    my $sc = $lib->seq_centre;
+    my $st = $lib->seq_tech;
+    my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
+    my $individual = $sample->individual;
+    my $species = $individual->species;
+    my $pop = $individual->population;
+    my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
+    my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id) if $project_obj->study_id;
+    
+    return (study => $study_obj,
+            project => $project_obj,
+            sample => $sample,
+            individual => $individual,
+            population => $pop,
+            platform => $st,
+            centre => $sc,
+            library => $lib,
+            species => $species);
+}
+
+=head2 hierarchy_coverage
+
+ Title   : hierarchy_coverage
+ Usage   : my $coverage = $obj->hierarchy_coverage(sample => ['NA19239'],
+                                                   genome_size => 3e9);
+ Function: Discover the sequencing coverage calculated over certain lanes.
+ Returns : float
+ Args    : At least one hierarchy level as a key, and an array ref of names
+           as values, eg. sample => ['NA19239'], platform => ['SLX', '454'].
+           Valid key levels are project, sample, individual, population,
+           platform, centre and library. (With no options at all, coverage will
+           be calculated over all lanes in the database)
+           -OR-
+           A special mode can be activated by supplying a single lane name with
+           the key lane, and a desired level with the level key, eg.:
+           lane => 'lane_name', level => 'individual'. This would calculate the
+           coverage of all the lanes that belong to the individual that the
+           supplied lane belonged to.
+
+           plus optional hash:
+           genome_size => int (total genome size in bp; default 3e9)
+           gt_confirmed => boolean (only consider genotype confirmed lanes;
+                                    default false)
+           qc_passed => boolean (only consider qc passed lanes; default false)
+           mapped => boolean (coverage of mapped bases; default false: coverage
+                              of total bases)
+
+=cut
+
+sub hierarchy_coverage {
+    my ($vrtrack, %args) = @_;
+    my $genome_size = delete $args{genome_size} || 3e9;
+    my $gt = delete $args{gt_confirmed} ? 1 : 0;
+    my $qc = delete $args{qc_passed} ? 1 : 0;
+    my $mapped = delete $args{mapped} ? 1 : 0;
+    
+    if (exists $args{lane} || exists $args{level}) {
+        my $lane = delete $args{lane};
+        my $level = delete $args{level};
+        confess("Both lane and level options must be supplied if either of them are") unless $lane && $level;
+        
+        my @levels = qw(project sample individual population platform centre library);
+        foreach my $valid_level (@levels) {
+            confess("'$valid_level' option is mutually exclusive of lane&level") if exists $args{$valid_level};
+        }
+        my %levels = map { $_ => 1 } @levels;
+        confess("Supplied level '$level' wasn't valid") unless exists $levels{$level};
+        
+        my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane) || confess("Could not get a lane from the db with name '$lane'");
+        
+        my %objs = $vrtrack->lane_hierarchy_objects($vrlane);
+        confess("Could not get the $level of lane $lane") unless defined $objs{$level};
+        
+        $args{$level} = [$objs{$level}->name];
+    }
+    
+    my @store = ($gt, $qc, $mapped);
+    while (my ($key, $val) = each %args) {
+        unless (ref($val)) {
+            push(@store, $val);
+        }
+        else {
+            if (ref($val) eq 'ARRAY') {
+                push(@store, @{$val});
+            }
+            elsif (ref($val) eq 'HASH') {
+                while (my ($sub_key, $sub_val) = each %{$val}) {
+                    push(@store, $sub_val);
+                }
+            }
+        }
+    }
+    my $store = join(",", sort @store);
+    
+    unless (defined $vrtrack->{_cover_bases}->{$store}) {
+        my @lanes = $vrtrack->get_lanes(%args);
+        @lanes || return 0;
+        my $bps = 0;
+        
+        # sum raw bases for all the qc passed, gt confirmed and not withdrawn
+        # lanes
+        foreach my $lane (@lanes) {
+            next if $lane->is_withdrawn;
+            if ($gt) {
+                next unless ($lane->genotype_status && $lane->genotype_status eq 'confirmed');
+            }
+            if ($qc) {
+                next unless ($lane->qc_status && $lane->qc_status eq 'passed');
+            }
+            
+            my $bp = $lane->raw_bases || 0;
+            
+            if ($mapped) {
+                my $mapstats = $lane->latest_mapping;
+                
+                if ($mapstats && $mapstats->raw_bases){
+                    if ($mapstats->genotype_ratio) {
+                        # this is a QC mapped lane, so we make a projection
+                        $bps += $bp * ($mapstats->rmdup_bases_mapped / $mapstats->raw_bases);
+                    }
+                    else {
+                        # this is a fully mapped lane, so we know the real answer
+                        $bps += $mapstats->bases_mapped;
+                    }
+                }
+                else {
+                    $bps += $bp * 0.9; # not sure what else to do here?
+                }
+            }
+            else {
+                $bps += $bp;
+            }
+        }
+        
+        $vrtrack->{_cover_bases}->{$store} = $bps;
+    }
+    
+    return sprintf('%.2f', $vrtrack->{_cover_bases}->{$store} / $genome_size);
+}
+
+=head2 get_lanes
+
+ Title   : get_lanes
+ Usage   : my @lanes = $obj->get_lanes(sample => ['NA19239']);
+ Function: Get all the lanes under certain parts of the hierarchy, excluding
+           withdrawn lanes.
+ Returns : list of VRTrack::Lane objects
+ Args    : At least one hierarchy level as a key, and an array ref of names
+           as values, eg. sample => ['NA19239'], platform => ['SLX', '454'].
+           Valid key levels are project, sample, individual, population,
+           platform, centre, library and species. (With no options at all, all 
+           active lanes in the database will be returned)
+           Alternatively to supplying hierarchy level keys and array refs of
+           allowed values, you can supply *_regex keys with regex string values
+           to select all members of that hierarchy level that match the regex,
+           eg. project_regex => 'low_coverage' to limit to projects with
+           "low_coverage" in the name. _regex only applies to project, sample
+           and library.
+
+           By default it won't return withdrawn lanes; change that:
+           return_withdrawn => bool
+
+=cut
+
+sub get_lanes {
+    my ($vrtrack, %args) = @_;
+    
+    my @good_lanes;
+    foreach my $project (@{$vrtrack->projects}) {
+        my $ok = 1;
+        if (defined $args{project}) {
+            $ok = 0;
+            foreach my $name (@{$args{project}}) {
+                if ($name eq $project->name || $name eq $project->hierarchy_name || ($project->study && $name eq $project->study->acc)) {
+                    $ok = 1;
+                    last;
+                }
+            }
+        }
+        $ok || next;
+        if (defined $args{project_regex}) {
+            $project->name =~ /$args{project_regex}/ || next;
+        }
+        
+        foreach my $sample (@{$project->samples}) {
+            my $ok = 1;
+            if (defined ($args{sample})) {
+                $ok = 0;
+                foreach my $name (@{$args{sample}}) {
+                    if ($name eq $sample->name) {
+                        $ok = 1;
+                        last;
+                    }
+                }
+            }
+            $ok || next;
+            if (defined $args{sample_regex}) {
+                $sample->name =~ /$args{sample_regex}/ || next;
+            }
+            
+            my %objs;
+            $objs{individual} = $sample->individual;
+            $objs{individual} || next; # if there was some import failure we might have ended up with a sample row but no individual
+            $objs{population} = $objs{individual}->population;
+            $objs{species}    = $objs{individual}->species;
+            
+            my ($oks, $limits) = (0, 0);
+            foreach my $limit (qw(individual population species)) {
+                if (defined $args{$limit}) {
+                    $limits++;
+                    if ($limit eq 'species' && !(defined $objs{'species'})) {
+                        confess('species not defined for sample '.$sample->name);
+                        last;
+                    }
+                    my $ok = 0;
+                    foreach my $name (@{$args{$limit}}) {
+                        if ($name eq $objs{$limit}->name || ($objs{$limit}->can('hierarchy_name') && $name eq $objs{$limit}->hierarchy_name)) {
+                            $ok = 1;
+                            last;
+                        }
+                    }
+                    $oks += $ok;
+                }
+            }
+            next unless $oks == $limits;
+            
+            foreach my $library (@{$sample->libraries}) {
+                my $ok = 1;
+                if (defined ($args{library})) {
+                    $ok = 0;
+                    foreach my $name (@{$args{library}}) {
+                        if ($name eq $library->name || $name eq $library->hierarchy_name) {
+                            $ok = 1;
+                            last;
+                        }
+                    }
+                }
+                $ok || next;
+                if (defined $args{library_regex}) {
+                    $library->name =~ /$args{library_regex}/ || next;
+                }
+                
+                my %objs;
+                $objs{centre} = $library->seq_centre;
+                $objs{platform} = $library->seq_tech;
+                
+                my ($oks, $limits) = (0, 0);
+                foreach my $limit (qw(centre platform)) {
+                    if (defined $args{$limit}) {
+                        $limits++;
+                        my $ok = 0;
+                        foreach my $name (@{$args{$limit}}) {
+                            if ($name eq $objs{$limit}->name) {
+                                $ok = 1;
+                                last;
+                            }
+                        }
+                        $oks += $ok;
+                    }
+                }
+                next unless $oks == $limits;
+                
+                push(@good_lanes, @{$library->lanes});
+            }
+        }
+    }
+    
+    if ($args{return_withdrawn}) {
+        return @good_lanes;
+    }
+    else {
+        # filter out withdrawn lanes
+        my @active;
+        foreach my $lane (@good_lanes) {
+            next if $lane->is_withdrawn;
+            push(@active, $lane);
+        }
+        return @active;
+    }
+}
+
+=head2 transaction
+
+  Arg [1]    : Code ref
+  Arg [2]    : optional hash ref: { read => [], write => []} where the array
+               ref values contain table names to lock for reading/writing
+               [NB: not yet implemented]
+  Arg [3]    : optional array ref of objects to make sure they really get
+               updated in the database
+  Example    : my $worked = $vrtrack->transaction(sub { $lane->update; }, { write => ['lane'] });
+  Description: Run code safely in a transaction, with automatic retries in the
+               case of deadlocks. If the transaction fails for some other reason,
+               the error message can be found in $vrtrack->{transaction_error}.
+  Returntype : Boolean
+
+=cut
+
+sub transaction {
+    my ($self, $code, $locks, $objects) = @_;
+    
+    my $dbh = $self->{_dbh};
+    
+    # we wanted to use begin_work() to handle turning off and on AutoCommit, but
+    # to be compatible with transaction_start() et al. we'll have to use the
+    # same mechanisms
+    my $autocommit = $dbh->{AutoCommit};
+    $dbh->{AutoCommit} = 0;
+    $self->{transaction}++;
+    
+    # Raise Errors if there are any problems, which we will catch in evals
+    my $raiseerror = $dbh->{RaiseError};
+    $dbh->{RaiseError} = 1;
+    
+    #eval {
+    #    $dbh->begin_work;
+    #};
+    #if ($@) {
+    #    my $err = $@;
+    #    if ($err =~ /Already in a transaction/) {
+    #        # we're already in a transaction, so just run the $code without
+    #        # doing a commit
+    #        $dbh->{RaiseError} = 1;
+    #        $dbh->{AutoCommit} = 0;
+    #        &$code;
+    #        $self->{transaction}--;
+    #        return 1;
+    #    }
+    #    else {
+    #        confess $err;
+    #    }
+    #}
+    if ($self->{transaction} > 1) {
+        &$code;
+        $self->{transaction}--;
+        return 1;
+    } 
+    
+    # turn off warnings that may be generated when we call &$code
+    my $sig_warn = $SIG{'__WARN__'};
+    $SIG{'__WARN__'} = sub { };
+    
+    # try to run the $code and commit, repeating if deadlock found, die with
+    # stack trace for other issues
+    my $success = 0;
+    delete $self->{transaction_error};
+    while (1) {
+        eval {
+            # make extra sure RaiseError and AutoCommit are set as necessary,
+            # incase something nested changes these
+            $dbh->{RaiseError} = 1;
+            $dbh->{AutoCommit} = 0;
+            &$code;
+            $dbh->{RaiseError} = 1;
+            $dbh->{AutoCommit} = 0;
+            $dbh->commit;
+        };
+        if ($@) {
+            my $err = $@;
+            eval { $dbh->rollback };
+            if ($err =~ /Deadlock found/) {
+                sleep(2);
+            }
+            else {
+                chomp($err);
+                $self->{transaction_error} = "Transaction failed, rolled back. Error was: $err";
+                last;
+            }
+        }
+        else {
+            $success = 1;
+            if ($objects) {
+                OBJLOOP: foreach my $obj (@$objects) {
+                    next unless $obj;
+                    
+                    # really make sure that the database values match the
+                    # instance values
+                    $obj->can('fields_dispatch') || next;
+                    my %expected_fields = %{$obj->fields_dispatch || {}};
+                    my @fields = keys %expected_fields;
+                    my $retries = 0;
+                    while (1) {
+                        my $fresh_vrtrack = VRTrack::VRTrack->new($self->{_db_params});
+                        my $fresh_obj = $obj->new($fresh_vrtrack, $obj->id);
+                        my %db_fields = %{$fresh_obj->fields_dispatch || {}};
+                        my $all_matched = 1;
+                        foreach my $field (@fields) {
+                            my $expected_val = &{$expected_fields{$field}}();
+                            my $db_val = &{$db_fields{$field}}();
+                            if ($db_val ne $expected_val) {
+                                $fresh_obj->$field($expected_val);
+                                $all_matched = 0;
+                            }
+                        }
+                        
+                        unless ($all_matched) {
+                            $fresh_vrtrack->transaction(sub {
+                                $fresh_obj->update;
+                            });
+                        }
+                        
+                        last if $all_matched;
+                        if ($retries++ >= 10) {
+                            $self->{transaction_error} = "Unable to make the database values match instance values after using update() on object $obj with id ".$obj->id."\n";
+                            $success = 0;
+                            last OBJLOOP;
+                        }
+                    }
+                }
+            }
+            last;
+        }
+    }
+    
+    $dbh->{AutoCommit} = $autocommit;
+    $dbh->{RaiseError} = $raiseerror;
+    $SIG{'__WARN__'} = $sig_warn;
+    $self->{transaction}--;
+    
+    return $success;
+}
 
 =head2 transaction_start
 
@@ -789,151 +1549,301 @@ sub database_params {
     return $self->{_db_params};
 }
 
+
+=head2 assembly_names
+
+  Arg [1]    : None
+  Example    : my @assemblies = $vrtrack->assembly_names();
+  Description: Returns a reference to an array of the names in the assembly table sorted by name
+  Returntype : reference to array of strings
+
+=cut
+
+sub assembly_names {
+    my $self = shift;
+    return $self->_list_names('assembly');
+}
+
+=head2 species_names
+
+  Arg [1]    : None
+  Example    : my @species = $vrtrack->species_names();
+  Description: Returns a reference to an array of the names in the species table sorted by name
+  Returntype : reference to array of strings
+
+=cut
+
+sub species_names {
+    my $self = shift;
+    return $self->_list_names('species');
+}
+
+=head2 mapper_names
+
+  Arg [1]    : None
+  Example    : my @mappers = $vrtrack->mapper_names();
+  Description: Returns a reference to an array of the distinct names in the species table
+  Returntype : reference to array of strings
+
+=cut
+
+sub mapper_names {
+    my $self = shift;
+    return $self->_list_names('mapper');
+}
+
+# Returns reference to an array of names contained in the name column of a table
+# Tables are restricted to tables contained in hash %permitted_table within the function.
+sub _list_names {
+    my ($self,$table) = @_;
+
+    # List of permitted tables
+    my %permitted_table = (assembly => 0, species => 0, mapper => 1);
+
+    unless(exists $permitted_table{$table}){croak qq[The listing names for '$table' not permitted];}
+    my $distinct = $permitted_table{$table} ? 'distinct' : '';
+
+    my @names;
+    my $sql =qq[select $distinct $table.name 
+                from $table
+                order by $table.name;];
+
+    my $sth = $self->{_dbh}->prepare($sql);
+	
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve $table names: %s', $DBI::errstr));
+    }
+
+    return \@names;
+}
+
+
 1;
 
 
 __DATA__
---
--- Table structure for table `version`
---
+
+# Dump of table schema_version
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `schema_version`;
+
 CREATE TABLE `schema_version` (
   `schema_version` mediumint(8) unsigned NOT NULL,
-  PRIMARY KEY  (`schema_version`)
+  PRIMARY KEY (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (12);
 
---
--- Table structure for table `assembly`
---
+
+# Dump of table allocation
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `allocation`;
+
+CREATE TABLE `allocation` (
+  `study_id` smallint(5) unsigned NOT NULL DEFAULT '0',
+  `individual_id` int(10) unsigned NOT NULL DEFAULT '0',
+  `seq_centre_id` smallint(5) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`study_id`,`individual_id`,`seq_centre_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+insert into schema_version(schema_version) values (28);
+
+
+# Dump of table assembly
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `assembly`;
+
 CREATE TABLE `assembly` (
-  `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(255) NOT NULL,
-   `reference_size` integer,
-  PRIMARY KEY  (`assembly_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Table structure for table `note`
---
-
-DROP TABLE IF EXISTS `note`;
-CREATE TABLE `note` (
-  `note_id` mediumint(8) unsigned NOT NULL auto_increment,
-  `note` text default NULL,
-  PRIMARY KEY  (`note_id`)
+  `assembly_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `reference_size` int(11) DEFAULT NULL,
+  `taxon_id` mediumint(8) unsigned DEFAULT NULL,
+  `translation_table` smallint(5) unsigned DEFAULT NULL,
+  PRIMARY KEY (`assembly_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
---
--- Table structure for table `file`
---
+
+# Dump of table autoqc
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `autoqc`;
+
+CREATE TABLE `autoqc` (
+  `autoqc_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `mapstats_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `test` varchar(50) NOT NULL DEFAULT '',
+  `result` tinyint(1) DEFAULT '0',
+  `reason` varchar(200) NOT NULL DEFAULT '',
+  PRIMARY KEY (`autoqc_id`),
+  UNIQUE KEY `mapstats_test` (`mapstats_id`,`test`),
+  KEY `mapstats_id` (`mapstats_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table exome_design
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `exome_design`;
+
+CREATE TABLE `exome_design` (
+  `exome_design_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `bait_bases` bigint(20) unsigned DEFAULT NULL,
+  `target_bases` bigint(20) unsigned DEFAULT NULL,
+  PRIMARY KEY (`exome_design_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table file
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `file`;
+
 CREATE TABLE `file` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `file_id` mediumint(8) unsigned NOT NULL,
-  `lane_id` mediumint(8) unsigned NOT NULL,
-  `name` varchar(255) NOT NULL,
-  `hierarchy_name` varchar(255) default NULL,
-  `processed` int(10) default 0,
-  `type` tinyint(4) default NULL,
-  `readlen` smallint(5) unsigned default NULL,
-  `raw_reads` bigint(20) unsigned default NULL,
-  `raw_bases` bigint(20) unsigned default NULL,
-  `mean_q` float unsigned default NULL,
-  `md5` varchar(40) default NULL,
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `file_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `lane_id` int(10) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `hierarchy_name` varchar(255) DEFAULT NULL,
+  `processed` int(10) DEFAULT '0',
+  `type` tinyint(4) DEFAULT NULL,
+  `readlen` smallint(5) unsigned DEFAULT NULL,
+  `raw_reads` bigint(20) unsigned DEFAULT NULL,
+  `raw_bases` bigint(20) unsigned DEFAULT NULL,
+  `mean_q` float unsigned DEFAULT NULL,
+  `md5` char(32) DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `latest` tinyint(1) DEFAULT '0',
+  `reference` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`row_id`),
   KEY `file_id` (`file_id`),
   KEY `lane_id` (`lane_id`),
   KEY `hierarchy_name` (`hierarchy_name`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `image`
---
+
+
+# Dump of table image
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `image`;
+
 CREATE TABLE `image` (
-  `image_id` mediumint(8) unsigned NOT NULL auto_increment,
-  `mapstats_id` mediumint(8) unsigned NOT NULL,
-  `name` varchar(40) NOT NULL,
-  `caption` varchar(40) default NULL,
-  `image` MEDIUMBLOB,
+  `image_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `mapstats_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `caption` varchar(40) DEFAULT NULL,
+  `image` mediumblob,
   PRIMARY KEY (`image_id`),
-  KEY  `mapstats_id` (`mapstats_id`)
+  KEY `mapstats_id` (`mapstats_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `lane`
---
+
+
+# Dump of table individual
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `individual`;
+
+CREATE TABLE `individual` (
+  `individual_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
+  `alias` varchar(40) NOT NULL DEFAULT '',
+  `sex` enum('M','F','unknown') DEFAULT 'unknown',
+  `acc` varchar(40) DEFAULT NULL,
+  `species_id` mediumint(8) unsigned DEFAULT NULL,
+  `population_id` smallint(5) unsigned DEFAULT NULL,
+  PRIMARY KEY (`individual_id`),
+  UNIQUE KEY `name` (`name`),
+  UNIQUE KEY `hierarchy_name` (`hierarchy_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table lane
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `lane`;
+
 CREATE TABLE `lane` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `lane_id` mediumint(8) unsigned NOT NULL,
-  `library_id` smallint(5) unsigned NOT NULL,
-  `seq_request_id` mediumint(8) unsigned NOT NULL,
-  `name` varchar(255) NOT NULL default '',
-  `hierarchy_name` varchar(255) NOT NULL default '',
-  `acc` varchar(40) default NULL,
-  `readlen` smallint(5) unsigned default NULL,
-  `paired` tinyint(1) default NULL,
-  `raw_reads` bigint(20) unsigned default NULL,
-  `raw_bases` bigint(20) unsigned default NULL,
-  `npg_qc_status` enum('pending','pass','fail','-') default 'pending',
-  `processed` int(10) default 0,
-  `auto_qc_status` enum('no_qc','passed','failed') default 'no_qc',
-  `qc_status` enum('no_qc','pending','passed','failed') default 'no_qc',
-  `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') default 'unchecked',
-  `submission_id` smallint(5) unsigned default NULL,
-  `withdrawn` tinyint(1) default NULL,
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `run_date` datetime default NULL,
-  `storage_path` varchar(255) default NULL,
-  `latest` tinyint(1) default '0',
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `lane_id` int(10) unsigned NOT NULL,
+  `library_id` int(10) unsigned NOT NULL,
+  `seq_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
+  `acc` varchar(40) DEFAULT NULL,
+  `readlen` smallint(5) unsigned DEFAULT NULL,
+  `paired` tinyint(1) DEFAULT NULL,
+  `raw_reads` bigint(20) unsigned DEFAULT NULL,
+  `raw_bases` bigint(20) unsigned DEFAULT NULL,
+  `npg_qc_status` enum('pending','pass','fail','-') DEFAULT 'pending',
+  `processed` int(10) DEFAULT '0',
+  `auto_qc_status` enum('no_qc','passed','failed') DEFAULT 'no_qc',
+  `qc_status` enum('no_qc','pending','passed','failed','gt_pending','investigate') DEFAULT 'no_qc',
+  `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') DEFAULT 'unchecked',
+  `submission_id` smallint(5) unsigned DEFAULT NULL,
+  `withdrawn` tinyint(1) DEFAULT NULL,
+  `manually_withdrawn` tinyint(1) DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `run_date` datetime DEFAULT NULL,
+  `storage_path` varchar(255) DEFAULT NULL,
+  `latest` tinyint(1) DEFAULT '0',
+  PRIMARY KEY (`row_id`),
   KEY `lane_id` (`lane_id`),
   KEY `lanename` (`name`),
   KEY `library_id` (`library_id`),
+  KEY `acc` (`acc`),
   KEY `hierarchy_name` (`hierarchy_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `library`
---
+
+
+
+# Dump of table library
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `library`;
+
 CREATE TABLE `library` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `library_id` smallint(5) unsigned NOT NULL,
-  `library_request_id` mediumint(8) unsigned NOT NULL,
-  `sample_id` smallint(5) unsigned NOT NULL,
-  `ssid` mediumint(8) unsigned default NULL,
-  `name` varchar(255) NOT NULL default '',
-  `hierarchy_name` varchar(255) NOT NULL default '',
-  `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') default 'unknown',
-  `auto_qc_status` enum('no_qc','passed','failed') default 'no_qc',
-  `qc_status` enum('no_qc','pending','passed','failed') default 'no_qc',
-  `fragment_size_from` mediumint(8) unsigned default NULL,
-  `fragment_size_to` mediumint(8) unsigned default NULL,
-  `library_type_id` smallint(5) unsigned default NULL,
-  `library_tag` smallint(5) unsigned,
-  `library_tag_group` smallint(5) unsigned,
-  `library_tag_sequence` varchar(1024),
-  `seq_centre_id` smallint(5) unsigned default NULL,
-  `seq_tech_id` smallint(5) unsigned default NULL,
-  `open` tinyint(1) default '1',
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `library_id` int(10) unsigned NOT NULL,
+  `library_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `sample_id` int(10) unsigned NOT NULL,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
+  `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
+  `auto_qc_status` enum('no_qc','passed','failed') DEFAULT 'no_qc',
+  `qc_status` enum('no_qc','pending','passed','failed') DEFAULT 'no_qc',
+  `fragment_size_from` mediumint(8) unsigned DEFAULT NULL,
+  `fragment_size_to` mediumint(8) unsigned DEFAULT NULL,
+  `library_type_id` smallint(5) unsigned DEFAULT NULL,
+  `library_tag` smallint(5) unsigned DEFAULT NULL,
+  `library_tag_group` smallint(5) unsigned DEFAULT NULL,
+  `library_tag_sequence` varchar(1024) DEFAULT NULL,
+  `seq_centre_id` smallint(5) unsigned DEFAULT NULL,
+  `seq_tech_id` smallint(5) unsigned DEFAULT NULL,
+  `open` tinyint(1) DEFAULT '1',
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `latest` tinyint(1) DEFAULT '0',
+  PRIMARY KEY (`row_id`),
   KEY `ssid` (`ssid`),
   KEY `name` (`name`),
   KEY `hierarchy_name` (`hierarchy_name`),
@@ -941,184 +1851,192 @@ CREATE TABLE `library` (
   KEY `library_id` (`library_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `multiplex_pool`
---
-DROP TABLE IF EXISTS `multiplex_pool`;
-CREATE TABLE `multiplex_pool` (
-  `multiplex_pool_id` mediumint(8) unsigned NOT NULL auto_increment key,
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `name` varchar(255) NOT NULL default '',
-  `note_id` mediumint(8) unsigned DEFAULT NULL,
-  KEY `multiplex_pool_id` (`multiplex_pool_id`),
-  KEY `name` (`name`),
-  UNIQUE KEY `ssid` (`ssid`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `library_multiplex_pool`
---
+
+# Dump of table library_multiplex_pool
+# ------------------------------------------------------------
+
 DROP TABLE IF EXISTS `library_multiplex_pool`;
+
 CREATE TABLE `library_multiplex_pool` (
-  `library_multiplex_pool_id` mediumint(8) unsigned NOT NULL auto_increment key,
-  `multiplex_pool_id` smallint(5) unsigned NOT NULL,
-  `library_id` smallint(5) unsigned NOT NULL,
+  `library_multiplex_pool_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `multiplex_pool_id` smallint(5) unsigned NOT NULL DEFAULT '0',
+  `library_id` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`library_multiplex_pool_id`),
   KEY `library_multiplex_pool_id` (`library_multiplex_pool_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
 
---
--- Table structure for table `library_request`
---
+# Dump of table library_request
+# ------------------------------------------------------------
+
 DROP TABLE IF EXISTS `library_request`;
+
 CREATE TABLE `library_request` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `library_request_id` mediumint(8) unsigned NOT NULL,
-  `sample_id` smallint(5) unsigned NOT NULL,
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `library_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `sample_id` int(10) unsigned NOT NULL,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   `latest` tinyint(1) DEFAULT '0',
+  PRIMARY KEY (`row_id`),
   KEY `library_request_id` (`library_request_id`),
   KEY `ssid` (`ssid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `seq_request`
---
-DROP TABLE IF EXISTS `seq_request`;
-CREATE TABLE `seq_request` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `seq_request_id` mediumint(8) unsigned NOT NULL,
-  `library_id` smallint(5) unsigned,
-  `multiplex_pool_id` smallint(5) unsigned,
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `seq_type` enum('Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing') DEFAULT 'Single ended sequencing',
-  `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
-  `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) DEFAULT '0',
-  KEY `seq_request_id` (`seq_request_id`),
-  KEY `ssid` (`ssid`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
---
--- Table structure for table `library_type`
---
+# Dump of table library_type
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `library_type`;
+
 CREATE TABLE `library_type` (
-  `library_type_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
-  PRIMARY KEY  (`library_type_id`)
+  `library_type_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`library_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `mapper`
---
+
+
+# Dump of table mapper
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `mapper`;
+
 CREATE TABLE `mapper` (
-  `mapper_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
-  `version` varchar(40) NOT NULL,
-  PRIMARY KEY  (`mapper_id`),
-  UNIQUE KEY `name_v` (`name`, `version`)
+  `mapper_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `version` varchar(40) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`mapper_id`),
+  UNIQUE KEY `name_v` (`name`,`version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `mapstats`
---
+
+
+# Dump of table mapstats
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `mapstats`;
+
 CREATE TABLE `mapstats` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `mapstats_id` mediumint(8) unsigned NOT NULL,
-  `lane_id` mediumint(8) unsigned NOT NULL,
-  `mapper_id` smallint(5) unsigned default NULL,
-  `assembly_id` smallint(5) unsigned default NULL,
-  `raw_reads` bigint(20) unsigned default NULL,
-  `raw_bases` bigint(20) unsigned default NULL,
-  `clip_bases` bigint(20) unsigned default NULL,
-  `reads_mapped` bigint(20) unsigned default NULL,
-  `reads_paired` bigint(20) unsigned default NULL,
-  `bases_mapped` bigint(20) unsigned default NULL,
-  `rmdup_reads_mapped` bigint(20) unsigned default NULL,
-  `rmdup_bases_mapped` bigint(20) unsigned default NULL,
-  `adapter_reads` bigint(20) unsigned default NULL,
-  `error_rate` float unsigned default NULL,
-  `mean_insert` float unsigned default NULL,
-  `sd_insert` float unsigned default NULL,
-  `gt_expected` varchar(40) default NULL,
-  `gt_found` varchar(40) default NULL,
-  `gt_ratio` float unsigned default NULL,
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `mapstats_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `lane_id` int(10) unsigned NOT NULL,
+  `mapper_id` smallint(5) unsigned DEFAULT NULL,
+  `assembly_id` int(10) unsigned DEFAULT NULL,
+  `raw_reads` bigint(20) unsigned DEFAULT NULL,
+  `raw_bases` bigint(20) unsigned DEFAULT NULL,
+  `clip_bases` bigint(20) unsigned DEFAULT NULL,
+  `reads_mapped` bigint(20) unsigned DEFAULT NULL,
+  `reads_paired` bigint(20) unsigned DEFAULT NULL,
+  `bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `rmdup_reads_mapped` bigint(20) unsigned DEFAULT NULL,
+  `rmdup_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `adapter_reads` bigint(20) unsigned DEFAULT NULL,
+  `error_rate` float unsigned DEFAULT NULL,
+  `mean_insert` float unsigned DEFAULT NULL,
+  `sd_insert` float unsigned DEFAULT NULL,
+  `gt_expected` varchar(40) DEFAULT NULL,
+  `gt_found` varchar(40) DEFAULT NULL,
+  `gt_ratio` float unsigned DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `latest` tinyint(1) DEFAULT '0',
+  `bait_near_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `target_near_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `bait_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `mean_bait_coverage` float unsigned DEFAULT NULL,
+  `bait_coverage_sd` float unsigned DEFAULT NULL,
+  `off_bait_bases` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_bait` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_bait_near` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_target` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_target_near` bigint(20) unsigned DEFAULT NULL,
+  `target_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `mean_target_coverage` float unsigned DEFAULT NULL,
+  `target_coverage_sd` float unsigned DEFAULT NULL,
+  `target_bases_1X` float unsigned DEFAULT NULL,
+  `target_bases_2X` float unsigned DEFAULT NULL,
+  `target_bases_5X` float unsigned DEFAULT NULL,
+  `target_bases_10X` float unsigned DEFAULT NULL,
+  `target_bases_20X` float unsigned DEFAULT NULL,
+  `target_bases_50X` float unsigned DEFAULT NULL,
+  `target_bases_100X` float unsigned DEFAULT NULL,
+  `exome_design_id` smallint(5) unsigned DEFAULT NULL,
+  `percentage_reads_with_transposon` float unsigned DEFAULT NULL,
+  `is_qc` tinyint(1) DEFAULT '0',
+  `prefix` varchar(40) DEFAULT '_',
+  PRIMARY KEY (`row_id`),
   KEY `mapstats_id` (`mapstats_id`),
   KEY `lane_id` (`lane_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `population`
---
+
+
+# Dump of table multiplex_pool
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `multiplex_pool`;
+
+CREATE TABLE `multiplex_pool` (
+  `multiplex_pool_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  PRIMARY KEY (`multiplex_pool_id`),
+  UNIQUE KEY `ssid` (`ssid`),
+  KEY `multiplex_pool_id` (`multiplex_pool_id`),
+  KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table note
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `note`;
+
+CREATE TABLE `note` (
+  `note_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `note` text,
+  PRIMARY KEY (`note_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table population
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `population`;
+
 CREATE TABLE `population` (
-  `population_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
-  PRIMARY KEY  (`population_id`)
+  `population_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`population_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `species`
---
 
-DROP TABLE IF EXISTS `species`;
-CREATE TABLE `species` (
-  `species_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(255) NOT NULL,
-  `taxon_id` mediumint(8) unsigned NOT NULL,
-  PRIMARY KEY  (`species_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `individual`
---
-
-DROP TABLE IF EXISTS `individual`;
-CREATE TABLE `individual` (
-  `individual_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(255) NOT NULL,
-  `hierarchy_name` varchar(255) NOT NULL,
-  `alias` varchar(40) NOT NULL,
-  `sex` enum('M','F','unknown') default 'unknown',
-  `acc` varchar(40) default NULL,
-  `species_id` smallint(5) unsigned default NULL,
-  `population_id` smallint(5) unsigned default NULL,
-  PRIMARY KEY  (`individual_id`),
-  UNIQUE KEY `name` (`name`),
-  UNIQUE KEY `hierarchy_name` (`hierarchy_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Table structure for table `project`
---
+# Dump of table project
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `project`;
+
 CREATE TABLE `project` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `project_id` smallint(5) unsigned NOT NULL,
-  `ssid` mediumint(8) unsigned default NULL,
-  `name` varchar(255) NOT NULL default '',
-  `hierarchy_name` varchar(255) NOT NULL default '',
-  `study_id` smallint(5) default NULL,
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `project_id` smallint(5) unsigned NOT NULL DEFAULT '0',
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
+  `study_id` smallint(5) DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `latest` tinyint(1) DEFAULT '0',
+  PRIMARY KEY (`row_id`),
   KEY `project_id` (`project_id`),
   KEY `ssid` (`ssid`),
   KEY `latest` (`latest`),
@@ -1127,89 +2045,124 @@ CREATE TABLE `project` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
---
--- Table structure for table `study`
---
 
-DROP TABLE IF EXISTS `study`;
-CREATE TABLE `study` (
-`study_id` smallint(5) unsigned NOT NULL auto_increment,
-`name` varchar(40) NOT NULL default '',
-`acc` varchar(40) default NULL,
-`ssid` mediumint(8) unsigned default NULL,
-`note_id` mediumint(8) unsigned default NULL,
-PRIMARY KEY  (`study_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Table structure for table `allocation`
---
-
-DROP TABLE IF EXISTS `allocation`;
-CREATE TABLE `allocation` (
-`study_id` smallint(5) unsigned default NULL,
-`individual_id` smallint(5) unsigned default NULL,
-`seq_centre_id` smallint(5) unsigned default NULL,
-PRIMARY KEY  (`study_id`,`individual_id`,`seq_centre_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
-
---
--- Table structure for table `sample`
---
+# Dump of table sample
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `sample`;
+
 CREATE TABLE `sample` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `sample_id` smallint(5) unsigned NOT NULL,
-  `project_id` smallint(5) unsigned NOT NULL,
-  `ssid` mediumint(8) unsigned default NULL,
-  `name` varchar(40) NOT NULL default '',
-  `hierarchy_name` varchar(40) NOT NULL default '',
-  `individual_id` smallint(5) unsigned default NULL,
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
-  KEY  (`sample_id`),
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `sample_id` int(10) unsigned NOT NULL,
+  `project_id` smallint(5) unsigned NOT NULL DEFAULT '0',
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `hierarchy_name` varchar(40) NOT NULL DEFAULT '',
+  `individual_id` int(10) unsigned DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `latest` tinyint(1) DEFAULT '0',
+  PRIMARY KEY (`row_id`),
+  KEY `sample_id` (`sample_id`),
   KEY `ssid` (`ssid`),
   KEY `latest` (`latest`),
   KEY `project_id` (`project_id`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `seq_centre`
---
+
+
+# Dump of table seq_centre
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `seq_centre`;
+
 CREATE TABLE `seq_centre` (
-  `seq_centre_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
-  PRIMARY KEY  (`seq_centre_id`)
+  `seq_centre_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`seq_centre_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `seq_tech`
---
+
+
+# Dump of table seq_request
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `seq_request`;
+
+CREATE TABLE `seq_request` (
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `seq_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `library_id` int(10) unsigned NOT NULL,
+  `multiplex_pool_id` smallint(5) unsigned DEFAULT NULL,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `seq_type` enum('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') DEFAULT 'Single ended sequencing',
+  `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `latest` tinyint(1) DEFAULT '0',
+  PRIMARY KEY (`row_id`),
+  KEY `seq_request_id` (`seq_request_id`),
+  KEY `ssid` (`ssid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table seq_tech
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `seq_tech`;
+
 CREATE TABLE `seq_tech` (
-  `seq_tech_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
-  PRIMARY KEY  (`seq_tech_id`)
+  `seq_tech_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`seq_tech_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Table structure for table `submission`
---
+
+
+# Dump of table species
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `species`;
+
+CREATE TABLE `species` (
+  `species_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `taxon_id` mediumint(8) unsigned NOT NULL,
+  PRIMARY KEY (`species_id`),
+  KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table study
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `study`;
+
+CREATE TABLE `study` (
+  `study_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `acc` varchar(40) DEFAULT NULL,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  PRIMARY KEY (`study_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table submission
+# ------------------------------------------------------------
 
 DROP TABLE IF EXISTS `submission`;
+
 CREATE TABLE `submission` (
-  `submission_id` smallint(5) unsigned NOT NULL auto_increment,
-  `date` datetime NOT NULL,
-  `name` varchar(40) NOT NULL,
-  `acc` varchar(40) default NULL,
-  PRIMARY KEY  (`submission_id`),
+  `submission_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `date` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `name` varchar(255) NOT NULL DEFAULT '',
+  `acc` varchar(40) DEFAULT NULL,
+  PRIMARY KEY (`submission_id`),
   UNIQUE KEY `acc` (`acc`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 

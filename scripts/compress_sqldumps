@@ -1,0 +1,13 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+# This tiny script is run daily via cron to compress any uncompressed files 
+# in the sql_dumps archive of the warehouse
+
+my $archive = '/warehouse/g1k-04/sql_dumps/archive';
+my @inarr = grep(!/.lzma$/, (split(' ', `ls $archive`)));
+
+foreach (@inarr) {
+	system qq[bsub -M4000 -R'select[mem>4000] rusage[mem=4000]' -o /lustre/scratch105/log/sqldumps_compression.out -e /lustre/scratch105/log/sqldumps_compression.err "lzma --best --force $archive/$_"];	
+}

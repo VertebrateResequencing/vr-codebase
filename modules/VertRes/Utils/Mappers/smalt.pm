@@ -59,10 +59,10 @@ sub new {
 sub _bsub_opts {
     my ($self, $lane_path, $action) = @_;
     
-    my %bsub_opts = (bsub_opts => '');
+    my %bsub_opts = (bsub_opts => '', dont_wait => 1);
     
     if ($action eq 'map') {
-        $bsub_opts{bsub_opts} = '-q normal -M4000000 -R \'select[mem>4000] rusage[mem=4000]\'';
+        $bsub_opts{bsub_opts} = '-q normal -M4000 -R \'select[mem>4000] rusage[mem=4000]\'';
     }
     else {
         return $self->SUPER::_bsub_opts($lane_path, $action);
@@ -83,7 +83,23 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
-    return VertRes::Wrapper::smalt->new(verbose => $self->verbose);
+    my $exe = $self->{exe} || 'smalt';
+    return VertRes::Wrapper::smalt->new(verbose => $self->verbose, exe => $exe);
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
+    my $self = shift;
+    return 'smalt';
 }
 
 =head2 split_fastq
@@ -144,12 +160,18 @@ sub do_mapping {
         # so we multiply by 3
         $input_args{insert_size} *= 3;
     }
-    
-    my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
-    
+
+    my %args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
+
+    # custom index and mapping parameters
+    $args{mapper_index_suffix} = $input_args{mapper_index_suffix} if(defined($input_args{mapper_index_suffix}));
+    $args{mapper_index_params} = $input_args{mapper_index_params} if(defined($input_args{mapper_index_params}));
+    $args{additional_mapper_params} = $input_args{additional_mapper_params} if(defined($input_args{additional_mapper_params} ));
+
     my $wrapper = $self->wrapper;
-    $wrapper->do_mapping(@args);
-    
+    $wrapper->do_mapping(%args);
+    $self->_add_command_line($wrapper->command_line());
+
     # smalt directly generates sam files, so nothing futher to do
     
     return $wrapper->run_status >= 1;

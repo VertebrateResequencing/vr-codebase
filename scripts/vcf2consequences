@@ -9,13 +9,15 @@ use Carp;
 use DBI;
 use Data::Dumper; 
 use Getopt::Long;
+use Benchmark;
 
 BEGIN{
     my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '59';
+    my $VERSION = '63';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-compara/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-functgenomics/modules");
 }
 
@@ -25,44 +27,68 @@ use Bio::EnsEMBL::Variation::AlleleFeature;
 use Bio::EnsEMBL::Variation::VariationFeature;
 
 use Vcf;
+use GranthamMatrix;
 =pod
 foreach( keys( %INC ) )
 {
-	print qq[$_ - $INC{$_}\n];
+    print qq[$_ - $INC{$_}\n];
 }
 =cut
 
-my ($input_vcf, $complement, $species, $help);
+my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham,$passonly, $include_intergenic);
 
 GetOptions
 (
-	"v|vcf=s"   	=> \$input_vcf,
-	"s|species=s"	=> \$species,
-	"h|help"		=> \$help
+    "v|vcf=s"       => \$input_vcf,
+    "s|species=s"   => \$species,
+    "i|index=s"     => \$index_vcf,
+    "I|include-intergenic" => \$include_intergenic,
+    "b|buffer=i"    => \$buffer_size,
+    "g|gerp"    => \$gerp,
+    "r|grantham"    => \$grantham,
+    "p|pass"    => \$passonly,
+    "h|help"        => \$help
 );
 
 my $missing = 0;
 if( ! $species || $help ){$missing = 1;}
+$buffer_size = 500 unless ($buffer_size);
 
 if( $missing )
 {
-	print qq[
+    print qq[
 This is a script to call consequences on a set of SNPs in a VCf file
 by querying Ensembl
 Usage:
     -v --vcf <string>       VCF input file
     -s --species            e.g. Homo_sapiens, Mus_musculus
+    -i --index              OPTIONAL: Compressed annotated VCF file, indexed using tabix
+    -b --buffer             OPTIONAL: Number of rows of the vcf file to buffer (default = 500)
+    -g --gerp               OPTIONAL: Add GERP score to consequences
+    -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
     -h --help               Print this message
 ];
-	exit;
+    exit;
 }
 
 croak qq[Invalid species: $species\n]  unless $species eq qq[Mus_musculus] || $species eq qq[Homo_sapiens];
 
+my $CACHE_HIT = 0;
+my $CACHE_MISS = 0;
 
+my $t0 = Benchmark->new;
 my $ensembl = init_ensembl($species);
-parse_vcf($ensembl,$input_vcf);
+our $grantham_matrix = GranthamMatrix->new() if $grantham;
 
+parse_vcf($ensembl,$input_vcf,$index_vcf);
+my $t1 = Benchmark->new;
+my $td = timediff($t1, $t0);
+print STDERR "The consequences calculations took:",timestr($td),"\n";
+if ($index_vcf){
+    print STDERR "$CACHE_HIT cache hits\n";
+    print STDERR "$CACHE_MISS from Ensembl\n";
+}
+    
 exit;
 
 #------------------------------
@@ -70,14 +96,16 @@ exit;
 sub init_ensembl
 {
     my ($species) = @_;
-
+    my $te0 = Benchmark->new;
     print STDERR "New Ensembl called...\n";
     my $registry = 'Bio::EnsEMBL::Registry';
-    $registry->load_registry_from_db (	
-    	-host => 'ensdb-archive', -user => 'ensro', -port => 5304,
+    $registry->load_registry_from_db (  
+    -host => 'ensdb-archive', -user => 'ensro', -port => 5304,
     );
     print STDERR "registry loaded...\n";
-    
+    my $te1 = Benchmark->new;
+    my $ted = timediff($te1, $te0);
+    print STDERR "Loading ensembl data took:",timestr($ted),"\n";
     my $slice = $registry->get_adaptor($species, "core", "Slice");
     my ($highest_cs) = @{ $slice->db->get_CoordSystemAdaptor->fetch_all() };
     my $assembly = $highest_cs->version();
@@ -86,88 +114,207 @@ sub init_ensembl
     my $variation = $registry->get_adaptor($species, "variation", "variationfeature");
     my $gene = $registry->get_adaptor($species, "core", "Gene");
 
-    return {registry=>$registry, slice=>$slice, variation=>$variation, gene=>$gene};
-}
+    my $reader = EnsemblReader->new(slice=>$slice);
 
+	my $mlss_adaptor = $registry->get_adaptor("Multi", "compara", "MethodLinkSpeciesSet");
+	my $mlss = $mlss_adaptor->fetch_by_method_link_type_species_set_name("GERP_CONSERVATION_SCORE", "mammals");
+	my $cs_adaptor = $registry->get_adaptor("Multi", 'compara', 'ConservationScore');
+
+    return {registry=>$registry, slice=>$slice, variation=>$variation, gene=>$gene, reader=>$reader, mlss=>$mlss, cs_adaptor=>$cs_adaptor};
+}
 
 sub parse_vcf
 {
-    my ($ensembl,$input_vcf) = @_;
+    my $tp0 = Benchmark->new;
+    my ($ensembl,$input_vcf,$index_vcf) = @_;
+    my $ensembl_version = $ensembl->{registry}->software_version();
 
     my $vcf = defined $input_vcf ? Vcf->new(file=>$input_vcf) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
-    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>'Consequence of the ALT alleles'});
+    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl v$ensembl_version"});
     print $vcf->format_header();
 
     my $lines = 0;
-    my %variantsH;
-    my $lastChr;
+    my %vcf2process = ();
+    my @linearray;
+    my $minpos = my $maxpos = 0;
+    my $lastChr  = 0;
+    
     while( my $rec = $vcf->next_data_array() )
     {
-        my $chr  = $$rec[0];
-        my $pos  = $$rec[1];
-        my $ref  = $$rec[3];
-        my $alts = $$rec[4];
 
-	    # This is should be improved - remembering locations of a list of genes for a region and reducing the number of
-        #   Ensembl queries
-        if ( !$$ensembl{chrslice} or $lastChr ne $chr )
+        if (($lastChr && $$rec[0] ne $lastChr) || $lines >= $buffer_size) 
         {
-            $$ensembl{chrslice} = $$ensembl{slice}->fetch_by_region('chromosome',$chr);
-            if ( !$$ensembl{chrslice} )
-            {
-                print join("\t",@$rec) . "\n";
-                next;
-            }
-        }
-
-        # Call consequence for each ALT allele of the VCF file.
-        my @conseqs = ();
-        for my $alt (split(/,/,$alts))
-        {
-            my ($type,$len,$ht) = $vcf->event_type({REF=>$ref},$alt);
-            my $conseq;
+            process_batch($index_vcf, "$minpos-$maxpos", \%vcf2process, \@linearray, $vcf);       
+            $lines = 0;
+            $minpos = 0;
+            $maxpos = 0;
+            %vcf2process = ();
+            @linearray = ();
+        }       
+        #Create key for vcf entry (line in file) ->   chr:pos:ref:alts
+        #print STDERR "CHR: ", $$rec[0], ", POS: ", $$rec[1], ", REF: ", $$rec[3], ", ALTS: ", $$rec[4], "\n";
         
-            if ( $type eq 's' ) 
-            {
-                $conseq = call_conseqs($ensembl,$ref,$pos,$pos,"$ref/$ht");
-            }
-            elsif ( $type eq 'i' ) 
-            {
-                if ( $len<0 )
-                {
-                    # deletion
-                    $conseq = call_conseqs($ensembl,$ref,$pos,$pos-$len-1,"$ht/-");
-                }
-                else
-                {
-                    # insertion
-                    $conseq = call_conseqs($ensembl,$ref,$pos,$pos-1,"-/$ht");
-                }
-            }
-            elsif ( $type eq 'r' ) 
-            {
-                $conseq = {};
-            }
-            else 
-            {
-                warn("Unknown event type: $type .. $chr $pos $ref $alt\n");
-                $conseq = {}; 
-            }
-
-            if ( scalar %$conseq )
-            {
-                push @conseqs, join('+',sort(keys %$conseq));
-            }
+#           for my $pringle ( @$rec ) {
+#         print STDERR "\tPRING: ", $pringle, "\n";
+#           }
+        
+        my $vcfkey = join(":", $$rec[0],$$rec[1],$$rec[3],$$rec[4]);
+        #Get minimum position value (for Tabix call)
+        if ($minpos == 0 || $minpos > $$rec[1]) {
+            $minpos = $$rec[1];
+        } 
+        #Get maximum position value
+        if ($maxpos < $$rec[1]) {
+            $maxpos = $$rec[1];
         }
-        if ( scalar @conseqs )
-        {
-            $$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>join(',',@conseqs));
-        }
-        print join("\t",@$rec) . "\n";
+        #Add key:line to hash
+        $vcf2process{$vcfkey} = $rec;
+        push @linearray, $vcfkey;
+        $lines ++;
 
         $lastChr = $$rec[0];
+
     }
+    #Mop up any remaining entries
+    if ($lines > 0 && @linearray > 0) {
+        process_batch($index_vcf, "$minpos-$maxpos", \%vcf2process, \@linearray, $vcf);
+    }
+    my $tp1 = Benchmark->new;
+    my $tpd = timediff($tp1, $tp0);
+    print STDERR "Loading consequences data took:",timestr($tpd),"\n";    
+}
+
+
+# Process batch
+# Handle a bunch of lines simultaneously to cut down on index-file fetches
+# args - 
+# index_vcf : file to use as a cache of called consequences
+# chr_location: min-max location string
+# vcf2process: hash of lines to annotate by key of chr:pos:ref:alt
+# linearray: ordered list of vcf2process keys so we put them back in the right order
+# vcf: Vcf.pm object of vcf we're annotating
+sub process_batch
+{
+    my ($index_vcf, $chr_location, $vcf2process, $linearray, $vcf) = @_;
+
+    my %vcf_cache;
+    if ($index_vcf){
+        # build a hash of cache lines
+        my $chr = $$vcf2process{$$linearray[0]}[0];
+
+        #Make call to tabix using parameters generated above
+        my @index_search = `tabix $index_vcf $chr:$chr_location`;
+        for (@index_search) 
+        {
+            my @line = split("\t", $_);
+            #Get CSQ info from the data extracted from the indexed file
+            my $info_csq = return_info_field($line[7], 'CSQ');
+            if ( $info_csq ) 
+            {
+                #Construct key from indexed data file to compare to input data
+                my $indexkey = join(":", $line[0],$line[1],$line[3],$line[4]);
+                if (exists $vcf2process->{$indexkey}) 
+                {
+                    $vcf_cache{$indexkey} = $info_csq;
+                }
+            }
+        }
+    }
+            
+    foreach my $vcfkey ( @$linearray ) 
+    {
+        my $rec = $vcf2process->{$vcfkey};
+        if ($passonly && $$rec[6] ne 'PASS' ){
+            # want to skip consequences
+            # so do nothing
+        }
+        else { # it's passonly and a PASS record, or not passonly.  Get consequence!
+            if (exists $vcf_cache{$vcfkey}){
+                $CACHE_HIT++;
+                $$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$vcf_cache{$vcfkey});
+            }
+            else {
+                $CACHE_MISS++;
+                $$rec[7] = process_conseqs($vcfkey, $ensembl, $vcf, $$rec[7]);
+            }
+        }
+        print join("\t",@$rec)."\n";
+    }
+}
+
+sub process_conseqs
+{
+    my ($tag, $ensembl, $vcf, $info) = @_;
+    my @vars = split(':', $tag);
+    my $chr  = $vars[0];
+    my $pos  = $vars[1];
+    my $ref  = $vars[2];
+    my $alts = $vars[3];
+
+    if ( !$include_intergenic && $$ensembl{reader}->is_intergenic($chr,$pos) )
+    {
+        return $info;
+    }
+
+    if ( !$$ensembl{chrslice} or $$ensembl{last_chr} ne $chr )
+    {
+        $$ensembl{last_chr} = $chr;
+        $$ensembl{chrslice} = $$ensembl{slice}->fetch_by_region('chromosome',$chr);
+        if ( !$$ensembl{chrslice} )
+        {
+            warn("No chrslice for $chr\n");
+            return $info;
+        }
+    }
+    my @conseqs = ();
+    for my $alt (split(/,/,$alts))
+    {
+        #print STDERR "Ref: ", $ref, ", Alt: ", $alt, "\n";
+        my ($type,$len,$ht) = $vcf->event_type({REF=>$ref},$alt);
+        my $conseq;
+
+        if ( $type eq 's' ) 
+        {       
+            $conseq = call_conseqs($ensembl,$ref,$pos,$pos,"$ref/$ht");
+        }
+        elsif ( $type eq 'i' ) 
+        {
+            if ( $len<0 )
+            {
+                # deletion
+                $conseq = call_conseqs($ensembl,$ref,$pos,$pos-$len-1,"$ht/-");
+            }
+            else
+            {
+                # insertion
+                $conseq = call_conseqs($ensembl,$ref,$pos,$pos-1,"-/$ht");
+            }
+        }
+        elsif ( $type eq 'r' ) 
+        {
+            return $info;
+        }
+        else 
+        {
+            warn("Unknown event type: $type .. $chr $pos $ref $alt\n");
+            return $info; 
+        }
+
+        if ( scalar %$conseq )
+        {
+
+            # jws 2011-08-07 changed this back to + so the GERP/PolyPhen/etc
+            # sep can be ',' instead of '=' which is invalid VCF.
+
+            push @conseqs, join('+',sort(keys %$conseq));
+        }
+    }
+    if ( scalar @conseqs )
+    {
+        $info = $vcf->add_info_field($info,'CSQ'=>join('+',@conseqs));
+    }
+    return $info;
 }
 
 
@@ -194,8 +341,16 @@ sub call_conseqs
             -adaptor => $$ensembl{variation},
             );
 
-    # Get the consequence types
-    my $cons = $vf->get_all_TranscriptVariations();
+    # Get the consequence types. If the DB fails, flush the buffers to enable restarting.
+    my ($cons,$ok);
+    eval { $cons = $vf->get_all_TranscriptVariations(); $ok=1 };
+    if ( !$ok )
+    {
+        $|=1;
+        print '';
+        confess("Ensembl query failed at $$ensembl{reader}{chr}:$from\n");
+        exit;
+    }
 
     # No consequence - intergenic
     if (!defined $cons)
@@ -213,6 +368,14 @@ sub call_conseqs
         my $gene_name = $gene->external_name||$gene->stable_id;
         my $gene_id   = $gene->stable_id;
         my $strand    = $con->transcript->strand();
+        my $aa_change = $con->pep_allele_string();
+        # decided we prefer A>A rather than A/A
+        if ($aa_change && $aa_change =~ m|/|){ # have alt alleles
+            $aa_change =~ s|/|>|;
+        }
+        else { # no alt alleles, so skip
+            $aa_change = undef;
+        }
 
         foreach my $type (@{$con->consequence_type}) 
         {
@@ -220,10 +383,172 @@ sub call_conseqs
             if ( $type eq 'UPSTREAM' ) { next; }
             if ( $type eq 'INTERGENIC' ) { next; }
              
-            $out{"$type\@$gene_name"} = 1;
-            #print qq[$items[ 0 ]\t$items[ 1 ]\t$items[ 3 ]\t$items[ 4 ]\t$type\t$gene_name\t$gene_id\t$trans_id\t$strand\n];
+            my @data = ($trans_id, $gene_name,$type);
+            push @data, $aa_change if $aa_change;
+
+            my $con_str = join ":",@data;
+
+			if ( $type eq 'NON_SYNONYMOUS_CODING' && $species eq 'Homo_sapiens' && $allele !~ '-') { # ignore indels
+				$con_str .= get_nssnp_annotations($con);
+			}
+
+            #warn "$con_str\n";
+            #$out{"$type\@$gene_name"} = 1;
+
+            $out{$con_str} = 1;
         }
     }
+
+	if ($gerp && $allele !~ '-') {	# ignore indels
+
+                # jws 2011-08-07 Can't have "GERP=", as '=' is
+                # not allowed with an INFO string.  Use ','
+                # instead.
+		my $gerp_text = "GERP,";
+
+		# minimum slice size 2 for gerp scores
+		my $gerp_slice = $ensembl->{slice}->fetch_by_region('chromosome', $vf->seq_region_name, $vf->start, $vf->start+1);
+		my $scores = $ensembl->{cs_adaptor}->fetch_all_by_MethodLinkSpeciesSet_Slice($ensembl->{mlss}, $gerp_slice);
+
+		if ($$scores[0] ) {
+			$gerp_text .= sprintf ("%.2f", $$scores[0]->diff_score);
+			$out{$gerp_text} = 1;
+		}
+	}
+
     return \%out;
+}
+
+sub get_nssnp_annotations
+{
+    my ($tv) = @_;
+    my $pred_text = "";
+
+	return if !($tv->affects_transcript);
+
+	foreach my $tva(@{$tv->get_all_alternate_TranscriptVariationAlleles}) {
+
+		foreach my $tool (qw(SIFT PolyPhen Condel)) {
+			my $lc_tool = lc($tool);
+
+			my $pred_meth   = $lc_tool.'_prediction';
+			my $score_meth  = $lc_tool.'_score';
+
+			my $pred = $tva->$pred_meth;
+
+			if($pred) {
+                                # jws 2011-08-07 Can't have "$tool=", as '=' is
+                                # not allowed with an INFO string.  Use ','
+                                # instead.
+				$pred_text .= ":$tool,";
+
+				$pred =~ s/\s+/\_/;
+				$pred_text .= $pred;
+
+				my $score = $tva->$score_meth;
+
+				if(defined $score) {
+					$pred_text .= "($score)";
+				}
+			}
+		}
+
+		# Use first alternate_TranscriptVariationAllele with predictions
+		if ($pred_text) {
+			if ($grantham) {
+				my $ref_aa = $tv->get_reference_TranscriptVariationAllele()->peptide();
+				my $var_aa = $tva->peptide();
+				$pred_text .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
+			}
+			last;
+		}
+	}
+
+    return $pred_text;
+}
+
+#Should/can this be added to Vcf.pm??
+sub return_info_field
+{
+    my ($info,$search) = @_;
+
+    my $out;
+
+    # Split the info string on the ';' first, then extract the field of interest by splitting on equals
+    for my $field (split(/;/,$info))
+    {
+    my ($key,$value) = split(/=/,$field);
+    if ( $key eq $search ) { return $value; }
+    }
+
+    # Field not found, return 0
+    return 0;
+}
+
+
+#------------------------
+
+package EnsemblReader;
+
+use strict;
+use warnings;
+use Carp;
+
+sub EnsemblReader::new
+{
+    my ($class,@args) = @_;
+    my $self = @args ? {@args} : {};
+    bless $self, ref($class) || $class;
+    if ( !exists($$self{slice}) ) { $self->throw("Missing the 'slice' key"); }
+    $$self{buffer_size} = 10_000_000;
+    return $self;
+}
+
+sub EnsemblReader::throw
+{
+    my ($self,@msg) = @_;
+    confess @msg;
+}
+
+sub EnsemblReader::read_transcripts
+{
+    my ($self,$chr,$pos) = @_;
+
+    if ( !exists($$self{transcripts}) or $$self{chr} ne $chr or $pos<$$self{from} or $pos>$$self{to} )
+    {
+        $$self{chr}  = $chr;
+        $$self{from} = $pos;
+        $$self{to}   = $pos + $$self{buffer_size};
+
+        $$self{transcripts} = [];
+
+        my $slice = $$self{slice}->fetch_by_region('chromosome',$$self{chr},$$self{from},$$self{to});
+        unless ($slice){
+            $self->throw("No genome slice found for ".$$self{chr}.":".$$self{from}."-".$$self{to});
+        }
+            
+        my @genes = @{$slice->get_all_Genes()};
+        for my $gene (@genes)
+        {
+            my $start  = $gene->start + $pos - 1; 
+            my $end    = $gene->end   + $pos - 1; 
+            if ( $end<$start ) { $self->throw("FIXME: $start-$end"); }
+            push @{$$self{transcripts}}, $$self{from},$$self{to};
+        }
+    }
+    return $$self{transcripts};
+}
+
+sub EnsemblReader::is_intergenic
+{
+    my ($self,$chr,$pos) = @_;
+    my $trs = $self->read_transcripts($chr,$pos);
+    my $n   = @$trs;
+    for (my $i=0; $i<$n; $i+=2) 
+    {
+        if ( $$trs[$i] > $pos )  { return 1; }
+        if ( $$trs[$i] <= $pos && $$trs[$i+1] >= $pos ) { return 0; }
+    }
+    return 1;
 }
 

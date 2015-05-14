@@ -11,11 +11,12 @@ BEGIN {
         plan skip_all => "Skipping all tests because VRTrack tests have not been configured";
     }
     else {
-        plan tests => 51;
+        plan tests => 64;
     }
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Image');
+    use_ok('VRTrack::AutoQC');
     use_ok('VRTrack::Individual');
     use_ok('VRTrack::Lane');
     use_ok('VRTrack::Mapper');
@@ -51,6 +52,33 @@ ok $image->update, 'update worked on image';
 $image = VRTrack::Image->new($vrtrack, $image_id);
 is_deeply [$image->id, $image->name, $image->image], [$image_id, $image_name, $imagedata], 'after update, the things really were set';
 
+# AutoQC 
+my $reason='The lane failed the NPG QC check, so auto-fail';
+ok my $autoqc = VRTrack::AutoQC->create($vrtrack, 'NPG QC status', 0, $reason), 'autoqc create worked';
+my $autoqc_id = $autoqc->id;
+$autoqc = VRTrack::AutoQC->new($vrtrack, $autoqc_id);
+is $autoqc->id, $autoqc_id, 'AutoQC new returned the autoqc we made before';
+is $autoqc->reason(),$reason, 'autoqc reason stored correctly';
+
+# test autoqc getters/setters
+my $qc_test = 'autoqc_qc_test_name_changed';
+is $autoqc->test($qc_test), $qc_test, 'autoqc test name could be get/set';
+my $qc_reason= 'modified test result reason';
+is $autoqc->reason($qc_reason), $qc_reason, 'autoqc reason name could be get/set';
+my $qc_result= 0;
+is $autoqc->result($qc_result), $qc_result, 'autoqc result could be updated';
+ok $autoqc->update, 'update worked on autoqc';
+
+# Add autoqcs to mapping stats
+my $mapstats = "VRTrack::Mapstats"->create($vrtrack);
+ok $autoqc = $mapstats->add_autoqc('NPG QC status',1,'The lane failed the NPG QC check'),'added autoqc to mapping stats';
+my @autoqc_statuses = @{ $mapstats->autoqcs() };
+is scalar @autoqc_statuses,1, 'got autoqc array ref back from db';
+
+# update autoqc test result
+ok $autoqc = $mapstats->add_autoqc('NPG QC status',0,'The lane passed the NPG QC check'),'re-added (updated) an autoqc test';
+is $autoqc->result(), 0, 'autoqc result was updated';
+
 # individual
 # setting species_id and population id for the first individual
 my $ind_name = "test ind";
@@ -81,6 +109,8 @@ is $individual->population($pop_name), undef, 'population() returned undef when 
 is $individual->population_id, undef, 'population_id starts undefined';
 ok my $pop = $individual->add_population($pop_name), 'add_population made a new population';
 ok my $pop_id = $pop->id, 'population has an id';
+my $values = VRTrack::Individual->_all_values_by_field($vrtrack, 'name', 'individual_id');
+is($values->[0], $ind_name, " _all_values_by_field should return first individual name value correctly");
 
 is $individual->population_id, $pop_id, 'population_id was updated';
 

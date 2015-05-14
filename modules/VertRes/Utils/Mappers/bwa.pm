@@ -50,7 +50,6 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args);
-    
     return $self;
 }
 
@@ -60,7 +59,7 @@ sub _bsub_opts {
     my %bsub_opts = (bsub_opts => '');
     
     if ($action eq 'map') {
-        $bsub_opts{bsub_opts} = '-q long -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
+        $bsub_opts{bsub_opts} = '-q long -M7900 -R \'select[mem>7900] rusage[mem=7900]\'';
     }
     else {
         return $self->SUPER::_bsub_opts($lane_path, $action);
@@ -81,7 +80,23 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
-    return VertRes::Wrapper::bwa->new(verbose => $self->verbose);
+    my $exe = $self->{exe} || 'bwa';
+    return VertRes::Wrapper::bwa->new(verbose => $self->verbose, exe => $exe);
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
+    my $self = shift;
+    return 'bwa';
 }
 
 =head2 split_fastq
@@ -192,6 +207,7 @@ sub do_mapping {
     
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(@args, aln_q => $aln_q);
+    $self->_add_command_line($wrapper->command_line());
     
     # bwa directly generates sam files, so nothing futher to do
     

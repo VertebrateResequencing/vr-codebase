@@ -49,10 +49,10 @@ qq[##INFO=<ID=DP4,Number=4,Type=Integer,Description="Read depth for 1) forward r
 ##INFO=<ID=AF1,Number=1,Type=Float,Description="EM estimate of site allele frequency without prior">
 ##INFO=<ID=AFE,Number=1,Type=Float,Description="Posterior expectation of site allele frequency (with prior)">
 ##INFO=<ID=HWE,Number=1,Type=Float,Description="P-value for Hardy-Weinberg equillibrium (chi-square test)">
-##INFO=<ID=MQ,Number=1,Type=Integer,Descriptin="RMS mapping quality">
-##INFO=<ID=CI95,Number=-1,Type=Float,Descriptin="Equal-tail (Bayesian) credible interval of the site allele frequency at the 95% level.">
-##INFO=<ID=DP,Number=1,Type=Integer,Descriptin="The number of reads covering or bridging POS.">
-##INFO=<ID=INDEL,Number=0,Type=Flag,Descriptin="Indicates that the variant is an INDEL.">
+##INFO=<ID=MQ,Number=1,Type=Integer,Description="RMS mapping quality">
+##INFO=<ID=CI95,Number=-1,Type=Float,Description="Equal-tail (Bayesian) credible interval of the site allele frequency at the 95% level.">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="The number of reads covering or bridging POS.">
+##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
 ##FORMAT=<ID=GL,Number=3,Type=Float,Description="Likelihoods for RR,RA,AA genotypes (R=ref,A=alt)">

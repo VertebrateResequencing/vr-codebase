@@ -1,5 +1,5 @@
 previously.txt
-MYMETA.yml
+MYMETA.*
 modules/VRTrack/Testconfig.pm
 .*~
 *~
@@ -9,3 +9,4 @@ modules/VRTrack/Testconfig.pm
 _build
 blib
 Build
+perl5lib_dependencies

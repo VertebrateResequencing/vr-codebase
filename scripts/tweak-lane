@@ -37,6 +37,14 @@ for my $lane (@{$$opts{lanes}})
     {
         reset_mapped($vrtrack,$path,$lane,$opts);
     }
+    elsif ( $$opts{reset} eq 'improved' )
+    {
+        reset_improved($vrtrack,$path,$lane,$opts);
+    }
+    elsif ( $$opts{reset} eq 'rnaseq' )
+    {
+        reset_rnaseq($vrtrack,$path,$lane,$opts);
+    }
     else
     {
         error("Unknown flag: $$opts{reset}\n");
@@ -61,7 +69,7 @@ sub error
         "   -c, --clean                      If set, files will be deleted from the hierarchy.\n",
         "   -d, --db <root:db>               Use the database and the root specified.\n",
         "   -i, --info                       Show what hierarchy does the lane belong to.\n",
-        "   -r, --reset <string>             Reset the processed flag so that the lane will be scheduled again for <import|qc|mapped>.\n",
+        "   -r, --reset <string>             Reset the processed flag so that the lane will be scheduled again for <import|qc|mapped|improved>.\n",
         "   -h, -?, --help                   This help message.\n",
         "\n";
 }
@@ -265,6 +273,49 @@ sub reset_mapped
     }
 
     $vrlane->is_processed('mapped',0);
+    $vrlane->update();
+}
+
+sub reset_improved
+{
+    my ($vrtrack,$path,$lane,$opts) = @_;
+
+    my $vrlane = VRTrack::Lane->new_by_name($vrtrack,$lane);
+
+    if ( $$opts{clean} )
+    {
+        my $rm_cmd = qq[rm -f $path/.realign* $path/.recalibrate* $path/.rewrite_header* $path/.sort_complete* $path/*.pe.realigned.sorted.recal.calmd.bam $path/*.pe.realigned.sorted.recal.calmd.bam.bas $path/*.pe.realigned.sorted.bam.recal_data.csv $path/*.bas $path/_job_status $path/*.pe.realigned.sorted.recal.calmd.bam.flagstat $path/_index_* $path/_rewrite_header_* $path/_recalibrate_* $path/_sort_* $path/_realign_* $path/_calmd_*];
+        if ( !$$opts{dont_ask} )
+        {
+            confirm_action("About to delete\n\t$rm_cmd\n");
+        }
+        print "$rm_cmd\n";
+        `$rm_cmd`;
+    }
+
+    $vrlane->is_processed('improved',0);
+    $vrlane->update();
+}
+
+
+sub reset_rnaseq
+{
+    my ($vrtrack,$path,$lane,$opts) = @_;
+
+    my $vrlane = VRTrack::Lane->new_by_name($vrtrack,$lane);
+
+    if ( $$opts{clean} )
+    {
+        my $rm_cmd = qq[rm -f $path/*.intergenic.* $path/*calculate_expression* $path/*.coverageplot.gz $path/*.expression.csv $path/_cleanup_done $path/_update_db_done $path/_job_status];
+        if ( !$$opts{dont_ask} ) 
+        {
+            confirm_action("About to delete\n\t$rm_cmd\n");
+        }
+        print "$rm_cmd\n";
+        `$rm_cmd`;
+    }
+
+    $vrlane->is_processed('rna_seq_expression',0);
     $vrlane->update();
 }
 

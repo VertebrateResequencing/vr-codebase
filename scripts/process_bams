@@ -1,0 +1,269 @@
+#!/usr/bin/env perl
+# 
+# Script to do common processing operations on BAM files in parallel.
+# 
+# Author: Shane McCarthy, sm15@sanger.ac.uk
+# 
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use VertRes::Utils::FileSystem;
+use VertRes::Utils::Sam;
+use VertRes::Wrapper::samtools;
+use VertRes::IO;
+use Time::Format;
+use Getopt::Long;
+
+sub new 
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+    $$self{usage} .= qq[
+Description: Script to do common processing operations on BAM files.
+
+Usage: $0 [+RUNNER_OPTIONS] [-SCRIPT_OPTIONS]
+
+A list of BAMs must be supplied with either the --fofn or --bams options. Script 
+options may be supplied at the command line or in a config file with the +config Runner 
+module option.
+
+Options:
+   -f  --fofn <file>                   file containing a list of BAM files to process
+       --bams <bam1 bam2 bam3 ...>     list of BAM files to process
+       --operations <op1 op2 op3 ...>  operations to perform; available operations:
+                                            bai bas bc md5 bai.md5 bas.md5 bc.md5
+       --only <regex>                  regex to filter the list of BAMs
+       --bamcheck_cmd <cmd>            bamcheck command to use; defaults to 'bamcheck'
+       --release_date  YYYYMMDD        release date to be used in bas file, format YYYYMMDD;
+                                            defaults to current day
+       --sequence_index <file>         path to sequence index (optional)
+       --merge_bas_files <file>        file to create with a merged bas file (optional)
+   -h  --help                          display this help message
+
+Example:
+   process_bams +loop 10 +verbose +maxjobs 20 --operations bai bas md5 bai.md5 bas.md5 \\
+                --bams b1.bam b2.bam b3.bam b4.bam
+   
+   This will create bai and bas files for each of the given BAMs as well as md5 files for 
+   all the files.
+
+];
+
+    $$self{_sampleconf} = qq[# Sample config file for $0
+
+operations => [qw(bai bas md5 bai.md5 bas.md5)],
+merge_bas_files => '20101123.alignment.index.bas',
+only => qq[chrom20|(un)?mapped],
+release_date => 20101123,
+sequence_index => '20101123.sequence.index',
+fofn => 'by_sample_chromosome_bams.fofn',
+
+];
+    
+    $$self{release_date} = $time{'yyyymmdd'};
+    $$self{sequence_index} = '';
+    $$self{bamcheck_cmd} = 'bamcheck';
+    $$self{merge_bas_files} = '';
+    
+    my @supported_operations = qw(bai bas bc md5 bai.md5 bas.md5 bc.md5);
+    map { $$self{$_} = 0; } @supported_operations;
+    
+    return $self;
+}
+
+sub parse_args 
+{
+    my ($self) = @_;
+    
+    my $help;
+    GetOptions(
+        'f|fofn=s',            \$$self{fofn},
+        'ops|operations=s{,}', \@{$$self{operations}},
+        'bamcheck_cmd=s',      \$$self{bamcheck_cmd},
+        'sequence_index=s',    \$$self{sequence_index},
+        'release_date=s',      \$$self{release_date},
+        'bams=s{,}',           \@{$$self{bam_list}},
+        'only=s',              \$$self{only},
+        'merge_bas_files=s',   \$$self{merge_bas_files},
+        'h|help',              \$help
+    );
+    $self->throw if ($help || @ARGV);
+    
+    # Find out the operations that will be performed
+    unless ( @{$$self{operations}} ) { $self->throw("No processing operations supplied.\n"); }    
+    foreach my $op (@{$$self{operations}}) 
+    {
+        $self->throw("Operation '$op' is not supported\n") unless exists($$self{$op});
+        $$self{$op} = 1;
+    }
+    $self->throw("Can't merge bas files unless bas included in operations list\n") if ( $$self{merge_bas_files} && !$$self{bas} );
+    
+    # Find the list of BAMs we are to process
+    if ( !(exists $$self{bams}) || @{$$self{bams}} ) 
+    {
+        unless ( $$self{fofn} xor @{$$self{bam_list}}) { $self->throw("Supply one of fofn or bams options.\n"); }  
+        
+        my @bams;
+        if ( $$self{fofn} ) 
+        {
+            @bams = VertRes::IO->new()->parse_fofn($$self{fofn}, '/');
+        } 
+        else 
+        {
+           @bams = @{$$self{bam_list}};
+        }
+        @bams || $self->throw("No BAMs supplied\n");
+        
+        # Filter BAMs
+        if ($$self{only}) 
+        {
+            @bams = grep { /$$self{only}/ } @bams;
+        }
+        @bams || $self->throw("No BAMs pass filters\n");
+        
+        $$self{bams} = \@bams;
+    }
+}
+
+sub main 
+{
+    my ($self) = @_;
+    
+    $self->parse_args();
+    
+    my @pending;
+    foreach my $bam (@{$$self{bams}})
+    {
+        $self->throw("$bam does not appear to be a BAM file\n") unless ($bam =~ /\.bam$/);
+        
+        my ($bai, $bas, $bc) = (qq[$bam.bai], qq[$bam.bas], qq[$bam.bc]);
+        if ( -s $bam )
+        {
+            $self->spawn('md5', qq[$bam.md5], $bam) if $$self{md5};
+            
+            # index
+            $self->spawn('index', $bai, $bam) if $$self{bai};
+            if ( $$self{'bai.md5'} && $self->is_finished($bai) ) 
+            {
+                $self->spawn('md5', qq[$bai.md5], $bai) 
+            } 
+            elsif ($$self{'bai.md5'}) 
+            {
+                push @pending, qq[$bai.md5];
+            }
+            
+            # bas
+            $self->spawn('bas', $bas, $bam) if $$self{bas};
+            if ( $$self{'bas.md5'} && $self->is_finished($bas) ) 
+            {
+                $self->spawn('md5', qq[$bas.md5], $bas) 
+            } 
+            elsif ($$self{'bas.md5'})
+            {
+                push @pending, qq[$bas.md5];
+            }
+            
+            # bamcheck
+            $self->spawn('bc', $bc, $bam) if $$self{bc};
+            if ( $$self{'bc.md5'} && $self->is_finished($bc) ) 
+            {
+                $self->spawn('md5', qq[$bc.md5], $bc) 
+            } 
+            elsif ($$self{'bc.md5'})
+            {
+                push @pending, qq[$bc.md5];
+            }
+        } 
+        else 
+        {
+            $self->debugln($bam, " does not exist... skipping");
+            push @pending, ($bam, map { qq[$bam.$_] } @{$$self{operations}} );
+        }
+    }
+    $self->wait(@pending);
+    
+    $self->spawn('merge_bas_files', $$self{merge_bas_files}) if ($$self{merge_bas_files});
+    
+    $self->wait();
+    
+    $self->all_done();
+}
+
+# Create md5 file for a given file
+sub md5 
+{
+    my ($self, $md5, $file) = @_;
+    my $fsu = VertRes::Utils::FileSystem->new();
+    $fsu->calculate_md5($file, qq[$md5.tmp]);
+    $self->throw(qq[md5sum failed for $file\n]) unless -s qq[$md5.tmp];
+    $self->cmd(qq[mv $md5.tmp $md5]);
+}
+
+# Create BAM index file
+sub index 
+{
+    my ($self, $bai, $bam) = @_;    
+    my $samtools = VertRes::Wrapper::samtools->new(verbose => $$self{verbose}, quiet => 1);
+    $samtools->run_method('system');
+    $samtools->index($bam, qq[$bai.tmp]);
+    $samtools->run_status >= 1 || $self->throw("Failed to create $bai\n");
+    $self->cmd(qq[mv $bai.tmp $bai]);
+}
+
+# Create BAM statistics (bas) file
+sub bas 
+{
+    my ($self, $bas, $bam) = @_;
+    my $su = VertRes::Utils::Sam->new();
+    $su->bas($bam, $$self{release_date}, qq[$bas.tmp], $$self{sequence_index});
+    $self->throw(qq[bas calculation failed for $bam\n]) unless -s qq[$bas.tmp]; 
+    $self->cmd(qq[mv $bas.tmp $bas]);
+}
+
+# Create bamcheck file
+sub bc 
+{
+    my ($self, $bc, $bam) = @_;
+    $self->cmd(qq[$$self{bamcheck_cmd} $bam > $bc.tmp]);
+    $self->throw(qq[bamcheck failed for $bam\n]) unless -s qq[$bc.tmp];
+    $self->cmd(qq[mv $bc.tmp $bc]);
+}
+
+# Merge all bas files
+sub merge_bas_files 
+{
+    my ($self) = @_;
+    my @bas_files = map { qq[$_.bas] } @{$$self{bams}};
+    open my $fh, qq[>$$self{merge_bas_files}.tmp];
+    $fh || $self->throw("Could not open $$self{merge_bas_files}.tmp");
+    my $first_bas = shift @bas_files;
+    print $fh `cat $first_bas`;
+    foreach my $bas (@bas_files)
+    {
+        print $fh `awk 'NR>1' $bas`;
+    }
+    close $fh;
+    $self->throw(qq[merge of bas files failed\n]) unless -s qq[$$self{merge_bas_files}.tmp];
+    $self->cmd(qq[mv $$self{merge_bas_files}.tmp $$self{merge_bas_files}]);
+}
+
+sub cmd 
+{
+    my ($self, $cmd) = @_;
+    Utils::CMD($cmd, { verbose => 1 });
+}

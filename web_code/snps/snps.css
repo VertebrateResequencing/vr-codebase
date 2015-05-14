@@ -45,8 +45,35 @@ ul.example { margin-top:0.2em; margin-bottom:0.2em; }
     padding:0px;
     margin:0px;
 }
-input { font-size:smaller; }
-.button { cursor:pointer; }
+
+.inputbox {
+font-size:smaller;
+    border: 1px solid #006;
+    background: #ffc;
+}
+.inputbox:hover {
+    border: 1px solid #f00;
+    background: #ff6;
+}
+.button_submit {
+    border: 1px solid #006;
+    background: #ccf;
+    cursor:pointer;
+}
+.button_submit:hover {
+    border: 1px solid #f00;
+    background: #eef;
+}
+
+.button {
+	cursor:pointer;
+}
+
+.button_sel {
+	cursor:pointer;
+	text-decoration:underline;
+}
+
 
 #form { padding-top:1em; }
 #form fieldset, #upper_nav fieldset
@@ -116,6 +143,7 @@ table.results
 .results th { text-align:center; vertical-align:bottom; background-color:#F4F8FD; border-bottom:dotted #83A4C3 1px; }
 .results td { margin:0px; text-align:center; padding:0em 0.3em 0em 0.3em; }
 .resultsbar { border-right:dotted #83A4C3 1px; }
+.resultsdemarc { border-bottom:dotted #83A4C3 1px; }
 .resultsdiv 
 {
     float:left;
@@ -137,6 +165,7 @@ table.results
 .c1, td.c1 { background-color:#89bbee; color:#2f4f4f; }       /* 3PRIME_UTR - light blue */
 .c2, td.c2 { background-color:#89bbee; color:#2f4f4f; }       /* 5PRIME_UTR - light blue */
 .c3, td.c3 { background-color:#ff7200; color:#2f4f4f; }       /* ESSENTIAL_SPLICE_SITE  - orange */
+.c4, td.c4 { background-color:#cd950c; color:#2f4f4f; }       /* Intergenic  - darkgoldenrod3 */
 .c5, td.c5 { background-color:#4577a5; color:white; }         /* Intronic - dark blue */
 .c6, td.c6 { background-color:#ffd500; color:#2f4f4f; }       /* NON_SYNONYMOUS_CODING - yellow */
 .c7, td.c7 { background-color:#87a04d; color:#2f4f4f; }       /* SYNONYMOUS_CODING - greenish */
@@ -148,6 +177,8 @@ table.results
 .c9, td.c9   { background-color:#846d53; color:white; }        /* STOP_GAINED - brown */  
 .c10, td.c10 { background-color:#846d53; color:white; }        /* STOP_LOST   - brown */  
 .c11, td.c11 { background-color:#846d53; color:white; }        /* FRAME_SHIFT - brown */  
+.c12, td.c12 { background-color:#ee8888; color:#2f4f4f; }        /* COMPLEX_INDEL - light coral */  
+.c14, td.c14 { background-color:#bebebe; color:#2f4f4f; }        /* LOW_QUALITY_REF - grey out */  
 
 #legend 
 { 
@@ -167,7 +198,8 @@ table.results
 #llist * { padding:0px 0.3em 0em 0.3em; border-collapse:collapse; margin:0px; border:0px; }
 
 #params { font-size:smaller; }
-#params td { vertical-align:top; padding-top:0.5em; }
+#params td { vertical-align:top; padding-top:0.5em; }border-style:solid;
+border-color:red;
 
 /* --------------- The LookSeq page ----------------------- */
 
@@ -232,3 +264,21 @@ table.results
 #gc_image { padding-bottom:0.5em; }
 #coverage_image { padding-bottom:0.5em; }
 
+.transform_text
+{
+	display: block;
+	writing-mode: tb-rl;
+	-webkit-transform: rotate(90deg);	
+	-moz-transform: rotate(90deg);
+	-ms-transform: rotate(90deg);
+	-o-transform: rotate(90deg);
+	transform: rotate(90deg);
+	position: absolute;
+	right: 0;
+	bottom: 9px;
+	font-size: 10px;
+}
+
+.alt_alleles td{
+	white-space:nowrap;
+} 

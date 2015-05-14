@@ -81,10 +81,10 @@ sub new {
     
     $self->{picard_dir} = $self->exe() || $DEFAULT_PICARD_DIR;
     my $java_mem = delete $self->{java_memory} || 5000;
-    $self->{base_exe} = "java -Xmx${java_mem}m -jar ";
+    $self->{base_exe} = "java -Xmx${java_mem}m -XX:+UseSerialGC -jar ";
     
     # our bsub jobs will get killed if we don't select high-mem machines
-    $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
+    $self->bsub_options(M => ($java_mem), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     my $stringency = delete $self->{validation_stringency} || 'silent';
     $self->{_default_validation_stringency} = uc($stringency);
@@ -184,6 +184,12 @@ sub merge_and_check {
     $self->run_method('system');
     my $tmp_out = $out_bam;
     $tmp_out =~ s/\.bam$/.tmp.bam/; # won't work unless the final suffix is .bam
+    
+    # if a temp file already exists it means the previous run failed partially, delete and try again
+    if(-e $tmp_out)
+    {
+      unlink("$tmp_out");
+    }
     $self->MergeSamFiles($tmp_out, @{$in_bams}, %opts);
     $self->throw("failed during the merge step, giving up for now") unless $self->run_status >= 1;
     
@@ -485,6 +491,96 @@ sub CalculateHsMetrics {
     $self->register_output_file_to_check($outfile);
     $self->_set_params_and_switches_from_args(%args);
 
+    return $self->run(@file_args);
+}
+
+=head2 SamToFastq
+
+ Title   : SamToFastq
+ Usage   : $wrapper->SamToFastq('in_bam', $out_fastq, %options);
+ Function: SamToFastq... 
+ Returns : n/a
+ Args    : list of file paths (input bam, output fastq), followed by file path 
+           for mate pair fastq if mate paired and then followed by a hash of
+           options understood by SamToFastq, eg. VALIDATION_STRINGENCY =>
+           'SILENT'. (case matters: must be uppercase)
+
+=cut
+
+sub SamToFastq {
+    my ($self, $bam, $fastq, @args) = @_;
+    
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'SamToFastq.jar'));
+    $self->run_method('system');
+    
+    $self->switches([]);
+    $self->params([qw(OUTPUT_PER_RG OUTPUT_DIR RE_REVERSE INCLUDE_NON_PF_READS 
+	               CLIPPING_ATTRIBUTE CLIPPING_ACTION TMP_DIR 
+	               VERBOSITY QUIET VALIDATION_STRINGENCY 
+                   COMPRESSION_LEVEL SORT_ORDER MAX_RECORDS_IN_RAM)]);
+    
+    my (@fastqs, @params, @check);
+	push @fastqs, " FASTQ=$fastq";
+	push @check, $fastq;
+    foreach my $arg (@args) {
+        if (( $arg =~ /\.fastq$/ || $arg =~ /\.fq$/) && ! @params) {
+            push(@fastqs, " SECOND_END_FASTQ=$arg");
+			push @check, $arg;
+        }
+        else {
+            push(@params, $arg);
+        }
+    }
+	$self->throw("Too many fastq files supplied, @fastqs\n") if (scalar @fastqs > 2);
+    my @file_args = (" INPUT=$bam", @fastqs);
+    
+    my %params = @params;
+    $self->_handle_common_params(\%params);
+    
+    foreach my $fq (@check) {
+	    $self->register_output_file_to_check($fq);
+	}
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 AddOrReplaceReadGroups
+
+ Title   : AddOrReplaceReadGroups
+ Usage   : $wrapper->AddOrReplaceReadGroups('in_bam', '$out_bam', %options);
+ Function: AddOrReplaceReadGroups... Replaces all read groups in the 'in_bam' 
+           file with a new read group and assigns all reads to this read group 
+           in the 'out_bam'.
+ Returns : n/a
+ Args    : list of file paths (input bam, output bam), followed by a hash of
+           options understood by AddOrReplaceReadGroups, 
+           eg. VALIDATION_STRINGENCY => 'SILENT'. (case matters: must be uppercase)
+
+=cut
+
+sub AddOrReplaceReadGroups {
+    my ($self, $in_bam, $out_bam, %args) = @_;
+    
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'AddOrReplaceReadGroups.jar '));
+    $self->run_method('system');
+    
+    $self->switches([]);
+    $self->params([qw(RGID RGLB RGPL RGPU RGSM RGCN RGDS 
+                   TMP_DIR VERBOSITY QUIET VALIDATION_STRINGENCY 
+                   COMPRESSION_LEVEL SORT_ORDER MAX_RECORDS_IN_RAM)]);
+    
+    unless ($args{RGLB} && $args{RGPL} && $args{RGPU} && $args{RGSM}) {
+        $self->throw("Picard requires that readgroup tags LB, PL, PU and SM must all be supplied");
+    }
+    
+    my @file_args = (" INPUT=$in_bam", " OUTPUT=$out_bam");
+    
+    $self->_handle_common_params(\%args);
+    
+    $self->register_output_file_to_check($out_bam);
+    $self->_set_params_and_switches_from_args(%args);
+    
     return $self->run(@file_args);
 }
 
