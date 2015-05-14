@@ -120,7 +120,26 @@ sub build_bcf_query_command {
 sub get_total_number_of_snps {
 
   my ($self) = @_;
+  my $total_number_of_snps = _file_path( $self, q(_total_number_of_snps.csv) );
+  my $cmd = $self->total_number_of_snps_command;
+  my $exit_code = Utils::CMD($cmd);
 
+  open (my $fh, '<', $total_number_of_snps) or die "$total_number_of_snps: $!";
+  return( _count_file_rows($self,$fh) );
+}
+
+sub _count_file_rows {
+
+  my ($self,$fh) = @_;
+  my $number_of_rows = 0;
+  while( my $row = <$fh> ) {
+    chomp($row);
+    if($row && $row ne q()) {
+      $number_of_rows++;
+    }
+  }
+  close($fh);
+  return $number_of_rows;
 }
 
 sub get_number_of_het_snps {
