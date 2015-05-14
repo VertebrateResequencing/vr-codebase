@@ -14,35 +14,49 @@ use base qw(VertRes::Pipelines::TrackQC_Bam);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VertRes::Parser::fastqcheck;
+use VertRes::Wrapper::bwa;
+use VertRes::Utils::Sam;
+use VRTrack::Assembly;
+use Pathogens::Parser::GenomeCoverage;
+use Bio::Metagenomics::External::Kraken;
+use Utils;
 
 our @actions =
 (
     # Takes care of naming convention, fastq.gz file names should match
-    #   the lane name. 
+    #   the lane name.
     {
         'name'     => 'rename_files',
         'action'   => \&rename_files,
-        'requires' => \&rename_files_requires, 
+        'requires' => \&rename_files_requires,
         'provides' => \&rename_files_provides,
     },
 
+    # Runs Kraken to get a summary of what organisms are in the reads
+    {
+        'name'     => 'assign_taxonomy',
+        'action'   => \&assign_taxonomy,
+        'requires' => \&assign_taxonomy_requires,
+        'provides' => \&assign_taxonomy_provides,
+    },
+
     # Creates a smaller subsample out of the fastq files to speed up
-    #   the QC pipeline. 
+    #   the QC pipeline.
     {
         'name'     => 'subsample',
         'action'   => \&subsample,
-        'requires' => \&subsample_requires, 
+        'requires' => \&subsample_requires,
         'provides' => \&subsample_provides,
     },
 
-    # Runs bwa to create the .sai files and checks for the presence of 
+    # Runs bwa to create the .sai files and checks for the presence of
     #   adapter sequences.
     {
         'name'     => 'process_fastqs',
         'action'   => \&process_fastqs,
-        'requires' => \&process_fastqs_requires, 
+        'requires' => \&process_fastqs_requires,
         'provides' => \&process_fastqs_provides,
     },
 
@@ -50,7 +64,7 @@ our @actions =
     {
         'name'     => 'map_sample',
         'action'   => \&map_sample,
-        'requires' => \&map_sample_requires, 
+        'requires' => \&map_sample_requires,
         'provides' => \&map_sample_provides,
     },
 
@@ -58,15 +72,23 @@ our @actions =
     {
         'name'     => 'check_genotype',
         'action'   => \&VertRes::Pipelines::TrackQC_Bam::check_genotype,
-        'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_requires, 
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_requires,
         'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_provides,
+    },
+    
+    # Finds percentage of transposons in reads if applicable
+    {
+      'name'     => 'transposon',
+      'action'   => \&transposon,
+      'requires' => \&transposon_requires,
+      'provides' => \&transposon_provides,
     },
 
     # Creates some QC graphs and generate some statistics.
     {
         'name'     => 'stats_and_graphs',
         'action'   => \&stats_and_graphs,
-        'requires' => \&stats_and_graphs_requires, 
+        'requires' => \&stats_and_graphs_requires,
         'provides' => \&stats_and_graphs_provides,
     },
 
@@ -74,7 +96,7 @@ our @actions =
     {
         'name'     => 'auto_qc',
         'action'   => \&VertRes::Pipelines::TrackQC_Bam::auto_qc,
-        'requires' => \&VertRes::Pipelines::TrackQC_Bam::auto_qc_requires, 
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::auto_qc_requires,
         'provides' => \&VertRes::Pipelines::TrackQC_Bam::auto_qc_provides,
     },
 
@@ -82,27 +104,35 @@ our @actions =
     {
         'name'     => 'update_db',
         'action'   => \&VertRes::Pipelines::TrackQC_Bam::update_db,
-        'requires' => \&VertRes::Pipelines::TrackQC_Bam::update_db_requires, 
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::update_db_requires,
         'provides' => \&VertRes::Pipelines::TrackQC_Bam::update_db_provides,
     },
 );
 
-our $options = 
+our $options =
 {
     # Executables
     'blat'            => '/software/pubseq/bin/blat',
     'bwa_exec'        => 'bwa-0.5.3',
     'gcdepth_R'       => '/software/vertres/bin-external/gcdepth.R',
     'glf'             => 'glf',
+    'kraken_exec'     => 'kraken',
+    'kraken_report_exec' => 'kraken-report',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
-
+    
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
-    'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=1]'",
+    'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts_stats_and_graphs'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
+    'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
+    'bsub_opts_subsample'          => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]' -n 2 -R 'span[hosts=1]'",
     'bwa_clip'        => 20,
     'chr_regex'       => '^(?:\d+|X|Y)$',
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
+    'kraken_db'       => '/lustre/scratch108/pathogen/pathpipe/kraken/minikraken_20140330/',
+    'kraken_report'   => 'kraken.report',
     'sample_dir'      => 'qc-sample',
     'sample_size'     => 50e6,
     'stats'           => '_stats',
@@ -146,23 +176,36 @@ our $options =
 
 =cut
 
-sub VertRes::Pipelines::TrackQC_Fastq::new 
+sub VertRes::Pipelines::TrackQC_Fastq::new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
     $self->write_logs(1);
 
-    if ( !$$self{bwa_exec} ) { $self->throw("Missing the option bwa_exec.\n"); }
-    if ( !$$self{gcdepth_R} ) { $self->throw("Missing the option gcdepth_R.\n"); }
-    if ( !$$self{glf} ) { $self->throw("Missing the option glf.\n"); }
-    if ( !$$self{mapviewdepth} ) { $self->throw("Missing the option mapviewdepth.\n"); }
-    if ( !$$self{samtools} ) { $self->throw("Missing the option samtools.\n"); }
-    if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
-    if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
-    if ( !$$self{gc_depth_bin} ) { $self->throw("Missing the option gc_depth_bin.\n"); }
-    if ( !$$self{gtype_confidence} ) { $self->throw("Missing the option gtype_confidence.\n"); }
-    if ( !$$self{sample_dir} ) { $self->throw("Missing the option sample_dir.\n"); }
-    if ( !$$self{sample_size} ) { $self->throw("Missing the option sample_size.\n"); }
+    my @required_opts = qw/
+        bwa_exec
+        gcdepth_R
+        glf
+        kraken_exec
+        kraken_report_exec
+        mapviewdepth
+        samtools
+        fa_ref
+        fai_ref
+        gc_depth_bin
+        gtype_confidence
+        sample_dir
+        sample_size
+    /;
+
+    foreach my $opt (@required_opts) {
+        if ( !$$self{$opt} ) { $self->throw("Missing the option $opt.\n"); }
+    }
+
+    # Set mapper + version
+    my $mapper = VertRes::Wrapper::bwa->new(exe => $self->{'bwa_exec'});
+    $self->{mapper} = 'bwa';
+    $self->{mapper_version} = $mapper->version;
 
     return $self;
 }
@@ -190,16 +233,16 @@ sub rename_files_provides
 }
 
 # The naming convention is to name fastq files according
-#   to the lane, e.g. 
+#   to the lane, e.g.
 #       project/sample/tech/libr/lane/lane_1.fastq.gz    .. pair 1
 #       project/sample/tech/libr/lane/lane_2.fastq.gz    .. pair 2
 #       project/sample/tech/libr/lane/lane_3.fastq.gz    .. single
 #
-# The lanes named like "lane_s_1" complicate the algorithm: for 
+# The lanes named like "lane_s_1" complicate the algorithm: for
 #   paired reads, it should be ignored.  For unpaired, it should be used.
 #   Luckily, these were treated already in Import.pm. Rename will have a
 #   problem only with lanes which did not go through Import.pm and contain
-#   these _s_ files. 
+#   these _s_ files.
 #
 sub rename_files
 {
@@ -227,11 +270,11 @@ sub rename_files
         }
         elsif ( $i<3 && !($file=~/_\d+\D*$/) && scalar @files>1 )
         {
-            $self->throw(qq[Heuristic failed, which files are single-ended and which are paired? Please symlink manually.]); 
+            $self->throw(qq[Heuristic failed, which files are single-ended and which are paired? Please symlink manually.]);
         }
-        elsif ( $i==3 && ($file=~/_\d+\D*$/) ) 
-        { 
-            $self->throw(qq[Heuristic failed, this should be single-ended file "$file". Please symlink manually.]); 
+        elsif ( $i==3 && ($file=~/_\d+\D*$/) )
+        {
+            $self->throw(qq[Heuristic failed, this should be single-ended file "$file". Please symlink manually.]);
         }
 
         if ( ! -e "$lane_path/${name}_$i.fastq.gz" )
@@ -242,10 +285,11 @@ sub rename_files
         {
             Utils::relative_symlink("$file.fastqcheck","$lane_path/${name}_$i.fastq.gz.fastqcheck");
         }
-        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.md5" )
+        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.gz.md5" )
         {
-            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.md5");
+            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.gz.md5");
         }
+        
         $i++;
     }
     return $$self{'Yes'};
@@ -276,6 +320,62 @@ sub existing_fastq_files
     return \@files;
 }
 
+
+#---------- assign_taxonomy ---------------------
+sub assign_taxonomy_requires
+{
+    my ($self) = @_;
+
+    my @requires = ("$$self{lane}_1.fastq.gz");
+    return \@requires;
+}
+
+sub assign_taxonomy_provides
+{
+    my ($self) = @_;
+
+    my @provides = ("_assign_taxonomy_done");
+    return \@provides;
+}
+
+sub assign_taxonomy
+{
+    my ($self,$lane_path,$lock_file) = @_;
+    $$self{kraken_db} or $self->throw("Missing the option kraken_db.\n");
+    my $name = $$self{lane};
+    my $fastq_files = existing_fastq_files("$lane_path/$name");
+    scalar @$fastq_files or $self->throw("No fastq files in $lane_path??\n");
+    my $reads_1 = $fastq_files->[0];
+    my $reads_2 = scalar @$fastq_files > 1 ? "\"$fastq_files->[1]\"" : undef;
+
+    
+    (-e $$self{kraken_db}.'/database.kdb') or $self->throw("Missing the kraken_db file.\n");
+    my $memory_in_mb = int(((-s $$self{kraken_db}.'/database.kdb')/1000000 ) + 4000) ;
+
+    my $script = "_assign_taxonomy.pl";
+    open(my $fh, '>', "$lane_path/$script");
+    print $fh
+qq[
+use strict;
+use warnings;
+use Bio::Metagenomics::External::Kraken;
+
+my \$kraken = Bio::Metagenomics::External::Kraken->new(
+    database => "$$self{kraken_db}",
+    kraken_exec => "$$self{kraken_exec}",
+    kraken_report_exec => "$$self{kraken_report_exec}",
+    preload => 1,
+    threads => 4,
+    reads_1 => "$reads_1",
+    reads_2 => $reads_2,
+);
+\$kraken->run_kraken("$$self{kraken_report}");
+system("touch _assign_taxonomy_done") and die "Error touch _assign_taxonomy_done";
+];
+    close $fh;
+    VertRes::LSF::run($lock_file,"$lane_path","_assign_taxonomy", {bsub_opts=>"-q normal -M${memory_in_mb} -R 'select[mem>${memory_in_mb}] rusage[mem=${memory_in_mb}]' -n 4 -R 'span[hosts=1]'"}, "perl -w $script");
+    return $$self{'No'};
+}
 
 
 #---------- subsample ---------------------
@@ -327,7 +427,7 @@ sub subsample
     my $nfiles = scalar @$fastq_files;
     if ( !$nfiles ) { $self->throw("No fastq files in $lane_path??") }
 
-    # The files will be created in reverse order, so that that _1.fastq.gz is created 
+    # The files will be created in reverse order, so that that _1.fastq.gz is created
     #   last - the next action checks only for the first one. If there is only one file,
     #   the variable $seq_list is not used. If there are multiple, $seq_list is passed
     #   only to subsequent calls of FastQ::sample.
@@ -348,7 +448,7 @@ sub subsample
     }
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${name}_sample", $self, qq{perl -w _qc-sample.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${name}_sample", {bsub_opts=>$$self{bsub_opts_subsample}}, qq{perl -w _qc-sample.pl});
 
     return $$self{'No'};
 }
@@ -422,15 +522,15 @@ use warnings;
 use Utils;
 
 Utils::CMD("$bwa aln -q $$self{bwa_clip} -l 32 $bwa_ref ${name}_$i.fastq.gz > ${name}_$i.saix");
-if ( ! -s "${name}_$i.saix" ) 
-{ 
+if ( ! -s "${name}_$i.saix" )
+{
     Utils::error("The command ended with an error:\n\t$bwa aln -q $$self{bwa_clip} -l 32 $bwa_ref ${name}_$i.fastq.gz > ${name}_$i.saix\n");
 }
 rename("${name}_$i.saix","${name}_$i.sai") or Utils::error("rename ${name}_$i.saix ${name}_$i.sai: \$!");
 
 ];
         close($fh);
-        LSF::run($lock_file,$work_dir,"_${name}_$i",$self,qq[perl -w ${prefix}aln_fastq_$i.pl]);
+        VertRes::LSF::run($lock_file,$work_dir,"_${name}_$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}aln_fastq_$i.pl]);
     }
 
     # Run blat for each fastq file to find out how many adapter sequences are in there.
@@ -453,7 +553,7 @@ Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print \$1}' | sor
 unlink("${name}_$i.fa", "${name}_$i.blat");
 ];
         close($fh);
-        LSF::run($lock_file,$work_dir,"_${name}_a$i",$self,qq[perl -w ${prefix}blat_fastq_$i.pl]);
+        VertRes::LSF::run($lock_file,$work_dir,"_${name}_a$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}blat_fastq_$i.pl]);
     }
 
     return $$self{'No'};
@@ -474,7 +574,7 @@ sub map_sample_requires
 
     my $fastq_files = existing_fastq_files("$lane_path/$sample_dir/$name");
     my $nfiles = scalar @$fastq_files;
-    if ( !$nfiles ) 
+    if ( !$nfiles )
     {
         @requires = ("$sample_dir/${name}_1.sai");
         return \@requires;
@@ -521,9 +621,9 @@ sub map_sample
     # If there are multiple fastqs, assume that the data come from the paired-end sequencing
     if ( !exists($$self{paired}) && $nfiles>1 ) { $$self{paired}=1; }
 
-    # There can be a mixture of: 
+    # There can be a mixture of:
     #   1) two paired-end fastqs, no single
-    #   2) one single+two paired-end fastqs 
+    #   2) one single+two paired-end fastqs
     #   3) arbitrary number of singles (i.e. 1-3)
     my @singles = ();
     my @paired;
@@ -531,9 +631,9 @@ sub map_sample
     {
         for my $file (@$fastq_files) { push @singles, $file; }
     }
-    elsif ( $nfiles==3 ) 
-    { 
-        push @singles, $$fastq_files[2]; 
+    elsif ( $nfiles==3 )
+    {
+        push @singles, $$fastq_files[2];
     }
     if ( $$self{paired} && $nfiles>1 )
     {
@@ -589,7 +689,7 @@ rename("${paired_name}.bam.part", "$paired_name.bam") or Utils::error("rename ${
         my $bams = join(' ', @single_bams);
         if ( $paired_name ) { $bams .= " $paired_name.bam"; }
 
-        print $fh 
+        print $fh
 qq[
 Utils::CMD("$samtools merge x$name.bam $bams");
 if ( ! -s "x$name.bam" ) { Utils::error("The command ended with an error:\\n\\t$samtools merge x$name.bam $bams\\n"); }
@@ -602,11 +702,73 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     }
     close($fh);
 
-    LSF::run($lock_file,$work_dir,"_${name}_sampe",$self, q{perl -w _map.pl});
+    VertRes::LSF::run($lock_file,$work_dir,"_${name}_sampe",{bsub_opts=>$$self{bsub_opts_map_sample}}, q{perl -w _map.pl});
     return $$self{'No'};
 }
 
+#----------- transposon ---------------------
 
+sub transposon_requires
+{
+  my ($self) = @_;
+
+  my $sample_dir = $$self{'sample_dir'};
+  my @requires = ("$sample_dir/$$self{lane}_1.fastq.gz");
+  return \@requires;
+}
+
+sub transposon_provides
+{
+  my ($self) = @_;
+  my @provides = ();
+  
+  if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
+  {
+    my $sample_dir = $$self{'sample_dir'};
+    @provides = ("$sample_dir/$$self{lane}.transposon");
+  }
+  
+  return \@provides;
+}
+
+sub transposon
+{
+   my ($self,$lane_path,$lock_file) = @_;
+   my $sample_dir = $$self{'sample_dir'};
+   
+   if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
+   {
+     my $tag_length = $$self{transposon_length} || 7;
+     my $output_file = "$lane_path/$sample_dir/".$$self{lane}.".transposon";
+     
+     my $transposon_sequence_str;
+     if(defined $$self{transposon_sequence})
+     {
+       $transposon_sequence_str = 'tag => "'.$$self{transposon_sequence}.'"';
+     }
+   
+     # Dynamic script to be run by LSF.
+     open(my $fh, '>', "$lane_path/$sample_dir/_transposon.pl") or Utils::error("$lane_path/$sample_dir/_transposon.pl: $!");
+     print $fh
+     qq[
+          use strict;
+          use warnings;
+          use Pathogens::Parser::Transposon;
+          my \$transposon = Pathogens::Parser::Transposon->new(
+            'filename'   => '$$self{lane}_1.fastq.gz',
+            'tag_length' => $tag_length,
+            $transposon_sequence_str
+          );
+          open(OUT,'+>','$output_file') or die "couldnt open transposon output file \$!";
+          print OUT \$transposon->percentage_reads_with_tag;
+          close(OUT);
+     ];
+     close $fh;
+
+     VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_$$self{lane}_transposon", $self, qq{perl -w _transposon.pl});
+   }
+   return $$self{'No'};
+}
 
 
 #----------- stats_and_graphs ---------------------
@@ -623,8 +785,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
-                        "$sample_dir/gc-depth.png","$sample_dir/fastqcheck.png");
+    my @provides = ("$sample_dir/_graphs.done","$sample_dir/$$self{lane}.cover");
     return \@provides;
 }
 
@@ -636,13 +797,24 @@ sub stats_and_graphs
     my $lane  = $$self{lane};
     my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
 
+    # Get size of assembly
+    my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+    my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly});
+    my $reference_size = $assembly->reference_size();
+    unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
+
+    my $name = $$self{lane};
+    my $vrlane      = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
+    my $insert_size = (VRTrack::Library->new($vrtrack, $vrlane->library_id())->insert_size() )*3 || 8000;
+
+
     # Dynamic script to be run by LSF.
     open(my $fh, '>', "$lane_path/$sample_dir/_graphs.pl") or Utils::error("$lane_path/$sample_dir/_graphs.pl: $!");
-    print $fh 
+    print $fh
 qq[
 use VertRes::Pipelines::TrackQC_Fastq;
 
-my \%params = 
+my \%params =
 (
     'gc_depth_bin' => q[$$self{'gc_depth_bin'}],
     'mapviewdepth' => q[$$self{'mapviewdepth'}],
@@ -656,99 +828,39 @@ my \%params =
     'stats_ref'    => q[$stats_ref],
     'bwa_clip'     => q[$$self{bwa_clip}],
     'chr_regex'    => q[$$self{chr_regex}],
+    'bwa_exec'     => q[$$self{bwa_exec}],
+    'do_samtools_rmdup' => q[$$self{do_samtools_rmdup}]
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
-\$qc->run_graphs(\$params{lane_path});
+\$qc->run_graphs(\$params{lane_path}, $reference_size, $insert_size);
 ];
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", $self, qq{perl -w _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 
 
 sub run_graphs
 {
-    my ($self,$lane_path) = @_;
+    my ($self,$lane_path, $reference_size,$insert_size) = @_;
 
-    $self->SUPER::run_graphs($lane_path);
+    $self->SUPER::run_graphs($lane_path,$insert_size);
 
-    use Graphs;
-    use Utils;
-    use FastQ;
+    # Get coverage, depth and sd.
+    my $bamcheck_file = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.bam.bc];
+    my $cover_file    = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.cover];
 
-    # Set the variables
-    my $sample_dir   = $$self{'sample_dir'};
-    my $name         = $$self{lane};
-    my $outdir       = "$lane_path/$sample_dir/";
-    my $bam_file     = "$outdir/$name.bam";
-    my $dump_file    = "$outdir/$$self{stats_dump}";
+    my $genomecover = Pathogens::Parser::GenomeCoverage->new( bamcheck => $bamcheck_file,
+                                                              ref_size => $reference_size );
+    my($coverage, $depth, $depth_sd) = $genomecover->coverage_depth();
 
-    # Create the multiline fastqcheck files
-    my @fastq_legend = ();
-    my @fastq_quals  = ();
-    my $fastq_files  = existing_fastq_files("$lane_path/$name");
-    my $total_reads  = 0;    # this is for integrity check of the bam file
-    for (my $i=1; $i<=scalar @$fastq_files; $i++)
-    {
-        my $fastqcheck = "$lane_path/${name}_$i.fastq.gz.fastqcheck";
-        if ( !-e $fastqcheck )
-        {
-            # This can happen when the lane was not imported by the Import.pm pipeline.
-            if ( ! -e "$lane_path/${name}_$i.fastq.gz" ) { next; }
-
-            Utils::CMD(qq[zcat $lane_path/${name}_$i.fastq.gz | fastqcheck > $fastqcheck.part]);
-            if ( -s "$fastqcheck.part" )
-            {
-                rename("$fastqcheck.part","$fastqcheck") or $self->throw("rename $fastqcheck.part $fastqcheck: $!");
-            }
-            else { next; }
-        }
-
-        my $data = FastQ::parse_fastqcheck($fastqcheck);
-        $$data{'outfile'}    = "$outdir/fastqcheck_$i.png";
-        $$data{'title'}      = "FastQ Check $i";
-        $$data{'desc_xvals'} = 'Sequencing Quality';
-        $$data{'desc_yvals'} = '1000 x Frequency / nBases';
-
-        # Draw the 'Total' line as the last one and somewhat thicker
-        my $total = shift(@{$$data{'data'}});
-        $$total{'lines'} = ',lwd=3';
-        push @{$$data{'data'}}, $total;
-
-        Graphs::plot_stats($data);
-
-        my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck);
-        my ($bases,$quals) = $pars->avg_base_quals();
-        push @fastq_quals, { xvals=>$bases, yvals=>$quals, legend=>"FQ $i" };
-
-        # To check the integrity of the BAM file
-        open(my $fh,"zcat $outdir/${name}_$i.fastq.gz | fastqcheck |") or $self->throw("zcat $outdir/${name}_$i.fastq.gz | fastqcheck |: $!");
-        $pars = VertRes::Parser::fastqcheck->new(fh => $fh);
-        $total_reads += $pars->num_sequences();
-        close($fh);
-    }
-
-    if ( scalar @fastq_quals )
-    {
-        Graphs::plot_stats({
-                outfile     => qq[$outdir/fastqcheck.png],
-                title       => 'fastqcheck base qualities',
-                desc_yvals  => 'Quality',
-                desc_xvals  => 'Base',
-                data        => \@fastq_quals,
-                r_plot      => "ylim=c(0,50)",
-                });
-    }
-
-    my $stats = do $dump_file;
-    if ( $total_reads != $$stats{reads_total} )
-    {
-        $self->throw("Sanity check failed, different number of reads in fastq files and $bam_file ($total_reads .. $$stats{reads_total})\n");
-    }
+    # Output cover file.
+    open(my $cov_fh, "> $cover_file") or $self->throw("Cannot open: $cover_file\n");
+    printf $cov_fh "[%d, %.2f, %.2f]\n", $coverage, $depth, $depth_sd;
+    close($cov_fh);
 }
-
 
 1;
 

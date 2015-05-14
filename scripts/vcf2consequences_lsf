@@ -1,0 +1,164 @@
+#!/usr/bin/env perl
+#
+# Author: cj5@sanger.ac.uk
+#
+
+use strict;
+use warnings;
+use Carp;
+use DBI;
+use Data::Dumper; 
+use Getopt::Long;
+use Benchmark;
+use threads;
+
+use Vcf;
+=pod
+foreach( keys( %INC ) )
+{
+    print qq[$_ - $INC{$_}\n];
+}
+=cut
+
+my ($input_vcf, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham, $passonly, $nodes);
+
+GetOptions
+(
+    "v|vcf=s"       => \$input_vcf,
+    "n|nodes=i"       => \$nodes,
+    "s|species=s"   => \$species,
+    "i|index=s"     => \$index_vcf,
+    "b|buffer=i"    => \$buffer_size,
+    "g|gerp"    => \$gerp,
+    "r|grantham"    => \$grantham,
+    "p|pass"    => \$passonly,
+    "h|help"        => \$help
+);
+
+my $missing = 0;
+if( ! ($species && $input_vcf && $nodes) || $help ){$missing = 1;}
+$buffer_size = 500 unless ($buffer_size);
+
+if( $missing )
+{
+    print qq[
+This is a wrapper script to split vcf2consequences processing across lsf nodes.
+Usage:
+    -v --vcf <string>       VCF input file
+    -n --nodes <integer>    Number of LSF nodes to use, suggest a max of 50 or so to prevent db connect errors
+    -s --species            Homo_sapiens or Mus_musculus
+    -i --index              OPTIONAL: Compressed annotated VCF file, indexed using tabix
+    -b --buffer             OPTIONAL: Number of rows of the vcf file to buffer (default = 500)
+    -g --gerp               OPTIONAL: Add GERP score to consequences
+    -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
+    -p --pass               OPTIONAL: Only annotate FILTER=PASS variants
+    -h --help               Print this message
+];
+    exit;
+}
+
+croak qq[Invalid species: $species\n]  unless $species eq qq[Mus_musculus] || $species eq qq[Homo_sapiens];
+
+my $t0 = Benchmark->new;
+process_vcf($input_vcf);
+my $t1 = Benchmark->new;
+my $td = timediff($t1, $t0);
+print STDERR "Overall consequences calculations took:",timestr($td),"\n";
+exit;
+
+#------------------------------
+
+sub process_vcf
+{
+    my ($input_vcf) = @_;
+
+	# Count records to compute batch size
+	my $vcf = Vcf->new(file=>$input_vcf);
+	my $rc_in=0;
+	while (my $rec = $vcf->next_line())  {
+		next if $rec =~ /^#/;
+		$rc_in++;
+    }
+	my $batch_size = ($rc_in/$nodes == int($rc_in/$nodes)) ? $rc_in/$nodes : int($rc_in/$nodes + 1);
+	$batch_size = $rc_in if $rc_in < 50 or $batch_size < 50;
+	print STDERR "Record count = $rc_in, nodes = $nodes, batch_size=$batch_size\n";
+
+	# split vcf and submit jobs
+	$vcf = Vcf->new(file=>$input_vcf);
+    $vcf->parse_header();
+
+	my $filenum=0;
+	my %bjob;
+
+	my $rec = $vcf->next_line();
+    while ($rec)  {
+		if ($rec =~ /^#/) {
+        	$rec = $vcf->next_line();
+			next;
+		}
+
+		my $vcf_tmp = "$input_vcf.$$.$filenum";
+		$vcf_tmp =~ s/\.gz//i;
+		open(VCF, ">$vcf_tmp") or die $!;
+    	print VCF $vcf->format_header();
+
+		my $counter=0;
+		while ($counter < $batch_size && $rec) {
+    		print VCF $rec;
+			$counter++;
+        	$rec = $vcf->next_line();
+		}
+		$filenum++;
+		close VCF;
+    	$bjob{$filenum}{'filename'} = $vcf_tmp;
+    	$bjob{$filenum}{'thread'} = threads->create('start_bsub_thread', ($vcf_tmp));
+    }
+
+	# wait for lsf
+	foreach my $k (keys %bjob) {
+		$bjob{$k}{'thread'}->join();
+	}
+
+	# build output file 
+	my $rc_out=0;
+	open(VCF, ">$input_vcf.out") or die $!;
+
+	foreach my $k (sort {$a <=> $b} keys %bjob) {
+
+		my $fn = $bjob{$k}{'filename'};
+
+		$vcf = Vcf->new(file=>"$fn.out");
+		if ($rc_out==0) {
+			$vcf->parse_header();
+    		print VCF $vcf->format_header();
+		}
+		while (my $rec = $vcf->next_line())  {
+			next if $rec =~ /^#/;
+    		print VCF $rec;
+			$rc_out++;
+		}
+	}
+	close(VCF);
+	die "ERROR: Records in=$rc_in, records out = $rc_out\n" if $rc_in != $rc_out;
+
+	foreach my $k (keys %bjob) {
+		my $fn = $bjob{$k}{'filename'};
+		system ("rm $fn");
+		system ("rm $fn.out");
+		system ("rm $fn.err");
+	}
+}
+
+sub start_bsub_thread {
+	my ($fn) = @_;
+
+	my $cmd_line = "bsub -I -q long -o $fn.out -e $fn.err vcf2consequences -v $fn -s $species -b $buffer_size";
+	$cmd_line .= " -i $index_vcf" if $index_vcf;
+	$cmd_line .= " -pass" if $passonly;
+	$cmd_line .= " -gerp" if $gerp;
+	$cmd_line .= " -grantham" if $grantham;
+
+	print STDERR `date`, "Running: $cmd_line\n";
+	system($cmd_line);
+	print STDERR `date`, " $fn finished\n";
+}

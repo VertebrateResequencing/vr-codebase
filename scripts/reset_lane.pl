@@ -82,7 +82,7 @@ while (<$fh>) {
 	my $lane_path = File::Spec->catdir($meta_path, $hier_path);
 	
 	# Warn if lane path does not exist
-	die "$lane_path does not exist\n" unless ( -e $lane_path );
+	warn "$lane_path does not exist\n" unless ( -e $lane_path );
 	
 	my %flags = $lane->allowed_processed_flags();
     
@@ -100,7 +100,7 @@ while (<$fh>) {
 		
 	# If database has been reset, remove the lane directory
 	# and remake an empty directory in its place.
-	if ($reset) {
+	if ($reset && -e $lane_path) {
 		print "Processed flags for $lane_id have been reset. " if ($verbose);
 		print "Removing files from lane directory $lane_path...\n" if ($verbose);
 		

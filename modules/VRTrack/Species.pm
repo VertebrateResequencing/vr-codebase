@@ -80,6 +80,20 @@ sub fields_dispatch {
 
 =cut
 
+=head2 new_by_taxon_id
+
+  Arg [1]    : database handle to seqtracking database
+  Arg [2]    : taxon id
+  Example    : my $spp = VRTrack::Species->new_by_taxon_id($vrtrack, $taxon)
+  Description: Class method. Returns Species object by taxon id.  If no such taxon id is in the database, returns undef
+  Returntype : VRTrack::Species object
+
+=cut
+
+sub new_by_taxon_id {
+    my ($class, $vrtrack, $value) = @_;
+    return $class->new_by_field_value($vrtrack, 'taxon_id', $value);
+}
 
 =head2 create
 

@@ -1,13 +1,18 @@
 #!/bin/sh
 umask 002
+date="`date +'%y%m%d'`"
 ROOT="/lustre/scratch105"
-CONF="/nfs/vertreseq01/conf"
-DUMPS="/warehouse/g1k-01/sql_dumps"
+CONF="/nfs/vertres01/conf"
+COMPRESS_CMD="/usr/bin/lzma --best --force "
+STUDY="uk10k_neuro"
+DB="vrtrack_$STUDY"
+DUMPS="/warehouse/g1k-04/sql_dumps/"$DB"_"$date".sql"
+
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
 export ORACLE_HOME=/software/oracle_client-10.2.0
 
-date="`date +'%y%m%d'`"
-mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST vrtrack_uk10k_neuro > "$DUMPS/vrtrack_uk10k_neuro_$date.sql"
+mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
-update_vrtrack.pl --database vrtrack_uk10k_neuro --projects $CONF/uk10k_neuro_studies --create_individuals --no_fastq > "$ROOT/log/vrtrack_update_uk10k_neuro.log" 2> "$ROOT/log/vrtrack_update_uk10k_neuro.err"
+bsub -M8000000 -R'select[mem>8000] rusage[mem=8000]' -o "$ROOT/log/compress_$DB.log" -e "$ROOT/log/compress_$DB.err" "$COMPRESS_CMD $DUMPS"
 
+update_vrtrack.pl --database $DB --projects $CONF/$STUDY"_studies" --create_individuals --no_fastq > "$ROOT/log/update_$DB.log" 2> "$ROOT/log/update_$DB.err"

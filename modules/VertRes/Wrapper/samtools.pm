@@ -198,6 +198,11 @@ sub merge_and_check {
     
     my $orig_run_method = $self->run_method;
     
+    if(-e $out_bam.'.tmp')
+    {
+      unlink("$out_bam.tmp");
+    }
+    
     # do the merge
     $self->run_method('system');
     $self->merge($out_bam.'.tmp', $in_bams, %options);
@@ -236,15 +241,16 @@ sub merge_and_check {
  Returns : n/a
  Args    : list of file paths, options as a hash. If using the 'open' run_method
            you should set the second arg to undef.
+ Note    : pileup was removed from samtools using mpileup instead.
 
 =cut
 
 sub pileup {
     my ($self, $in_file, $out_file, %options) = @_;
     
-    $self->exe($self->{base_exe}.' pileup');
+    $self->exe($self->{base_exe}.' mpileup');
     
-    $self->switches([qw(s i c g S a 2)]);
+    $self->switches([qw(s i c g S a 2 A)]);
     $self->params([qw(m M t l f T N r G I)]);
     $self->_set_params_and_switches_from_args(%options);
     

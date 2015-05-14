@@ -30,6 +30,9 @@ sub create_vrconfig_file {
         open( my $file, '>', $path ) or die "Cannot write to '$path': $!\n";
         printf $file <<'END_HERE', $dd->Dump();
 package VRTrack::Testconfig;
+use strict;
+use warnings;
+
 my $db_config;
 %s;
 
@@ -44,19 +47,17 @@ END_HERE
 }
 
 sub create_database {
-    my ($self, $dbname) = @_;
-    my $config          = $self->notes( 'db_config' );
-    if ($config) {
-        my @sql = VRTrack::VRTrack->schema();
-        open(my $mysqlfh, "| mysql -h$config->{host} -u$config->{user} -p$config->{password} -P$config->{port}") || die "could not connect to database for testing\n";
-        print $mysqlfh "drop database if exists $config->{test_db};\n";
-        print $mysqlfh "create database $config->{test_db};\n";
-        print $mysqlfh "use $config->{test_db};\n";
-        foreach my $sql (@sql) {
-            print $mysqlfh $sql;
-        }
-        close($mysqlfh);
+    my ($self, $config) = @_;
+    
+    my @sql = VRTrack::VRTrack->schema();
+    open(my $mysqlfh, "| mysql -h$config->{host} -u$config->{user} -p$config->{password} -P$config->{port}") || die "could not connect to database for testing\n";
+    print $mysqlfh "drop database if exists $config->{test_db};\n";
+    print $mysqlfh "create database $config->{test_db};\n";
+    print $mysqlfh "use $config->{test_db};\n";
+    foreach my $sql (@sql) {
+        print $mysqlfh $sql;
     }
+    close($mysqlfh);
 }
 
 sub ACTION_test {
@@ -64,7 +65,7 @@ sub ACTION_test {
     my $config = $self->notes( 'db_config' );
     if ($config) {
         eval {
-            $self->create_database( $config->{test_db} );
+            $self->create_database( $config );
         };
         if ($@){
             print $@;

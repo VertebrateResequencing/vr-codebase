@@ -7,7 +7,7 @@ use Getopt::Long;
 
 use Vcf;
 
-my ($input_vcf, $positions, $complement, $chromosome, $help);
+my ($input_vcf, $positions, $complement, $chromosome, $pass, $help);
 
 GetOptions
 (
@@ -15,6 +15,7 @@ GetOptions
 	"c|complement"      => \$complement,
     "chr|chromosome=s"  => \$chromosome,
 	"p|positions=s"	    => \$positions,
+	"pass|passed"		=> \$pass,
 	"h|help"		    => \$help
 );
 
@@ -24,16 +25,17 @@ if( ! $input_vcf || ! ( $positions || $chromosome ) || $help ){$missing = 1;}
 if( $missing )
 {
 	print qq[
-	This is a script to take a list of tab delimited (chr pos OR chr start_pos end_pos) positions and select
-	these from a VCF file (if they appear as variants). The -c option does the opposite - excludes
-	those positions (if they appear as variants).
-	Usage:
-        -v --vcf <string>			VCF input file
-        -c --complement
-        -chr --chromosome           select all entries from the specified chromosome (overrides a positions file if supplied)
-        -p --positions <string>		File of chr<tab>position pairs
-        -h --help					Print this message
-	];
+This is a script to take a list of tab delimited (chr pos OR chr start_pos end_pos) positions and select
+these from a VCF file (if they appear as variants). The -c option does the opposite - excludes
+those positions (if they appear as variants).
+Usage:
+    -v --vcf <string>           VCF input file
+    -c --complement
+    -chr --chromosome           select all entries from the specified chromosome (overrides a positions file if supplied)
+    -p --positions <string>     File of chr<tab>position pairs
+    -pass                       Only print PASS filter positions
+    -h --help                   Print this message
+];
 	exit;
 }
 
@@ -48,8 +50,11 @@ while( my $line = $vcf->next_line() )
 {
 	chomp( $line );
 	if ( $line=~/^#/ ) { print qq[$line\n]; next; }
+
 	my @items = split(/\t/,$line);
 	
+	if( $pass && $items[ 6 ] !~ /PASS/){next;}
+
 	$variantsH{ $items[ 0 ] }{ $items[ 1 ] } = $line;
 	$lines ++;
 }
@@ -81,7 +86,7 @@ while( <$ifh> )
 	
 	if( defined( $pos[ 2 ] ) && $pos[ 2 ] =~ /\d+/ )
 	{
-		for(my $i = $pos[ 1 ]; $i < $pos[ 2 ]; $i ++ )
+		for(my $i = $pos[ 1 ]; $i <= $pos[ 2 ]; $i ++ )
 		{
 			if( $variantsH{ $pos[ 0 ] }{ $i } )
 			{

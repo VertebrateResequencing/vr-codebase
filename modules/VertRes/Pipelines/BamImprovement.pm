@@ -42,6 +42,41 @@ data => {
 # in the data section you can also supply the tmp_dir option to specify the
 # root that will be used to create tmp directories
 
+# The alias options may be set if there are alternative names for the same 
+# mapper in the db.
+slx_mapper_alias => ['bwa','bwa_aln'] (optional; alternative names 
+              that may have been used for the slx_mapper specified)
+'454_mapper_alias' => ['ssaha', 'ssaha_1.3'], (optional; alternative names 
+              that may have been used for the 454_mapper specified)
+
+# After recalibration, to make a BAM file with just on target (or whatever
+# parts of the genome you like), use this in the data section:
+# extract_intervals => {'intervals_file' => 'filename'}
+# Additionally, specifiying
+# extract_intervals_only => 1
+# will skip all the previous tasks (from realign to statistics).  Use this
+# if you just want to make intervals bam files for each lane.
+
+# do_index => 1 can be supplied in the data section to run samtools index
+# on the final bams made by the pipeline
+
+# Changes to the header can be made by setting the header_changes option in
+# the data => {} section of the conf file. This takes the same arguments as the 
+# VertRes::Utils::Sam->change_header_lines() method, e.g.:
+    header_changes => {
+        PG => { remove_unique => 1 },
+        SQ => { from_dict => '/path/to/new/dictfile.dict' }
+    }
+Additionally, if one sets 
+    header_changes => { RG => { match_db => 1 } }
+the @RG tags will be set to match the database values, overwriting other 
+values supplied, while 
+    header_changes => { RG => { rgid_fix => 1 } }
+will set the @RG ID tag to the lane hierarchy name.
+
+# qc => 1 can be supplied outside the data section to only improve lanes which 
+# have passed qc
+
 # run the pipeline:
 run-pipeline -c bamimprovement.pipeline -s 30
 
@@ -88,7 +123,8 @@ use VRTrack::File;
 use File::Basename;
 use File::Copy;
 use Time::Format;
-use LSF;
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -108,10 +144,22 @@ our $actions = [ { name     => 'realign',
                    action   => \&calmd,
                    requires => \&calmd_requires, 
                    provides => \&calmd_provides },
+                 { name     => 'rewrite_header',
+                   action   => \&rewrite_header,
+                   requires => \&rewrite_header_requires, 
+                   provides => \&rewrite_header_provides },
                  { name     => 'statistics',
                    action   => \&statistics,
                    requires => \&statistics_requires, 
                    provides => \&statistics_provides },
+                 { name     => 'extract_intervals',
+                   action   => \&extract_intervals,
+                   requires => \&extract_intervals_requires, 
+                   provides => \&extract_intervals_provides },
+                 { name     => 'index',
+                   action   => \&index,
+                   requires => \&index_requires, 
+                   provides => \&index_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
@@ -123,10 +171,13 @@ our $actions = [ { name     => 'realign',
 
 our %options = (slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
+                slx_mapper_alias => [],
+                '454_mapper_alias' => [],
                 indel_sites => '',
                 indel_intervals => '',
                 snp_sites => '',
                 calmde => 0,
+                do_index => 0,
                 do_cleanup => 1);
 
 =head2 new
@@ -143,6 +194,11 @@ our %options = (slx_mapper => 'bwa',
            '454_mapper' => 'ssaha', (default ssaha; the mapper you used for
                                      mapping 454 lanes)
            
+           slx_mapper_alias => ['bwa','bwa_aln'] (optional; alternative names 
+                         that may have been used for the slx_mapper specified)
+           '454_mapper_alias' => ['ssaha', 'ssaha_1.3'], (optional; alternative names 
+                         that may have been used for the 454_mapper specified)
+
            reference => '/path/to/ref.fa' (no default, either this or the
                         male_reference and female_reference pair of args must be
                         supplied)
@@ -175,6 +231,17 @@ our %options = (slx_mapper => 'bwa',
            release_date => 'yyyymmdd' (the release date to be included in the
                                        .bas files made; not important - defaults
                                        to today's date)
+
+           extract_intervals => {intervals_file => 'filename'}
+                                    (after calmd, extract reads for only these
+                                     intervals; default keep all reads. if this
+                                     option used, intervals_file is REQUIRED, and
+                                     of the form one interval per line:
+                                     chromosome start end
+                                     fields separated with a tab)
+
+           do_index => boolean (default false; if true, the final bams made by
+                             the pipeline will be indexed with samtools index)
 
            other optional args as per VertRes::Pipeline
 
@@ -232,7 +299,9 @@ sub new {
     my @bams = $hu->lane_bams($lane_path, vrtrack => $self->{vrlane}->vrtrack,
                                           assembly_name => $self->{assembly_name},
                                           slx_mapper => $self->{slx_mapper},
-                                          '454_mapper' => $self->{'454_mapper'});
+                                          '454_mapper' => $self->{'454_mapper'},
+                                          slx_mapper_alias => $self->{slx_mapper_alias},
+                                          '454_mapper_alias' => $self->{'454_mapper_alias'});
     @bams || $self->throw("no bams to improve in lane $lane_path!");
     $self->{in_bams} = \@bams;
     
@@ -248,10 +317,14 @@ sub new {
     if (! defined $self->{dbsnp_rod} && ! defined $self->{snp_sites}) {
         $self->throw("At least one of dbsnp_rod or snp_sites is required in your config file");
     }
+
+    if ($self->{extract_intervals} && !($self->{extract_intervals}->{intervals_file})) {
+        $self->throw("extract_intervals must have intervals_file supplied, can't continue");
+    }
     
     # convert the snp_sites option to a simple string suitable for use by GATK,
     # and an array for checking the files exist
-    if (defined $self->{snp_sites}) {
+    if (defined $self->{snp_sites} and !($self->{extract_intervals_only})) {
         my @snp_site_files;
         my $snp_sites = $self->{snp_sites};
         my @snp_args;
@@ -301,6 +374,15 @@ sub new {
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
+    $self->{header_changes}->{RG}->{rgid_fix} ||= 0;
+    $self->{header_changes}->{RG}->{match_db} ||= 0;
+    $self->{header_changes}->{SQ}->{remove_unique} ||= 0;
+    $self->{header_changes}->{SQ}->{from_dict} ||= '';
+    
+    if ($self->{header_changes}->{SQ}->{from_dict}) {
+        $self->throw("Supplied dict file does not exist!\n") unless (-s $self->{header_changes}->{SQ}->{from_dict});
+    }
+    
     return $self;
 }
 
@@ -316,7 +398,7 @@ sub new {
 
 sub realign_requires {
     my $self = shift;
-    
+    return [] if ($self->{extract_intervals_only});
     my @snps = defined $self->{dbsnp_rod} ? ($self->{dbsnp_rod}) : @{$self->{snp_files}};
     
     return [@{$self->{in_bams}},
@@ -338,6 +420,7 @@ sub realign_requires {
 
 sub realign_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     
@@ -352,6 +435,15 @@ sub realign_provides {
 sub _bam_name_conversion {
     my ($self, $in_bam) = @_;
     
+    if ($self->{extract_intervals_only}) {
+        if ($in_bam =~ m/^(.*)\.bam/){
+            return ($in_bam, $in_bam, $in_bam, $in_bam, "$1.intervals.bam");
+        }
+        else {
+            $self->throw("Error, bam file $in_bam doesn't end in .bam?");
+        }
+    }
+
     # clean up the filename to something stripped-down
     my $rel_bam = $in_bam;
     $rel_bam =~ s/.raw//;
@@ -359,6 +451,7 @@ sub _bam_name_conversion {
     $rel_bam =~ s/.sorted//;
     $rel_bam =~ s/.realigned//;
     $rel_bam =~ s/.calmd//;
+    $rel_bam =~ s/.intervals//;
     
     $rel_bam =~ s/\.bam$/.realigned.bam/;
     my $sorted_bam = $rel_bam;
@@ -367,7 +460,9 @@ sub _bam_name_conversion {
     $recal_bam =~ s/\.bam$/.recal.bam/;
     my $calmd_bam = $recal_bam;
     $calmd_bam =~ s/\.bam$/.calmd.bam/;
-    return ($rel_bam, $sorted_bam, $recal_bam, $calmd_bam);
+    my $intervals_bam = $calmd_bam;
+    $intervals_bam =~ s/\.bam/.intervals.bam/;
+    return ($rel_bam, $sorted_bam, $recal_bam, $calmd_bam, $intervals_bam);
 }
 
 =head2 realign
@@ -393,7 +488,7 @@ sub realign {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -459,7 +554,7 @@ if (-s \$working_bam) {
         
         # mark that we've completed
         open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-        print \$dfh "done\n";
+        print \$dfh "done\\n";
         close(\$dfh);
     }
     else {
@@ -475,7 +570,7 @@ exit;
         my $job_name = $self->{prefix}.'realign_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -495,6 +590,7 @@ exit;
 
 sub sort_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @requires;
     
@@ -520,6 +616,7 @@ sub sort_requires {
 
 sub sort_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -553,7 +650,7 @@ sub sort {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
@@ -600,7 +697,7 @@ if (-s \$working_bam) {
         
         # mark that we've completed
         open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-        print \$dfh "done\n";
+        print \$dfh "done\\n";
         close(\$dfh);
     }
     else {
@@ -616,7 +713,7 @@ exit;
         my $job_name = $self->{prefix}.'sort_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -635,6 +732,7 @@ exit;
 
 sub recalibrate_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     # we need bams
     my @requires;
@@ -668,6 +766,7 @@ sub recalibrate_requires {
 
 sub recalibrate_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -702,7 +801,7 @@ sub recalibrate {
     my $queue = $memory >= 16000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -749,7 +848,7 @@ unless (-s \$recal_bam) {
     
     # mark that we've completed
     open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-    print \$dfh "done\n";
+    print \$dfh "done\\n";
     close(\$dfh);
 }
 
@@ -760,7 +859,7 @@ exit;
         my $job_name = $self->{prefix}.'recalibrate_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -779,6 +878,7 @@ exit;
 
 sub calmd_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @recal_bams;
     foreach my $bam (@{$self->{in_bams}}) {
@@ -803,6 +903,7 @@ sub calmd_requires {
 
 sub calmd_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @calmd_bams;
     foreach my $bam (@{$self->{in_bams}}) {
@@ -829,7 +930,7 @@ sub calmd {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
+    $self->{bsub_opts} = '-q normal -M1000 -R \'select[mem>1000] rusage[mem=1000]\'';
     
     my $e = $self->{calmde} ? 'e => 1' : 'e => 0';
     
@@ -864,11 +965,178 @@ exit;
         my $job_name = $self->{prefix}.'calmd_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
     return $self->{No};
+}
+
+=head2 rewrite_header_requires
+
+ Title   : rewrite_header_requires
+ Usage   : my $required_files = $obj->rewrite_header_requires('/path/to/lane');
+ Function: Find out what files the rewrite_header action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub rewrite_header_requires {
+    my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
+    
+    my @requires = @{$self->calmd_provides($lane_path)};
+    
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    
+    return \@requires;
+}
+
+=head2 rewrite_header_provides
+
+ Title   : rewrite_header_provides
+ Usage   : my $provided_files = $obj->rewrite_header_provides('/path/to/lane');
+ Function: Find out what files the rewrite_header action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub rewrite_header_provides {
+    my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
+    
+    my @provides = @{$self->calmd_provides($lane_path)};
+    
+    @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+
+    if ( $self->{header_changes} ) {
+        foreach my $in_bam (@{$self->{in_bams}}) {
+            my $base = basename($in_bam);
+            my $done_file = $self->{fsu}->catfile($lane_path, '.rewrite_header_complete_'.$base);
+            push @provides, $done_file;
+        }
+    }
+    
+    return \@provides;
+}
+
+=head2 rewrite_header
+
+ Title   : rewrite_header
+ Usage   : $obj->rewrite_header('/path/to/lane', 'lock_filename');
+ Function: Rewrites the BAM headers by removing lane specific and random values 
+           introduced by GATK (however, random values should no longer be produced
+           thanks to an udpate to GATK). Also reads from a dict file to replace the 
+           @SQ lines if necessary.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub rewrite_header {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    return $self->{Yes} unless $self->{header_changes};
+    
+    my %header_changes = %{$self->{header_changes}};
+    
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M5000 -R \'select[mem>5000] rusage[mem=5000]\'';
+    
+    my $job_submitted = 0;
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        my (undef, undef, undef, $bam) = $self->_bam_name_conversion($in_bam);
+        
+        my $done_file = $self->{fsu}->catfile($lane_path, '.rewrite_header_complete_'.$base);
+        
+        # Get the @RG ID tag from the header
+        my $bp = VertRes::Parser::bam->new(file => $bam);
+        my %rg_info = $bp->readgroup_info();
+        $bp->close;
+        my @rgs = keys %rg_info;
+        $self->throw("$bam does not contain a single readgroup") unless (scalar @rgs == 1);
+        my $rg = $rgs[0];
+        
+        # Check if we need to change the @RG ID tag
+        my $fix_rgid = 0;
+        if ($header_changes{RG}->{rgid_fix} && $self->{vrlane}->name ne $rg) {
+            $fix_rgid = 1;
+            # picard does not support DT tag so have to add it back in afterwards
+            $header_changes{RG}->{all}->{date} = $rg_info{$rg}{DT} || '';
+            $rg = $self->{vrlane}->name;
+        }
+        
+        # Match @RG info with the database lane info
+        if ($header_changes{RG}->{match_db}) {
+            my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
+            my %lane_info = $hu->lane_info($self->{vrlane});
+            $header_changes{RG}->{all}->{sample_name} = $lane_info{sample};
+            $header_changes{RG}->{all}->{project} = $lane_info{project};
+            $header_changes{RG}->{all}->{library} = $lane_info{library_true};
+            $header_changes{RG}->{all}->{centre} = $lane_info{centre};
+            $header_changes{RG}->{all}->{platform} = $lane_info{technology};
+        }
+        
+        # If a header rewrite is not required, mark as complete and move on to the next bam
+        my $su = VertRes::Utils::Sam->new();
+        unless ( $su->header_rewrite_required( $bam, %header_changes) || $fix_rgid) {
+            open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
+            print $dfh "done\n";
+            close($dfh);
+            next;
+        }
+        
+        # If a header rewrite is required, run temp script to do the rewrite in an LSF call
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."rewrite_header_$base.pl");
+        
+        my $d = Data::Dumper->new([\%header_changes], ["header_changes"]);
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq[
+use strict;
+use VertRes::Utils::Sam;
+
+my \$bam = qq[$bam];
+my \$done_file = qq[$done_file];
+my \$fix_rgid = qq[$fix_rgid];
+my ];
+        print $scriptfh $d->Dump;
+        print $scriptfh qq[
+
+my \$su = VertRes::Utils::Sam->new();
+
+# replace readgroup ID if necessary
+if (\$fix_rgid) {
+    \$su->replace_readgroup_id(\$bam, qq[$rg]) || die ("replace RG ID tag of \$bam failed\\n");
+}
+
+# run change_header_lines
+if (\$su->header_rewrite_required( \$bam, \%{\$header_changes} )) {
+    \$su->change_header_lines( \$bam, \%{\$header_changes} ) || die("reheader of \$bam failed\\n");
+}
+
+# mark that we've completed
+open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
+print \$dfh "done\\n";
+close(\$dfh);
+
+exit;
+];
+        close $scriptfh;
+        
+        my $job_name = $self->{prefix}.'rewrite_header_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        $job_submitted = 1;
+    }
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
+    
+    $job_submitted ? return $self->{No} : return $self->{Yes};
 }
 
 =head2 statistics_requires
@@ -883,8 +1151,9 @@ exit;
 
 sub statistics_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
-    my @requires = @{$self->calmd_provides($lane_path)};
+    my @requires = @{$self->rewrite_header_provides($lane_path)};
     
     @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
     
@@ -904,9 +1173,10 @@ sub statistics_requires {
 
 sub statistics_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
-    foreach my $bam (@{$self->statistics_requires($lane_path)}) {
+    foreach my $bam (@{$self->calmd_provides($lane_path)}) {
         foreach my $suffix ('bas', 'flagstat') {
             push(@provides, $bam.'.'.$suffix);
         }
@@ -937,7 +1207,7 @@ sub statistics {
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
-    foreach my $bam_file (@{$self->statistics_requires($lane_path)}) {
+    foreach my $bam_file (@{$self->calmd_provides($lane_path)}) {
         my $basename = basename($bam_file);
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."statistics_$basename.pl");
         
@@ -976,11 +1246,195 @@ exit;
         my $job_name = $self->{prefix}.'statistics_'.$basename;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
     
     return $self->{No};
 }
+
+
+=head2 extract_intervals_requires
+
+Title   : extract_intervals_requires
+Usage   : my $required_files = $obj->extract_intervals_requires('/path/to/lane');
+Function: Find out what files the extract_intervals action needs before it will run.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub extract_intervals_requires {
+    my ($self, $lane_path) = @_;
+
+    if ($self->{extract_intervals_only}) {
+        return [@{$self->{in_bams}}];
+    }
+    else {
+        my @requires = @{$self->statistics_provides($lane_path)};
+        @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+        return \@requires;
+    }
+}
+
+=head2 extract_intervals_provides
+
+Title   : extract_intervals_provides
+Usage   : my $provided_files = $obj->extract_intervals_provides('/path/to/lane');
+Function: Find out what files the extract_intervals action generates on success.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub extract_intervals_provides {
+    my ($self, $lane_path) = @_;
+
+    if ($self->{extract_intervals}){
+        my @interval_bams;
+        foreach my $bam (@{$self->{in_bams}}) {
+            my (undef, undef, undef, undef, $interval_bam) = $self->_bam_name_conversion($bam);
+            push(@interval_bams, $interval_bam);
+        }
+
+        return \@interval_bams;
+    }
+    else {
+        my @provides = @{$self->extract_intervals_requires($lane_path)};
+        @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+        return \@provides;
+    }
+}
+
+=head2 extract_intervals
+
+Title   : extract_intervals
+Usage   : $obj->extract_intervals('/path/to/lane', 'lock_filename');
+Function: Extracts intervals at the library level, post markdup.
+Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+Args    : lane path, name of lock file to use
+
+=cut
+
+sub extract_intervals {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my (undef, undef, undef, $penultimate_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
+        next if -s $final_bam;
+        
+        my $base = basename($in_bam);
+        my $job_name =  $self->{prefix}.'extract_intervals_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
+                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$penultimate_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $penultimate_bam\n];"~);
+    }
+
+    return $self->{No};
+}
+
+
+=head2 index_requires
+
+Title   : index_requires
+Usage   : my $required_files = $obj->index_requires('/path/to/lane');
+Function: Find out what files the index action needs before it will run.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub index_requires {
+    my ($self, $lane_path) = @_;
+    my @requires = @{$self->extract_intervals_provides($lane_path)};
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    return \@requires;
+}
+
+=head2 index_provides
+
+Title   : index_provides
+Usage   : my $provided_files = $obj->index_provides('/path/to/lane');
+Function: Find out what files the index action generates on success.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub index_provides {
+    my ($self, $lane_path) = @_;
+    my @provides = @{$self->index_requires($lane_path)};
+
+    if ($self->{do_index}){
+        for my $i (0..$#provides) {
+            if( $provides[ $i ] =~ /\.bam$/ )
+            {
+                $provides[$i] = $provides[$i] . '.bai';
+            }
+        }
+    }
+
+    @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+    return \@provides;
+}
+
+=head2 index
+
+Title   : index
+Usage   : $obj->index('/path/to/lane', 'lock_filename');
+Function: Extracts intervals at the library level, post markdup.
+Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+Args    : lane path, name of lock file to use
+
+=cut
+
+sub index {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        
+        #work out if the final bam is the intervals bam OR the calmd bam
+        my $final_bam = undef;
+        if( $self->{extract_intervals} )
+        {
+            (undef, undef, undef, undef, $final_bam) = $self->_bam_name_conversion($in_bam);
+        }
+        else 
+        {
+            #no interval extraction - so get the calmd bam
+            (undef, undef, undef, $final_bam, undef) = $self->_bam_name_conversion($in_bam);
+        }
+        my $bam_index = "$final_bam.bai";
+        next if -s $bam_index;
+
+        # run indexing in an LSF call to a temp script
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."index_$base.pl");
+        
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+
+        print $scriptfh qq[
+use strict;
+use warnings;
+use VertRes::Wrapper::samtools;
+
+my \$samtools = VertRes::Wrapper::samtools->new();
+\$samtools->index(qq{$final_bam}, qq{$bam_index});
+\$samtools->run_status >= 1 || die "Failed to create $bam_index";
+];
+
+        close $scriptfh;
+        my $job_name =  $self->{prefix}.'index_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+    }
+
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
+}
+
 
 =head2 update_db_requires
 
@@ -994,7 +1448,7 @@ exit;
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    return $self->statistics_provides($lane_path);
+    return $self->index_provides($lane_path);
 }
 
 =head2 update_db_provides
@@ -1024,8 +1478,19 @@ sub update_db_provides {
 sub update_db {
     my ($self, $lane_path, $action_lock) = @_;
     
+    if ($self->{extract_intervals_only} ) {
+        my $vrlane = $self->{vrlane};
+        my $vrtrack = $vrlane->vrtrack;
+        return $self->{Yes} if $vrlane->is_processed('improved');
+        $vrtrack->transaction_start();
+        $vrlane->is_processed('improved', 1);
+        $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
+        $vrtrack->transaction_commit();
+        return $self->{Yes};
+    }
+
     # get the bas files that contain our mapping stats
-    my $files = $self->update_db_requires($lane_path);
+    my $files = $self->statistics_provides($lane_path);
     my @bas_files;
     foreach my $file (@{$files}) {
         next unless $file =~ /\.bas$/;
@@ -1149,7 +1614,7 @@ sub cleanup {
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
         
-        foreach my $action ('realign', 'sort', 'recalibrate', 'statistics') {
+        foreach my $action ('realign', 'sort', 'recalibrate', 'calmd', 'rewrite_header', 'extract_intervals', 'index', 'statistics') {
             foreach my $suffix (qw(o e pl)) {
                 my $job_name = $prefix.$action.'_'.$base;
                 if ($suffix eq 'o') {
@@ -1169,7 +1634,7 @@ sub is_finished {
     my ($self, $lane_path, $action) = @_;
     
     # so that we can delete the temp bams as we go along, and not redo actions
-    if ($action->{name} eq 'realign') {
+    if ($action->{name} eq 'realign' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my ($realign_bam) = $self->_bam_name_conversion($in_bam);
             
@@ -1187,7 +1652,7 @@ sub is_finished {
             #}
         }
     }
-    elsif ($action->{name} eq 'sort') {
+    elsif ($action->{name} eq 'sort' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my ($realign_bam, $sorted_bam) = $self->_bam_name_conversion($in_bam);
             
@@ -1200,7 +1665,7 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'recalibrate') {
+    elsif ($action->{name} eq 'recalibrate' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my (undef, $sorted_bam, $recal_bam) = $self->_bam_name_conversion($in_bam);
             if (-s $recal_bam && -s $sorted_bam) {
@@ -1214,7 +1679,7 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'calmd') {
+    elsif ($action->{name} eq 'calmd' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my (undef, undef, $recal_bam, $calmd_bam) = $self->_bam_name_conversion($in_bam);
             if (-s $calmd_bam && -s $recal_bam) {
@@ -1241,6 +1706,12 @@ sub is_finished {
                 }
             }
         }
+    }
+    elsif ($action->{name} eq 'extract_intervals') {
+        # extract_intervals processes internally checks for truncation, so
+        # if this file exists, it is OK
+
+        # for now, don't delete the previous bam (we might want it?),
     }
     elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};

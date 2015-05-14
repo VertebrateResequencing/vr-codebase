@@ -1,0 +1,396 @@
+#!/usr/bin/env perl
+# Add Consequences to VCF, post-processing Ensembl VEP script output and adding GERP and Grantham matrix scores
+#
+
+use strict;
+use warnings;
+use Carp;
+use Getopt::Long;
+use Benchmark;
+use Vcf;
+use GranthamMatrix;
+use DB_File;
+
+=pod
+foreach( keys( %INC ) )
+{
+    print qq[$_ - $INC{$_}\n];
+}
+=cut
+
+my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham, $gene_list_db, $tab_input, $append_gene_names);
+
+GetOptions
+(
+    "v|vcf=s"       => \$input_vcf,
+    "i|vep=s"       => \$vep_input,
+    "t|tab=s"       => \$tab_input,
+    "g|gerp=s"      => \$gerp_cache_dir,
+    "b|buffer=i"    => \$buffer_size,
+    "r|grantham"    => \$grantham,
+    "n|genenames=s" => \$gene_list_db,
+    "a|appendgenenames" => \$append_gene_names,
+    "h|help"        => \$help
+);
+
+my $missing = 0;
+if( (!$vep_input && !$tab_input) || $help ){$missing = 1;}
+if ( $vep_input && $tab_input ) { error("Only one of the -i or -t option can be given.") }
+if ( $append_gene_names && !($gene_list_db)) { error("--appendgenenames only valid with --genenames option") }
+
+$buffer_size = 50000 unless ($buffer_size);
+
+if( $missing ) { error(); }
+
+my $t0 = Benchmark->new;
+my $grantham_matrix = GranthamMatrix->new() if $grantham;
+my $current_chr='';
+my $vep_cache = {};
+my $gerp_cache = {chr=>'', block=>'', scores=>{}};
+
+my $ontology; # ensembl or SO, we will detect this
+my $terms = {
+              ensembl => {
+                non_synonymous => ['NON_SYNONYMOUS_CODING'], 
+                synonymous =>['SYNONYMOUS_CODING']
+              },
+              so => {
+                non_synonymous  =>['initiator_codon_variant','inframe_insertion','inframe_deletion','missense_variant'], 
+                synonymous =>['synonymous_variant','stop_retained_variant']
+              }
+            };
+
+my %GENE_NAME;
+if ($gene_list_db) {
+	tie %GENE_NAME, "DB_File", $gene_list_db, O_RDONLY, 0666, $DB_HASH or die "Cannot open file : $!\n";
+}
+
+our ($vep_rec,$vep_version,$api_version);
+init_vep();
+
+parse_vcf($input_vcf);
+my $t1 = Benchmark->new;
+my $td = timediff($t1, $t0);
+print STDERR "The consequences calculations took:",timestr($td),"\n";
+close(VEP_FILE);
+    
+exit;
+
+#------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    print qq[
+This script applies consequences called by the Ensembl Variant Effect Predictor to a VCf file, optionally adding GERP and Grantham matrix scores
+by querying Ensembl
+Usage:
+    -v --vcf <string>       VCF input file
+    -i --vep                Text Input file from Ensembl VEP
+    -g --gerp               OPTIONAL: If GERP scores required, location of cached gerp score bed files
+    -b --buffer             OPTIONAL: Number of rows of the gerp scores bed file to buffer (default = 1000)
+    -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
+    -n --genenames          OPTIONAL: DBM file of external gene names for non_human ENS ids, to replace the Ensembl Gene ID in output
+    -a --appendgenenames    OPTIONAL: if using --genenames option, add gene names rather than replace the Ens ID
+    -t --tab                Alternative to -i, see the notes below
+    -h --help               Print this message
+Note:
+    The script requires that chromosomes in VEP output are listed in the same order as in the VCF. 
+    Either use vep_resort.sh to reorder (beware, this script will not warn you if the order is different!)
+    or convert to tab-delimited file and index by tabix (the bullet proof way, the chromosomal order
+    does not matter anymore):
+        ( cat file.vep | head -100 | grep ^#; 
+         cat file.vep | grep -v ^# | awk '{OFS="\\t"}{gsub(/:/,"\\t",\$2); print}' | sort -k2,2d -k3,3n ) | bgzip -c > file.tab.gz && tabix -s 2 -b 3 -e 3 file.tab.gz
+
+];
+    exit -1;
+}
+
+sub init_vep
+{
+    if ( $vep_input )
+    {
+        open VEP_FILE, $vep_input or die $!;
+    }
+    else
+    {
+        open(VEP_FILE,"tabix -H $tab_input|") or error("tabix -H $tab_input: $!");
+    }
+
+    $vep_rec = <VEP_FILE>;
+    while (defined $vep_rec && $vep_rec =~ /^#/) {
+        if ($vep_rec =~ /## ENSEMBL VARIANT EFFECT PREDICTOR (\S+)$/) {
+            $vep_version=$1;
+        }
+        if ($vep_rec =~ /## Using API version (\d+),/) {
+            $api_version=$1;
+        }
+        $vep_rec = <VEP_FILE>;
+    }
+}
+
+sub parse_vcf
+{
+    my $tp0 = Benchmark->new;
+    my ($input_vcf) = @_;
+
+    my $vcf = defined $input_vcf ? Vcf->new(file=>$input_vcf) : Vcf->new(fh=>\*STDIN);
+    $vcf->parse_header();
+    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl $api_version VEP $vep_version, format transcriptId:geneName:consequence[:codingSeqPosition:proteinPosition:proteinAlleles:proteinPredictions]+...[+gerpScore]"});
+    print $vcf->format_header();
+
+    my $lines = 0;
+    
+    while( my $rec = $vcf->next_data_array() )
+    {
+        #print STDERR "CHR: ", $$rec[0], ", POS: ", $$rec[1], ", REF: ", $$rec[3], ", ALTS: ", $$rec[4], "\n";
+		process_vcf_rec($vcf,$rec);
+        
+        $lines ++;
+    }
+
+    my $tp1 = Benchmark->new;
+    my $tpd = timediff($tp1, $tp0);
+    print STDERR "Processing $lines lines took:",timestr($tpd),"\n";    
+	$vcf->close();
+}
+
+sub process_vcf_rec
+{
+    my ($vcf,$rec) = @_;
+	my $chr = $$rec[0];
+	my $pos = $$rec[1];
+	my $alleles = join("/",$$rec[3],$$rec[4]);
+    my $vcfkey = join("_", $chr,$pos,$alleles);
+
+	my $var_key;
+	if ($$rec[2] ne '.') { # rs id
+		$var_key = $$rec[2];
+	}
+	else { # novel variant
+		$var_key = $alleles;
+		$var_key =~ s/,/\//;	#  A/T,G = A/T/G in vep output, however trialleles C/A,T,G are C/A/T,G
+	}
+
+	if ($chr ne $current_chr) {
+    	print STDERR "Processing chr $chr\n";    
+        init_vep(); # parse whole file to allow for VEP sort order bug
+		load_vep_cache($chr);
+		$current_chr=$chr;
+	}
+
+	# Search for indels offset by 1 in vep output eg CAA/CNNNNNNNAA at 10108 in vcf is reported as AA/NNNNNNNAA at 10109 by vep
+
+	my $is_indel=0;
+	foreach my $allele (split ',', $$rec[4]){
+		my ($type,$len,$ht) = $vcf->event_type($$rec[3],$allele);
+		if ($type eq 'i'){
+			$is_indel++;
+		}
+	}
+
+	if ($is_indel > 0 && $$rec[2] eq '.') {	# novel SNP, cache key is alleles list
+		$alleles =~ s/,/\//g;	#  NT  N,NTCT keyed by vep as T/-/TCT
+		my @indel_alleles;
+		foreach (split(/\//,$alleles)) {
+			$_ =  substr($_,1) or $_ = '-';
+			push (@indel_alleles, $_);
+
+		}
+		my $indel_alleles = join("/",@indel_alleles);
+
+		if ($vep_cache->{$pos+1}{$indel_alleles}) {
+			$vep_cache->{$pos}{$var_key} = $vep_cache->{$pos+1}{$indel_alleles};
+		}
+	}
+	if ($is_indel > 0 && $$rec[2] ne '.') {	# ref SNP, cache key is ref id
+		foreach my $k (keys %{$vep_cache->{$pos+1}}) {
+			if ($k eq $$rec[2]) {
+				$vep_cache->{$pos}{$k} = $vep_cache->{$pos+1}{$k};
+			}
+		}
+	}
+
+	if ($gerp_cache_dir && $is_indel == 0) {
+		if ($chr ne $gerp_cache->{chr} or int($pos/$buffer_size) != $gerp_cache->{block}) {
+
+			$gerp_cache->{chr} = $chr;
+			$gerp_cache->{block} = int($pos/$buffer_size);
+			$gerp_cache->{scores} = ();
+
+			# eg "<dir>/gerp_score.22.bed.gz"
+			my $bed = join('.', "$gerp_cache_dir/gerp_score", $gerp_cache->{chr}, "bed.gz");
+            if (-e $bed) {
+                my $from = $gerp_cache->{block} * $buffer_size;
+                my $to = (1+$gerp_cache->{block}) * $buffer_size;
+                my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
+                for (@index_search) {
+                    my @line = split("\t", $_);
+                    $gerp_cache->{scores}->{$line[2]} = $line[3];
+                }
+            }
+            else {
+			     error("Cannot find $bed\n");
+            }
+		}
+		my $score = $gerp_cache->{scores}->{$pos};
+		if ($score) {
+			my $gerp_csq = sprintf ("GERP,%.2f", $score);
+			$vep_cache->{$pos}{$var_key}{$gerp_csq}++;
+		}
+	}
+
+	if ($vep_cache->{$pos}{$var_key}) {
+		my $conseqences = join('+',sort keys %{$vep_cache->{$pos}{$var_key}});
+    	$$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$conseqences);
+	}
+
+	print join("\t",@$rec)."\n";
+}
+
+sub load_vep_cache
+{
+    my ($chr) = @_;
+	$vep_cache = ();
+
+    my $rec;
+    if ( $vep_input )
+    {
+        $rec = parse_rec($vep_rec);
+    }
+    else
+    {
+        open(VEP_FILE, "tabix $tab_input $chr |") or error("tabix $tab_input $chr: $!");
+        $vep_rec = <VEP_FILE>;
+        $rec = parse_rec($vep_rec);
+    }
+
+	while ($rec) {
+
+        unless  ($rec->{vep_chr} eq $chr) {
+            $vep_rec = <VEP_FILE>;
+            last if !$vep_rec;
+            $rec = parse_rec($vep_rec);
+            next;
+        }
+
+		my $gene_name=$rec->{Gene}; # Default to ENS id
+		my ($sift_pred,$polyphen_pred,$condel_pred,$blosum_pred);
+		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);SYMBOL=RERE;BLOSUM62=-3
+		foreach (@extra_cols) {
+			my ($key,$val) = split(/=/);
+			$gene_name = $val if ($key eq 'SYMBOL' || $key eq 'HGNC'); # HGNC replaced by SYMBOL in v73
+			$sift_pred = "$key,$val" if $key eq 'SIFT';
+			$polyphen_pred = "$key,$val" if $key eq 'PolyPhen';
+			$condel_pred = "$key,$val" if $key eq 'Condel';
+			$blosum_pred = "$key,$val" if $key eq 'BLOSUM62';
+		}
+
+		my $consequence = $rec->{Feature};
+
+		if ($gene_name =~ /^ENS/ && $gene_list_db) {	# lookup external gene names in DBM file
+			my $ext_name = $GENE_NAME{$gene_name};
+            if ($append_gene_names) {
+                if ($ext_name) {
+                    $gene_name .= ":$ext_name";
+                }
+                else {
+                    $gene_name .= ":";
+                }
+            }
+		}
+		$consequence .= ":$gene_name";
+		$consequence .= ":" . $rec->{Consequence};
+
+		if ( $rec->{CDS_position} ne '-') {
+			$consequence .= ":" . $rec->{CDS_position} . ":" . $rec->{Protein_position};
+		}
+
+        # Establish the Ontology for this file when we hit the first coding SNP
+        unless ($ontology) {
+            foreach my $ont (keys %{$terms} ) {
+                foreach my $csq ( keys %{$terms->{$ont}} ) {
+                    foreach my $syn_term ( @{$terms->{$ont}{$csq}} ) {
+                        if ($rec->{Consequence} =~ /^$syn_term/) {
+                            $ontology = $ont;
+                            print STDERR "Using '$ontology' terms\n";
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($ontology) {
+            # Modify synonymous coding Amino_acid notation, eg change D to D>D
+            foreach my $syn_term ( @{$terms->{$ontology}{synonymous}} ) {
+                if ( $rec->{Consequence} =~ "^$syn_term" && length($rec->{Amino_acids}) == 1) {
+                    $consequence .= ":" . $rec->{Amino_acids} . ">" . $rec->{Amino_acids};
+                }
+    		}
+
+            # Apply protein predictions for non-synonymous coding csq
+            foreach my $non_syn_term ( @{$terms->{$ontology}{non_synonymous}} ) {
+                if ( $rec->{Consequence} =~ "^$non_syn_term") {
+                    my $protein_pred="";
+                    $protein_pred .= ":$sift_pred" if $sift_pred;
+                    $protein_pred .= ":$polyphen_pred" if $polyphen_pred;
+                    $protein_pred .= ":$condel_pred" if $condel_pred;
+                    $protein_pred .= ":$blosum_pred" if $blosum_pred;
+
+                    if ($grantham && $rec->{Amino_acids} !~ '-') {
+                        my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});
+                        if (length($ref_aa) == 1 && length($var_aa) == 1) {
+                            $protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
+                        }
+                    }
+                    $rec->{Amino_acids} =~ s/\//>/;
+
+                    $consequence .= ":" . $rec->{Amino_acids} if $rec->{Amino_acids} ne '-';
+                    $consequence .= $protein_pred if $protein_pred ne "";
+                }
+            }
+        }
+
+		## multi-allelic variants may have duplicate consequences, hence hash rather than array
+		$vep_cache->{$rec->{vep_pos}}{$rec->{variant_id}}{$consequence}++;
+
+		$vep_rec = <VEP_FILE>;
+		last if !$vep_rec;
+		$rec = parse_rec($vep_rec);
+	}
+}
+
+sub parse_rec {
+	# parse vep output record into a hash of fields
+
+	my ($vep_rec) = @_;
+	return  if !$vep_rec;
+
+	my %rec;
+	chomp $vep_rec;
+
+    my @items = split(/\t/, $vep_rec);
+    if ( $tab_input ) 
+    { 
+        $items[1] = "$items[1]:$items[2]";
+        splice(@items,2,1);
+    }
+
+	($rec{vep_key}, $rec{Location}, $rec{Allele}, $rec{Gene}, $rec{Feature}, $rec{Feature_type}, $rec{Consequence}, $rec{cDNA_position}, $rec{CDS_position}, $rec{Protein_position}, $rec{Amino_acids}, $rec{Codons}, $rec{Existing_variation}, $rec{Extra}) = @items;
+
+	# vep key is either rs id or format 1_8482797_T/C
+	my ($key_prefix,undef) = split("_", $rec{vep_key});
+	($rec{vep_chr},undef) = split(":",$rec{Location});
+
+	if ($key_prefix eq $rec{vep_chr}) {
+		($rec{vep_chr},$rec{vep_pos},$rec{variant_id}) = split("_", $rec{vep_key});
+	}
+	else {
+		$rec{variant_id} = $rec{vep_key};
+		($rec{vep_chr},$rec{vep_pos}) = split(":",$rec{Location});
+		$rec{vep_pos} =~ s/-.*//;
+	}
+	return \%rec;
+}
+

@@ -11,7 +11,7 @@ BEGIN {
         plan skip_all => "Skipping all tests because VRTrack tests have not been configured";
     }
     else {
-        plan tests => 219;
+         plan tests => 227;
     }
     
     use_ok('VRTrack::VRTrack');
@@ -75,7 +75,11 @@ foreach my $class (@core_objects) {
     my $orig_changed = $vrobj->changed;
     like ($orig_changed, qr/^\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}$/, 'changed is set');
     is $vrobj->is_latest, 1, 'is_latest is true';
+   
     
+    my $values = "VRTrack::$class"->_all_values_by_field($vrtrack,'row_id');
+    is($values->[0], 1, " _all_values_by_field should return first row_id value as 1");
+     
     # shared by some, but not all
     if ($vrobj->can('hierarchy_name')) {
         isa_ok $vrobj, "VRTrack::Hierarchy_obj";

@@ -138,6 +138,7 @@ sub backtrace
                 exit_on_error .. should the encountered errors be ignored?
                 ignore_errno  .. ignore a particular error status (e.g. 141 for SIGPIPE, handy for commands like "zcat file.gz | head -1")
                 logfile       .. where should be the command and the output logged?
+                require_errno .. require particular error status (for programs that don't follow POSIX conventions)
                 rpipe         .. the caller will read from the pipe and take care of checking the exit status
                 time          .. print the execution time
                 verbose       .. print what's being done.
@@ -182,6 +183,7 @@ sub CMD
 
     my $exit_status_ori = $?;
     my $exit_status = $? >> 8;
+	if ( exists($$options{require_errno}) ) { $exit_status = $$options{require_errno}==$exit_status ? 0 : 1; }
     if ( $exit_status==$$options{'ignore_errno'} ) { $exit_status=0; }
 
     if ( $exit_status )
@@ -427,6 +429,7 @@ sub relative_symlink
     {
         $dir .= '/' . join('/', @new_dir);
     }
+    if ( ! -d $dir ) { CMD("mkdir -p $dir"); }
     chdir($dir) or Utils::error("chdir $dir: $!");
 
     # The uphill + downhill path

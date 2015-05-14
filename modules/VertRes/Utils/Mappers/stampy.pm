@@ -60,7 +60,7 @@ sub _bsub_opts {
     my %bsub_opts = (bsub_opts => '');
     
     if ($action eq 'map') {
-        $bsub_opts{bsub_opts} = '-q long -M10000000 -R \'select[mem>10000] rusage[mem=10000]\'';
+        $bsub_opts{bsub_opts} = '-q long -M10000 -R \'select[mem>10000] rusage[mem=10000]\'';
     }
     else {
         return $self->SUPER::_bsub_opts($lane_path, $action);
@@ -81,7 +81,23 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
-    return VertRes::Wrapper::stampy->new(verbose => $self->verbose);
+    my $exe = $self->{exe} || 'stampy';
+    return VertRes::Wrapper::stampy->new(verbose => $self->verbose, exe => $exe);
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
+    my $self = shift;
+    return 'stampy';
 }
 
 =head2 split_fastq

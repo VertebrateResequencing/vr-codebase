@@ -19,12 +19,34 @@ for package in $PACKAGES; do
     fi
 done
 
+function usage()
+{
+    echo "Usage: vr-wrapper [OPTIONS] [PROFILE] cmd"
+    echo "Options:"
+    echo "    -e      No shell expansion, use exec instead of eval"
+    echo "    -h      This help message"
+    echo "Examples:"
+    echo "    vr-wrapper - 'set > variables.txt'"
+    echo "    vr-wrapper /path/to/optional/profile 'set > variables.txt'"
+    echo "    vr-wrapper -e ~/.vrw/local printf 'hello world!\n'"
+    exit 1
+}
+
+if [ $# -eq 0 -o "$1" == '-h' ]; then 
+    usage
+fi
+
+cmd="eval"
+if [ "$1" == '-e' ]; then
+    cmd="exec"
+    shift 1
+fi
+
 if [ "$1" != '-' ]; then 
     . $1
 fi
+umask 007
 
 shift 1
-
-umask 002
-eval $@
+$cmd "$@"
 

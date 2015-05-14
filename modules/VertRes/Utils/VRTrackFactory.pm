@@ -13,15 +13,8 @@ my @database_names = VertRes::Utils::VRTrackFactory->databases();
 
 =head1 DESCRIPTION
 
-A simple factory class that returns VRTrack objects to centralise the database
-connection information.
-
-Database host, port, username and password are set by environment variables:
-VRTRACK_HOST
-VRTRACK_PORT
-VRTRACK_RO_USER  (for the 'r' mode read-only capable username)
-VRTRACK_RW_USER  (for the 'rw' mode read-write capable username)
-VRTRACK_PASSWORD
+This is largely deprecated in favour of VRTrack::Factory. Internally we just
+call VRTrack::Factory methods.
 
 =head1 AUTHOR
 
@@ -34,15 +27,10 @@ use base qw(VertRes::Base);
 
 use strict;
 use warnings;
+use VRTrack::Factory;
 
-use DBI;
-use VRTrack::VRTrack;
-
-my $HOST = $ENV{VRTRACK_HOST};
-my $PORT = $ENV{VRTRACK_PORT} || 3306;
-my $READ_USER = $ENV{VRTRACK_RO_USER};
-my $WRITE_USER = $ENV{VRTRACK_RW_USER};
-my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+my $FSU_FILE_EXISTS_DB_NAME = $ENV{FSU_FILE_EXISTS_DB_NAME} || 'vrtrack_fsu_file_exists';
+my $NFS_DISC_BASENAME = $ENV{NFS_DISC_BASENAME} || '/nfs/vertres';
 
 
 =head2 new
@@ -59,18 +47,7 @@ my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
 =cut
 
 sub instantiate {
-    my $class = shift;
-    my $self = $class->SUPER::new(@_);
-    
-    my $database = $self->{database} || $self->throw("A database name must be provided!");
-    my $mode = lc($self->{mode}) || $self->throw("A connection mode name must be provided!");
-    
-    my %details = VertRes::Utils::VRTrackFactory->connection_details($mode);
-    $details{database} = $database;
-    
-    my $vrtrack = VRTrack::VRTrack->new({%details});
-    
-    return $vrtrack;
+    return VRTrack::Factory::instantiate(@_);
 }
 
 =head2 connection_details
@@ -84,17 +61,7 @@ sub instantiate {
 =cut
 
 sub connection_details {
-    my ($class, $mode) = @_;
-    my $self = $class->SUPER::new(@_);
-    
-    $mode = lc($mode) || $self->throw("A connection mode name must be provided!");
-    
-    $self->throw("Invalid connection mode (r or rw valid): $mode\n") unless $mode =~ /^(?:r|rw)$/;
-    
-    my $user = $mode eq 'rw' ? $WRITE_USER : $READ_USER;
-    my $pass = $mode eq 'rw' ? $WRITE_PASS : '';
-    
-    return (host => $HOST, port => $PORT, user => $user, password => $pass);
+    return VRTrack::Factory::connection_details(@_);
 }
 
 =head2 databases
@@ -112,61 +79,33 @@ sub connection_details {
 =cut
 
 sub databases {
-    my $class = shift;
-    my $include_test_and_old_dbs = shift;
-    my $only_old = shift;
-    my $self = $class->SUPER::new(@_);
-    
-    my %dbparams = VertRes::Utils::VRTrackFactory->connection_details('r');
-    
-    my @databases = grep(s/^DBI:mysql://, DBI->data_sources("mysql", \%dbparams));
-    
-    # we skip information_schema and any test databases
-    @databases = grep(!/^information_schema/, @databases);
-    unless ($include_test_and_old_dbs) {
-        @databases = grep(!/test/, @databases);
-    }
-    
-    # we have to actually check that these databases are vrtrack databases with
-    # the correct schema version
-    my $schema_version = VRTrack::VRTrack::SCHEMA_VERSION;
-    my %expected_tables;
-    foreach (VRTrack::VRTrack->schema()) {
-        if (/CREATE TABLE `(.+?)`/i || /create view (\S+)/i) {
-            $expected_tables{$1} = 1;
-        }
-    }
-    my @vr_dbs;
-    DB: foreach my $db (@databases) {
-        my %cd = $self->connection_details('r');
-        my $dbh = DBI->connect("dbi:mysql:$db;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
-        unless ($dbh) {
-            $self->warn("Could not connect to database $db to check if it was a VRTrack database");
-            next;
-        }
-        
-        my %tables = map { s/`//g; s/^$db\.//; $_ => 1 } $dbh->tables();
-        
-        foreach my $etable (keys %expected_tables) {
-            next DB unless exists $tables{$etable};
-        }
-        foreach my $table (keys %tables) {
-            next DB unless exists $expected_tables{$table};
-        }
-        
-        my $sql = qq[ select * from schema_version ];
-        my $rows = $dbh->selectall_arrayref($sql);
-        my $is_old = $rows->[0]->[0] < $schema_version;
-        unless ($include_test_and_old_dbs) {
-            next unless $rows->[0]->[0] == $schema_version;
-        }
-        
-        if (! $only_old || $only_old && $is_old) {
-            push(@vr_dbs, $db);
-        }
-    }
-    
-    return @vr_dbs;
+    return VRTrack::Factory::databases(@_);
+}
+
+=head2 fsu_file_exists_db_name
+
+ Title   : fsu_file_exists_db_name
+ Usage   : my @db_names = VertRes::Utils::VRTrackFactory->fsu_file_exists_db_name();
+ Function: Name of database where details of files on disk exist
+ Returns : name of database
+
+=cut
+
+sub fsu_file_exists_db_name {
+    return $FSU_FILE_EXISTS_DB_NAME;
+}
+
+=head2 nfs_disc_basename
+
+ Title   : nfs_disc_basename
+ Usage   : my $nfs_disk_basename = VertRes::Utils::VRTrackFactory->nfs_disc_basename();
+ Function: Base directory name for archived data
+ Returns : directory name
+
+=cut
+
+sub nfs_disc_basename {
+    return $NFS_DISC_BASENAME;
 }
 
 1;

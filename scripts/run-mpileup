@@ -1,0 +1,1055 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
+    $$self{debug_chunks} = 0;
+    $$self{merge_pops}  = 0;
+    $$self{whole_genome_bams} = 1;
+    $$self{mpileup}        = 'samtools mpileup -t DP,DV -C50 -pm3 -F0.2 -d10000';
+    $$self{bcftools}       = 'bcftools call -vm -f GQ';
+    $$self{vcfstats}       = 'bcftools stats -c both';
+    $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -Ov -';
+    $$self{concat}         = 'bcftools concat';
+    $$self{chunk_size}     = 1_000_000;
+	$$self{config_version} = '1394700014';
+    $$self{_sampleconf} = q[
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
+            #
+            # What changed since version:
+            #   1377691623 .. New version of bcftools requires sample files to be prefixed with ':'.
+            #   1394700014 .. Switched from "vcf-concat" to "bcftools concat"
+            #
+            version  => '] .$$self{config_version}. q[',
+
+            # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
+            mpileup  => '] .$$self{mpileup}.  q[',
+            bcftools => '] .$$self{bcftools}. q[',
+            vcfstats => '] .$$self{vcfstats}. q[',
+            filter   => '] .$$self{filter}. q[',
+            concat   => '] .$$self{concat}. q[',
+            chunk_options =>
+            {   
+                # Chunk-specific options will be applied to chunks with a non-zero overlap
+                'Y'                   => { bcftools => 'bcftools call -vm -f GQ -Y', },
+                'X:1-60000'           => { bcftools => 'bcftools call -vm -f GQ -X', },
+                'X:2699521-154931043' => { bcftools => 'bcftools call -vm -f GQ -X', },
+            },
+ 
+            bams     => 'bams.list',
+            fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+            exons    => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcfstats
+
+            # To determine ploidy of sex chromosomes, one of these options must be given
+            # mysql       => 'mysql -sN -uXXX -pXXX -hmcs10 -P 3306 g1k_meta', 
+            # sample_list => undef,   # Provide list of samples with sex. In this case, neither mysql nor assumed_sex keys are required.
+            assumed_sex   => 'F',     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
+
+            limits   => { runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
+
+            merge_chroms => 0,     # Create whole-genome VCF? This can produce *huge* files for thousands of samples
+
+            ploidy   =>
+            {
+                default => 2,
+                X =>
+                [
+                    # These are pseudoautosomal: 60001-2699520, 154931044-155270560, call with ploidy 2
+                    { region=>'1-60000', M=>1 },
+                    { region=>'2699521-154931043', M=>1 },
+                ],
+                Y =>
+                [
+                    # No chrY in females and one copy in males
+                    { region=>'1-59373566', M=>1, F=>0 },
+                ],
+            },
+            
+            chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ],
+            pops   =>
+            {
+                # The 'pooled' population must be always given. Note that with
+                #   the new -m calling model in bcftools it is no longer
+                #   necessary to call populations separately. It is an overhead and
+                #   a complication and this option may be removed in future versions
+                #   of the run-mpileup pipeline.
+                #
+                pooled => [ '.' ],
+            
+                # The population groups can be defined either as BAM file name substrings (attempted first)
+                #   or, if none of the regex finds a matching BAM, as a list of samples.
+                #
+                #   AMR => [ qw(MXL CLM PUR) ],
+                #   AFR => [ qw(YRI LWK ASW) ],
+                #   ASN => [ qw(CHB CHS JPT) ],
+                #   EUR => [ qw(CEU TSI FIN GBR IBS) ],
+            },
+
+            # Do not merge population VCFs into one VCF. The merged set can find more rare variants
+            #   than the pooled set.
+            merge_pops => ] .$$self{merge_pops}. q[,
+            
+            chunk_size        => ] .$$self{chunk_size}. q[,
+            debug_chunks      => 0,
+            shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
+            keep_bcfs         => 0,
+            whole_genome_bams => 0,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
+            hard_filter       => 0,
+
+            # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
+            #   regions => 'regions.list',
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-mpileup\n" .
+        "Options:\n" .
+        "   -c, --clean             Clean all temporary files (and do nothing else)\n" .
+        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs (and do nothing else)\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "       --debug <chr:pos>   Create sample file with correct ploidy for this site and show commands to run (for debugging)\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if (                 $arg eq '--debug' ) { $$self{debug}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected -o option."); }
+
+    # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
+	if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+	{
+		$self->throw("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+	}
+    if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
+    if ( !exists($$self{mysql}) && !$$self{assumed_sex} && !$$self{sample_list} ) { $self->throw("None of the config keys 'mysql', 'assumed_sex' or 'sample_list' present\n"); }
+    if ( !exists($$self{chroms}) ) 
+    { 
+        $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ];
+        $self->warn("The 'chroms' config key not present, assuming: ".join(' ',@{$$self{chroms}})."\n"); 
+    }
+    if ( !exists($$self{pops}) ) 
+    { 
+        # 'pooled' must be always present
+        $$self{pops} = { pooled => [ '.' ] };
+        $self->warn("The 'pops' config key not present, assuming: pooled => [ '.' ]\n"); 
+    }
+    if ( !exists($$self{fa_ref}) ) 
+    { 
+        $$self{fa_ref} = '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta';
+        $self->warn("The 'fa_ref' config key not present, assuming: $$self{fa_ref}\n"); 
+    }
+    if ( !exists($$self{ploidy}) ) 
+    { 
+        $$self{ploidy} = 
+        {
+            default => 2,
+            X => 
+            [
+                # These are pseudoautosomal: 60001-2699520, 154931044-155270560, call with ploidy 2
+                { region=>'1-60000', M=>1 },
+                { region=>'2699521-154931043', M=>1 },
+            ],
+            Y =>
+            [
+                # No chrY in females and one copy in males
+                { region=>'1-59373566', M=>1, F=>0 },
+            ],
+        };
+        $self->warn("The 'ploidy' config key not present, check the code for assumed ploidy and pseudoautosomal regions\n"); 
+    }
+    if ( !exists($$self{keep_bcfs}) ) 
+    { 
+        $$self{keep_bcfs} = 1;
+        $self->warn("The 'keep_bcfs' config key not present, assuming: $$self{keep_bcfs}\n"); 
+    }
+    if ( $$self{clean} ) 
+    { 
+        $self->clean($$self{outdir});
+        $self->all_done;
+    }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+
+    if ( $$self{debug} ) { return $self->debug_commands(); }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config();
+
+    my $outdir = $$self{outdir};
+    my @chroms = @{$$self{chroms}};
+
+    if ( $self->is_finished("$outdir/all_done") ) { $self->all_done; }
+    if ( !$self->is_finished("$outdir/sanity_checked") ) { $self->check_sanity; }
+
+    # Create sample list for each population group
+    while (my ($pop,$value) = each %{$$self{pops}})
+    {
+        for my $chr (@chroms)
+        {
+            my $bams_outfile    = "$outdir/lists/chr$chr-$pop.list";
+            my $samples_outfile = "$outdir/lists/chr$chr-$pop.samples";
+            if ( !$self->is_finished($bams_outfile) )
+            {
+                $self->population_group_bams_list($bams_outfile,$$self{bams},$chr,$value, $samples_outfile);
+            }
+            if ( !$self->is_finished($samples_outfile) )
+            {
+                $self->sample_list($samples_outfile,$bams_outfile);
+            }
+        }
+    }
+
+    # Run mpileup for each population and chunk: first all sites BCFs if requested and then call variants
+    my $chunks = $self->get_chunks;
+
+    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+    if ( scalar keys %{$$self{pops}} > 1 ) { $$self{keep_bcfs} = 1; }
+    if ( $$self{keep_bcfs} )
+    {
+        for my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            if ( $self->is_finished("$outdir/pooled/$chr.vcf.gz") ) { next; }
+            if ( $self->is_finished("$outdir/pooled/$chr/$chr:$from-$to.vcf.gz") ) { next; }
+            $self->spawn('all_site_bcfs',"$outdir/pooled/$chr/$chr:$from-$to.bcf",'pooled',$chunk);
+        }
+        $self->wait;
+    }
+
+    # Call the variants
+	# $self->write_annot_file();    not calling vcf-annotate by default any more
+    for my $pop (keys %{$$self{pops}})
+    {
+        for my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            if ( $self->is_finished("$outdir/$pop/$chr.vcf.gz") ) { next; }
+            $self->spawn('call_variants',"$outdir/$pop/$chr/$chr:$from-$to.vcf.gz",$pop,$chunk);
+        }
+    }
+    $self->wait;
+    $self->set_limits(runtime=>undef);
+    
+    $$self{shuffle_chunks} = 0; # chunks need to be in genomic order from here on
+    
+    # Create the merged set if there are more population groups (pooled + two others)
+    if ( $$self{merge_pops} && scalar keys %{$$self{pops}} > 2 )
+    {
+        for my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            my @vcfs = ();
+            for my $pop (keys %{$$self{pops}})
+            {
+                if ( $pop eq 'pooled' ) { next; }
+                push @vcfs, "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz";
+            }
+            $self->spawn('merge_vcfs',"$outdir/merged/$chr/$chr:$from-$to.vcf.gz","$outdir/pooled/$chr/$chr:$from-$to.bcf",\@vcfs);
+        }
+
+        # Work with the merged set only from now (otherwise comment the next line)
+        delete($$self{pops});
+        $$self{pops}{merged} = 1;
+    }
+    $self->wait;
+
+	# Merge the files and apply hard filtering. Two branches for whole-genome or per-chromosome files
+	my @vcfs;
+	for my $pop (keys %{$$self{pops}})
+	{
+		if ( $$self{merge_chroms} ) 
+		{ 
+			my $outfile = "$outdir/$pop/all.vcf.gz";
+			$self->spawn('concat_vcfs',$outfile,$pop,'.',$chunks); 
+			push @vcfs, $outfile;
+		}
+		else 
+		{ 
+			for my $chr (@chroms) 
+			{ 
+				my $outfile = "$outdir/$pop/$chr.vcf.gz";
+				$self->spawn('concat_vcfs',$outfile,$pop,$chr,$chunks);
+				push @vcfs, $outfile;
+			} 
+		}
+	}
+	$self->wait;
+
+    # Run summary stats
+    for my $vcf (@vcfs)
+    {
+		my $filt = $vcf; $filt =~ s/.vcf.gz/.filt.vcf.gz/;
+        $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f PASS -s -');
+        $self->spawn('vcf_stats',"$vcf.vchk",$vcf,'-s -');
+        if ( defined $$self{filter} && $$self{hard_filter} ) { $self->spawn('apply_filter',$filt,$vcf); }
+    }
+    $self->wait;
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->cmd("touch $outdir/all_done");
+    $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    for my $pop (keys %{$$self{pops}})
+    {
+        $self->cmd("rm -rf $outdir/$pop");
+    }
+    $self->clean($outdir);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    my $chunks = $self->get_chunks;
+    for my $pop (keys %{$$self{pops}})
+    {
+        for my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            for my $suffix (qw(samples vcf.gz vcf.gz.tbi))
+            {
+                my $file = "$outdir/$pop/$chr/$chr:$from-$to.$suffix";
+                unlink($file) unless !-e $file;
+            }
+        }
+        for my $chr (@{$$self{chroms}})
+        {
+            unlink("$outdir/$pop/$chr/concat.list") unless (!-e "$outdir/$pop/$chr/concat.list");
+            rmdir("$outdir/$pop/$chr") unless ($$self{keep_bcfs});
+        }
+    }
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    open(my $fh,'>',"$outfile.part/info.txt") or $self->throw("$outfile.part/info.txt: $!");
+    print $fh $$self{_about};
+    close($fh);
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/mpileup.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    $cmd =~ s/\n/ /g;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+
+sub check_sanity
+{
+    my ($self) = @_;
+
+    # Check that the -P option corresponds to PL in the BAMs
+    if ( !($$self{mpileup}=~/\s+-\S*P\s+(\S+)/) ) { return; }
+    my %pl = map { $_=>1 } split(/,/,$1);
+    my %bam_pls = ();
+
+    open(my $fh,'<',$$self{bams}) or $self->throw("$$self{bams}: $!");
+    while (my $bam=<$fh>)
+    {
+        chomp($bam);
+        my @rgs = `samtools view -H $bam | grep ^\@RG`;
+        for my $rg (@rgs)
+        {
+            if ( !($rg=~/\tPL:(\S+)/) ) { next; }
+            $bam_pls{$1} = 1;
+        }
+    }
+    close($fh);
+
+    for my $pl (keys %pl)
+    {
+        if ( !exists($bam_pls{$pl}) ) { $self->throw("The platform \"$pl\" not present in any of the BAMs.\n"); }
+    }
+    `mkdir -p $$self{outdir}`;
+    $self->cmd("touch $$self{outdir}/sanity_checked");
+}
+
+sub open_file
+{
+    my ($self,$file) = @_;
+    if ( ($file=~m{^(.+)/[^/]+$}) && ! -d $1 ) { $self->cmd("mkdir -p $1"); }
+    open(my $fh,'>',$file) or $self->throw("$file: $!");
+    return $fh;
+}
+
+sub population_group_bams_list
+{
+    my ($self,$outfile,$bam_list,$chr,$pops,$samples_fname) = @_;
+
+    # Is it a BAM or a file of file names?
+    my @out = `file $bam_list`;
+    if ( $out[0]=~/gzip compressed data/ ) 
+    {
+        my $out = $self->open_file("$outfile.part");
+        print $out "$bam_list\n";
+        close($out) or $self->throw("close $samples_fname");
+        rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+        return;
+    }
+
+    open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
+    my $out = $self->open_file("$outfile.part");
+    my $printed = 0;
+    while (my $line=<$in>)
+    {
+        # If the BAMs are split by chr, we are applying to regex's to select by chromosome
+        #   and by the population name. Otherwise, only population regex is used.
+        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr\./) ) { next; }
+        for my $pop (@$pops)
+        {
+            if ( !($line=~/$pop/) ) { next; }
+            print $out $line;
+            $printed = 1;
+            last;
+        }
+    }
+    close($in) or $self->throw("close $bam_list");
+
+    if ( !$printed )
+    { 
+        # No BAM was identified. In that case, the population should be interpreted as
+        #   sample name regex's. Read BAM headers and find out the exact sample names and
+        #   list of BAMs. The regex may cause problems in future, this may be replaced by
+        #   an exact match in find_bams_with_samples.
+        #
+        my ($bams,$samples) = $self->find_bams_with_samples($bam_list,$pops);
+        if ( !@$bams ) 
+        { 
+            if ( !$$self{whole_genome_bams} ) 
+            {
+                $self->throw("The BAMs not named as chrom$chr.bam, please unset the whole_genome_bams config key\n");
+            }
+            $self->throw("No matching BAM found for chr$chr; searched in file names (/chrom$chr\\./) and sample names: ",join(',',@$pops),"\n"); 
+        }
+        print $out join("\n", @$bams), "\n";
+        close($out) or $self->throw("close $outfile.part");
+
+        if ( defined $$self{sample_list} )
+        {
+            $self->cmd("cp $$self{sample_list} $samples_fname");
+            undef $out;
+        }
+        else 
+        {
+            $out = $self->open_file($samples_fname);
+            my $sexes = $self->get_sample_sex(@$samples);
+            for my $sample (sort keys %$sexes)
+            {
+                print $out "$sample\t$$sexes{$sample}\n";
+            }
+        }
+    }
+    if ( defined $out ) { close($out) or $self->throw("close $samples_fname"); }
+
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+# Returns list of BAMs and samples which match the regex's from the sample_list
+sub find_bams_with_samples
+{
+    my ($self,$bam_list,$sample_list) = @_;
+
+    my (%bams,%samples);
+
+    open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
+    while (my $bam=<$in>)
+    {
+        chomp($bam);
+
+        open(my $rgs,"samtools view -H $bam |") or $self->throw("samtools view -H $bam: $!");
+        while (my $rg=<$rgs>)
+        {
+            if ( !($rg=~/^\@RG/) ) { next; }
+            if ( !($rg=~/SM:(\S+)/) ) { next; }
+            my $sample = $1;
+            for my $re (@$sample_list)
+            {
+                if ( ($sample=~/$re/) ) 
+                { 
+                    $bams{$bam} = 1;
+                    $samples{$sample} = 1;
+                    last;
+                }
+            }
+        }
+        close($rgs);
+    }
+    close($in);
+
+    my @bams = sort keys %bams;
+    my @samples = sort keys %samples;
+    return (\@bams,\@samples);
+}
+
+sub get_sample_sex
+{
+    my ($self,@samples) = @_;
+    my $sexes;
+    for my $sample (@samples)
+    {
+        my $sex;
+        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
+        else
+        {
+            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
+            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
+            $sex = $sex[0];
+            chomp($sex);
+        }
+        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+        $$sexes{$sample} = $sex;
+    }
+    return $sexes;
+}
+
+sub sample_list
+{
+    my ($self,$outfile,$bams) = @_;
+
+    my $sexes;
+    if ( defined $$self{sample_list} )
+    {
+        open(my $fh,'<',$$self{sample_list}) or $self->throw("$$self{sample_list}: $!");
+        while (my $line=<$fh>)
+        {
+            my ($sample,$sex) = split(/\s+/, $line);
+            if ( !defined $sex ) { next; }
+            chomp($sex);
+            if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+            $$sexes{$sample} = $sex;
+        }
+        close($fh);
+    }
+
+    my %samples;
+
+    # Now fill the ploidy information
+    open(my $in,'<',$bams) or $self->throw("$bams: $!");
+    while (my $bam=<$in>)
+    {
+        chomp($bam);
+
+        open(my $rgs,"samtools view -H $bam |") or $self->throw("samtools view -H $bam: $!");
+        while (my $rg=<$rgs>)
+        {
+            if ( !($rg=~/^\@RG/) ) { next; }
+            if ( $rg=~/SM:(\S+)/ ) { $samples{$1}=1; }
+        }
+        close($rgs);
+    }
+    close($in);
+
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    if ( !defined $sexes ) { $sexes = $self->get_sample_sex(keys %samples); }
+    for my $sample (sort keys %samples)
+    {
+        print $out "$sample\t$$sexes{$sample}\n";
+    }
+    close($out) or $self->throw("close $outfile.part");
+
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub get_chunks
+{
+    my ($self) = @_;
+
+    my $regions = $$self{regions} ? $self->read_regions($$self{regions}) : $self->read_fai("$$self{fa_ref}.fai",$$self{chroms});
+    my @chunks;
+    for my $region (@$regions)
+    {
+        my $pos     = $$region{from};
+        my $end_pos = $$region{to};
+        while ($pos<$end_pos)
+        {
+            my $from = $pos;
+            my $to   = $from+$$self{chunk_size}-1;
+            if ( $to>$end_pos ) { $to=$end_pos; }
+
+            push @chunks, { chr=>$$region{chr}, from=>$from, to=>$to };
+
+            $pos += $$self{chunk_size};
+            if ( $pos<1 ) { $self->throw("The split size too small [$$self{chunk_size}]?\n"); }
+
+            if ( $$self{debug_chunks} && scalar @chunks>=$$self{debug_chunks} ) { return \@chunks; }
+        }
+    }
+
+    if ( $$self{shuffle_chunks} )
+    {
+        use Math::Random;
+        random_set_seed_from_phrase(1,1);
+        @chunks = random_permutation(@chunks);
+    }
+
+    return \@chunks;
+}
+
+sub read_regions
+{
+    my ($self,$file) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!"); 
+    my @regions;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)\s*$/) ) { $self->throw("Could not parse the regions file $file: [$line]"); }
+        push @regions, { chr=>$1, from=>$2, to=>$3 };
+    }
+    return \@regions;
+}
+
+sub read_fai
+{
+    my ($self,$fai,$regexs) = @_;
+
+    my %chunk_opts = ();
+    for my $key (keys %{$$self{chunk_options}})
+    {
+        my ($chr,$fromto) = split(/:/,$key);
+        if ( !defined $fromto or $fromto eq '' ) { next; }
+        my ($from,$to) = split(/-/,$fromto);
+        push @{$chunk_opts{$chr}},[$from,$to];
+    }
+    for my $chr (keys %{$$self{ploidy}})
+    {
+        if ( ref($$self{ploidy}{$chr}) ne 'ARRAY' ) { next; }
+        for my $reg (@{$$self{ploidy}{$chr}})
+        {
+            my ($from,$to) = split(/-/,$$reg{region}); 
+            push @{$chunk_opts{$chr}},[$from,$to];
+        }
+    }
+    for my $chr (keys %chunk_opts)
+    {
+        $chunk_opts{$chr} = [ sort { $$a[0]<=>$$b[0] } @{$chunk_opts{$chr}} ];
+    }
+
+    # Determine the chromosomes and their lengths
+    open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
+    my @chr_lengths;
+    while (my $line=<$fh>)
+    {
+        my ($chr,$from,$to);
+        for my $regex (@$regexs)
+        {
+            if ( !($line=~/^($regex)\t(\d+)/i) ) { next; }
+            $chr  = $1;
+            $from = 1;
+            $to   = $2;
+            last;
+        }
+        if ( !defined $chr ) { next; }
+        if ( !exists($chunk_opts{$chr}) ) 
+        {
+            push @chr_lengths, { chr=>$chr, from=>$from, to=>$to };
+            next;
+        }
+
+        # Split the chunks as necessary
+        for my $reg (@{$chunk_opts{$chr}})
+        {
+            if ( $$reg[0]>$from )
+            {
+                push @chr_lengths, { chr=>$chr, from=>$from, to=>$$reg[0]-1 };
+                $from = $$reg[0];
+                push @chr_lengths, { chr=>$chr, from=>$from, to=>$$reg[1] };
+                $from = $$reg[1]+1;
+            }
+            elsif ( $$reg[0]==$from )
+            {
+                push @chr_lengths, { chr=>$chr, from=>$$reg[0], to=>$$reg[1] };
+                $from = $$reg[1]+1;
+            }
+        }
+        if ( $from<$to )
+        {
+            push @chr_lengths, { chr=>$chr, from=>$from, to=>$to };
+        }
+    }
+    close($fh);
+    if ( !@chr_lengths ) { $self->throw("No sequences read from $fai??"); }
+    return \@chr_lengths;
+}
+
+sub ploidy_defaults
+{
+    my ($self,$chr,$from,$to) = @_;
+    my $mploidy = $$self{ploidy}{default};
+    my $fploidy = $$self{ploidy}{default};
+    if ( !exists($$self{ploidy}{$chr}) ) { return ($mploidy,$fploidy); }
+    for my $reg (@{$$self{ploidy}{$chr}})
+    {
+        my ($start,$end) = split(/-/,$$reg{region});
+
+        # Require at least one end to be within the interval
+        if ( $from>=$start && $from<=$end or $to>=$start && $to<=$end )
+        {
+            if ( exists($$reg{M}) ) { $mploidy=$$reg{M}; }
+            if ( exists($$reg{F}) ) { $fploidy=$$reg{F}; }
+            return ($mploidy,$fploidy);
+        }
+    }
+    return ($mploidy,$fploidy);
+}
+
+sub set_chunk_options
+{
+    my ($self,$chr,$from,$to) = @_;
+    if ( !exists($$self{chunk_options}) ) { return; }
+    my $hit;
+    for my $chunk (keys %{$$self{chunk_options}})
+    {
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) && !($chunk=~/^([^:]+)$/) ) { $self->throw("Could not parse chunk_options: [$chunk]"); }
+        if ( $chr ne $1 ) { next; }
+        if ( defined $2 )
+        {
+            if ( $2>$to ) { next; }
+            if ( $3<$from ) { next; }
+        }
+        $hit = $chunk;
+        last;
+    }
+    if ( !defined $hit )
+    {
+        if ( exists($$self{ori_chunk_options}) ) 
+        {
+            $self->set_options($$self{ori_chunk_options},$self);
+        }
+        return;
+    }
+    if ( !exists($$self{ori_chunk_options}) )
+    {
+        $$self{ori_chunk_options} = {};
+        $self->set_options($self,$$self{ori_chunk_options},keys %{$$self{chunk_options}{$hit}});
+    }
+    $self->set_options($$self{chunk_options}{$hit},$self);
+}
+
+sub set_options
+{
+    my ($self,$src,$tgt,@keys) = @_;
+    if ( !scalar @keys ) { @keys = keys %$src }
+    for my $key (@keys)
+    {
+        $$tgt{$key} = $$src{$key};
+    }
+}
+
+sub all_site_bcfs
+{
+    my ($self,$outfile,$pop,$chunk) = @_;
+
+    my $chr  = $$chunk{chr};
+    my $from = $$chunk{from};
+    my $to   = $$chunk{to};
+
+    $self->set_chunk_options($chr,$from,$to);
+
+    my $outdir = $$self{outdir};
+    my $bam_list = "$outdir/lists/chr$chr-$pop.list";
+
+    `mkdir -p $outdir/$pop/$chr/` unless -d "$outdir/$pop/$chr";
+    my $cmd = "$$self{mpileup} -g -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} > $outfile.part";
+    $self->cmd($cmd);
+
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub call_variants
+{
+    my ($self,$outfile,$pop,$chunk) = @_;
+
+    my $outdir = $$self{outdir};
+    my $chr  = $$chunk{chr};
+    my $from = $$chunk{from};
+    my $to   = $$chunk{to};
+
+    $self->set_chunk_options($chr,$from,$to);
+
+    `mkdir -p $outdir/$pop/$chr/` unless -d "$outdir/$pop/$chr";
+
+    # Create sample list with correct ploidy info
+    my $sample_list = "$outdir/$pop/$chr/$chr:$from-$to.samples";
+    if ( !$self->is_finished($sample_list) )
+    {
+        $self->create_sample_file("$outdir/lists/chr$chr-$pop.samples","$outdir/$pop/$chr/$chr:$from-$to.samples", $chr,$from,$to);
+    }
+
+    my $cmd;
+    if ( $$self{keep_bcfs} )
+    {
+        $cmd = "$$self{bcftools} -S $sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
+    }
+    else
+    {
+        my $bam_list = "$outdir/lists/chr$chr-$pop.list";
+        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -S $sample_list -";
+    }
+    if ( exists($$self{annot_file}) )
+    {
+        if ( !-e $$self{annot_file} ) { $self->throw("The annot_file does not exist: $$self{annot_file}"); }  
+        $cmd .= " | vcf-annotate -f $$self{annot_file}"; 
+    }
+    $self->cmd("$cmd | bgzip -c > $outfile.part");
+
+    $self->tabix_part($outfile);
+}
+
+sub debug_commands
+{
+    my ($self) = @_;
+    my ($chr,$pos)  = split(/:/, $$self{debug});
+    my $bam_list    = "$$self{outdir}/lists/chr$chr-pooled.list";
+    my $sample_list = "$$self{outdir}/lists/chr$chr-pooled.samples";
+    $self->create_sample_file($sample_list,"samples.$$.list", $chr,$pos,$pos);
+    $self->set_chunk_options($chr,$pos,$pos);
+    my $cmd = "$$self{mpileup} -ug -r $chr:$pos-$pos -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -S samples.$$.list -";
+    print "$cmd\n";
+}
+
+sub create_sample_file
+{
+    my ($self,$all_samples,$out_samples,$chr,$from,$to) = @_;
+
+    my ($mploidy,$fploidy) = $self->ploidy_defaults($chr,$from,$to);
+    if ( !$mploidy ) { $mploidy = 0; }
+    if ( !$fploidy ) { $fploidy = 0; }
+    open(my $in,'<',$all_samples) or $self->throw("$all_samples: $!");
+    open(my $out,'>',$out_samples) or $self->throw("$out_samples: $!");
+    while (my $line=<$in>)
+    {
+        my @items = split(/\s+/,$line);
+        if ( $all_samples =~ /.ped$/i or scalar @items==6 ) 
+        {
+            # assume ped file, leave as it is
+            print $out $line;
+            next;
+        }
+        my ($sample,$pl);
+        if ( ($line=~/^(\S+)\s+([MF])$/) ) { $sample = $1; $pl = $2; }
+        elsif ( ($line=~/^(\S+)\s+(\d)$/) ) { $sample = $1; $pl = $2; }
+        else { chomp($line); $self->throw("Could not parse [$all_samples]: [$line]\n"); }
+
+        if ( $pl eq 'M' ) { $pl = $mploidy }
+        elsif ( $pl eq 'F' ) { $pl = $fploidy }
+        print $out "$sample\t$pl\n";
+    }
+    close($out) or $self->throw("close failed: $out_samples");
+    close($in) or $self->throw("close failed: $all_samples");
+}
+
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+sub merge_vcfs
+{
+    my ($self,$outfile,$bcf,$vcfs) = @_;
+
+    $self->throw("FIXME: update this branch, merge_vcfs() not maintained\n");
+
+    # List of all sites. Use awk, grep has the peculiar property of exiting with error status when no lines are printed
+    #   through -v
+    $self->cmd(q[vcf-isec -f -n +1 ] .join(' ',@$vcfs). q[ | awk '!($1~/^#/)' | cut -f 1,2 | uniq > ] . "$outfile.sites");
+
+    # Call genotypes for all samples at these positions
+    $self->cmd("$$self{bcftools} -l $outfile.sites $bcf | vcf-annotate --fill-ICF -f $$self{annot_file} | bgzip -c > $outfile.part");
+
+    $self->tabix_part($outfile);
+}
+
+sub write_annot_file
+{
+	my ($self) = @_;
+
+    if ( !exists($$self{annot_file}) ) 
+    { 
+        $$self{annot_file} = "$$self{outdir}/annot.pl";
+    }
+	if ( -e $$self{annot_file} ) { return; }
+
+	open(my $fh,'>',$$self{annot_file}) or $self->throw("$$self{annot_file}: $!");
+	print $fh q[
+		{
+			header   => [ 
+				qq[key=INFO,ID=PV0,Number=1,Type=Float,Description="P-value for strand bias"],
+				qq[key=INFO,ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias"],
+				qq[key=INFO,ID=PV2,Number=1,Type=Float,Description="P-value for mapQ bias"],
+				qq[key=INFO,ID=PV3,Number=1,Type=Float,Description="P-value for tail distance bias"],
+				qq[key=INFO,ID=MSQ,Number=1,Type=Float,Description="Maximum quality across non-ref genotypes"],
+				qq[key=INFO,ID=MSD,Number=1,Type=Float,Description="Maximum depth across non-ref genotypes"],
+			],
+			tag      => 'INFO/PV4',
+			name     => 'SplitPV4',
+			desc     => 'Split PV4',
+			apply_to => 'all',
+			test     => sub {
+				my @pv = split(/,/,$MATCH);
+				my %tags;
+				$tags{PV0} = $pv[0];
+				$tags{PV1} = $pv[1];
+				$tags{PV2} = $pv[2];
+				$tags{PV3} = $pv[3];
+
+				my $dp4 = $VCF->get_info_field($$RECORD[7],'DP4'); 
+				my @dp4 = split(/,/,$dp4);
+
+				my $igt = $VCF->get_tag_index($$RECORD[8],'GT',':');
+				my $igq = $VCF->get_tag_index($$RECORD[8],'GQ',':');
+				my $idp = $VCF->get_tag_index($$RECORD[8],'DP',':');
+				my $idv = $VCF->get_tag_index($$RECORD[8],'DV',':');
+				my $MSQ = 0;
+				my $MSD = 0;
+				for (my $i=9; $i<@$RECORD; $i++)
+				{	
+					my @tags = split(/:/,$$RECORD[$i]);
+					my @als = $VCF->split_gt($tags[$igt]);
+					for my $al (@als)
+					{
+						if ( $al eq '.' or $al eq '0' ) { next; }
+						my $gq = $tags[$igq];
+						if ( $MSQ<$gq ) { $MSQ= $gq; }
+						my $dp = $tags[$idp];
+						if ( $MSD<$dp ) { $MSD = $dp; }
+						last;
+					}
+				}
+				$tags{MSQ} = $MSQ;
+				$tags{MSD} = $MSD;
+				if ( scalar keys %tags ) { $$RECORD[7] = $VCF->add_info_field($$RECORD[7],%tags); }
+				return $PASS;
+			},
+		}
+	];
+	close($fh);
+}
+
+sub chunk_sort
+{
+	if ($$a{chr} eq $$b{chr}) { return $$a{from}<=>$$b{from} }
+	return $$a{chr} cmp $$b{chr};
+}
+
+sub concat_vcfs
+{
+	my ($self,$outfile,$pop,$chr,$chunks) = @_;
+
+	my $outdir = $$self{outdir};
+	my $chunks_list = "$outdir/$pop/$chr/concat.list";
+
+	open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
+	for my $chunk (sort chunk_sort @$chunks)
+	{
+		if ( $chr ne '.' && $$chunk{chr} ne $chr ) { next; }
+		my $from = $$chunk{from};
+		my $to   = $$chunk{to};
+		print $fh "$outdir/$pop/$$chunk{chr}/$$chunk{chr}:$from-$to.vcf.gz\n";
+	}
+	close($fh) or $self->throw("close $chunks_list");
+
+	my $filter = exists($$self{filter}) ? "| $$self{filter}" : '';
+	$self->cmd("$$self{concat} -f $chunks_list $filter | bgzip -c > $outfile.part");
+	$self->tabix_part($outfile);
+}
+
+sub vcf_stats
+{
+    my ($self,$outfile,$vcf,$args) = @_;
+    $args .= " -F $$self{fa_ref}";
+    if ( exists($$self{exons}) ) { $args .= " -e $$self{exons}"; }
+    $self->cmd("$$self{vcfstats} $args $vcf > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub apply_filter
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd(qq[zcat $vcf | awk '/^#/||\$7=="PASS"||\$7=="."' | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
+

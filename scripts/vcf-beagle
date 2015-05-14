@@ -1,0 +1,544 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+if ( $$opts{from_vcf} )
+{
+	convert_known($opts);
+	convert_to_be_imputed($opts);
+	create_markers($opts);
+}
+else
+{
+	beagle_to_vcf($opts);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+	my (@msg) = @_;
+	if ( scalar @msg ) { confess @msg; }
+	die
+		"About: Helper script of run-beagle. Conversion between input and output files of beagle. Only biallelic sites will be modified. Run by run-beagle.\n",
+		"Usage: vcf-beagle [OPTIONS]\n",
+		"Options:\n",
+		"	-i, --impute <file>					VCF file to be imputed.\n",
+        "       --GT-confidence <float>         In absence of GL and PL, GT is used. What likelihood corresponds to the GTs? [1.0]\n",
+		"	-k, --known <file>					VCF file with reference genotypes or \"--\" when not available.\n",
+		"	-o, --out <prefix>					Prefix of beagle output files\n",
+		"	-r, --region <chr|chr:from-to>		\n",
+		"	-h, -?, --help						This help message.\n",
+		"Examples:\n",
+		"	# Convert from VCFs to beagle files\n",
+		"	vcf-beagle -r 20:50000001-55000000 -i file.vcf.gz -k ref.vcf.gz -o dir/prefix\n",
+		"	vcf-beagle -r 20:50000001-55000000 -i file.vcf.gz -k -- -o dir/prefix\n",
+		"\n",
+		"	# Take the beagle results and annotate the original VCF file\n",
+		"	vcf-beagle -r 20:50000001-55000000 -i file.vcf.gz -o dir/prefix | bgzip -c > imputed.vcf.gz\n",
+		"\n";
+}
+
+sub parse_params
+{
+	my $opts = { from_vcf=>1, gtconf => 1 };
+	while (defined(my $arg=shift(@ARGV)))
+	{
+		if ( $arg eq '-r' || $arg eq '--region' ) 
+		{ 
+			$$opts{chrom} = shift(@ARGV); 
+			$$opts{region} = {region=>$$opts{chrom},print_header=>1}; 
+			parse_region($$opts{region}{region});
+			next;
+		}
+		if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
+        if (                 $arg eq '--GT-confidence' ) { $$opts{gtconf}=shift(@ARGV); next }
+		if ( $arg eq '-k' || $arg eq '--known' ) { $$opts{known}=shift(@ARGV); next }
+		if ( $arg eq '-i' || $arg eq '--impute' ) { $$opts{impute}=shift(@ARGV); next }
+		if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+		error("Unknown parameter \"$arg\". Run -h for help.\n");
+	}
+	if ( !exists($$opts{impute}) ) { error("Missing the -i option.\n") }
+	if ( !exists($$opts{out}) ) { error("Missing the -o option.\n") }
+	$$opts{prefix} = init_path($$opts{out});
+	$$opts{beagle_markers} = "$$opts{prefix}.markers";
+	if ( !exists($$opts{known}) )
+	{
+		$$opts{beagle_out} = $$opts{prefix};
+		if ( !-e $$opts{beagle_out} ) { error("Missing the -k option or the file: $$opts{beagle_out}\n") }
+
+		# Do not do phased output, the results are not good. Homs are reported in phased.gz output where Hets
+		#	are suggested in gprobs.gz. The discrepancy rate is higher when measured against validated data.
+		#
+		#	my $tmp = $$opts{beagle_out};
+		# 	$tmp =~ s/gprobs.gz$/phased.gz/;
+		# 	if ( -e $tmp ) { $$opts{beagle_phase} = $tmp; }
+
+		$$opts{from_vcf} = 0;
+	}
+	return $opts;
+}
+
+sub init_path
+{
+	my ($prefix) = @_;
+	if ( $prefix=~m{/} )
+	{
+		# A directory should be created. This will populate dir and prefix, for example
+		#	prefix	-> dir		prefix
+		#	----------------------------
+		#	out					out
+		#	out/	   out/		out/out
+		#	out/xxx    out/		out/xxx
+		#
+		my $dir = '';
+		if ( $prefix=~m{/[^/]+$} ) { $dir=$`; }
+		elsif ( $prefix=~m{/([^/]+)/$} ) { $dir = $`.'/'.$1; $prefix = $dir.'/'.$1; }
+		elsif ( $prefix=~m{([^/]+)/?$} ) { $dir=$1; $prefix=$dir.'/'.$1; }
+		if ( $dir ) { `mkdir -p $dir`; }
+	}
+	return $prefix;
+}
+
+sub convert_known
+{
+	my ($opts) = @_;
+
+	if ( -e "$$opts{prefix}.known_haps" or $$opts{known} eq '--' ) { return; }
+
+	my $vcf = Vcf->new(file=>$$opts{known},%{$$opts{region}});
+	$vcf->parse_header();
+	my @samples = $vcf->get_samples();
+
+	open(my $mfh,'>',"$$opts{beagle_markers}.known.part") or error("$$opts{beagle_markers}.known.part: $!");
+	open(my $fh,"| gzip -c > $$opts{prefix}.known_haps.part.gz") or error("$$opts{out}.known_haps.part.gz: $!");
+	print $fh "I\tmarker";
+	for my $id (@samples)
+	{
+		print $fh "\t$id\t$id";
+	}
+	print $fh "\n";
+
+	my $prev_pos;
+	while (my $x = $vcf->next_data_hash())
+	{
+		# Consider only biallelic sites and SNPs only
+		if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
+		if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+		if ( defined $prev_pos && $prev_pos eq $$x{POS} ) { next; }		# Beagle does not like duplicate positions
+		$prev_pos = $$x{POS};
+
+		my $ref = $$x{REF};
+		my $alt = $$x{ALT}[0];
+		my $id	= "$$x{CHROM}:$$x{POS}_$ref\_$alt";
+
+		print $mfh "$$x{CHROM}\t$id\t$$x{POS}\t$ref\t$alt\n";
+		print $fh "M\t$id";
+		for my $id (@samples)
+		{
+			my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,$id);
+			my $a1 = $$alleles[0];
+			my $a2 = $$alleles[1];
+			if ( !defined $a1 ) { error("FIXME: allele1 not defined? $$x{CHROM}:$$x{POS} $id"); }
+			if ( !defined $a2 ) { $a2 = $a1; } # haploid data
+
+			if ( $a1 eq '.' ) { $a1 = '?' }
+			if ( $a2 eq '.' ) { $a2 = '?' }
+
+			print $fh "\t$a1\t$a2";
+		}
+		print $fh "\n";
+	}
+	close($fh) or error("close gzip -c > $$opts{prefix}.known_haps.part.gz");
+	close($mfh) or error("close $$opts{beagle_markers}.known.part");
+	rename("$$opts{prefix}.known_haps.part.gz","$$opts{prefix}.known_haps.gz");
+	rename("$$opts{beagle_markers}.known.part","$$opts{beagle_markers}.known");
+}
+
+sub convert_to_be_imputed
+{
+	my ($opts) = @_;
+
+	if ( -e "$$opts{prefix}.impute_haps" ) { return; }
+
+	my $vcf = Vcf->new(file=>$$opts{impute},%{$$opts{region}});
+	$vcf->parse_header();
+	my @samples = $vcf->get_samples();
+
+	open(my $mfh,'>',"$$opts{beagle_markers}.impute.part") or error("$$opts{beagle_markers}.impute.part: $!");
+	open(my $fh,"| gzip -c > $$opts{prefix}.impute_haps.part.gz") or error("$$opts{out}.impute_haps.part.gz: $!");
+	print $fh "marker\talleleA\talleleB";
+	for my $id (@samples)
+	{
+		print $fh "\t$id\t$id\t$id";
+	}
+	print $fh "\n";
+	my $prev_pos;
+	while (my $x = $vcf->next_data_hash())
+	{
+		# Consider only biallelic sites and SNPs only
+		if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
+		if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+		if ( defined $prev_pos && $prev_pos eq $$x{POS} ) { next; }		# Beagle does not like duplicate positions
+		$prev_pos = $$x{POS};
+
+		my $ref = $$x{REF};
+		my $alt = $$x{ALT}[0];
+		my $id	= "$$x{CHROM}:$$x{POS}_$ref\_$alt";
+
+		print $mfh "$$x{CHROM}\t$id\t$$x{POS}\t$ref\t$alt\n";
+		print $fh "$id\t$ref\t$alt";
+		for my $id (@samples)
+		{
+			my $dat = $$x{gtypes}{$id};
+
+			my ($gl_rr,$gl_ar,$gl_aa);
+			if ( exists($$dat{GL}) ) 
+			{ 
+				($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{GL});
+				$gl_rr = 10**$gl_rr;
+				$gl_ar = 10**$gl_ar;
+				$gl_aa = 10**$gl_aa;
+			}
+			elsif ( exists($$dat{PL}) )
+			{
+				($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{PL});
+				$gl_rr = 10**(-$gl_rr/10.);
+				$gl_ar = 10**(-$gl_ar/10.);
+				$gl_aa = 10**(-$gl_aa/10.);
+			}
+            elsif ( exists($$dat{GT}) )
+            {
+                my @als = $vcf->split_gt($$dat{GT});
+                if ( $als[0] ne '.' )
+                {
+                    if ( @als > 2 ) { error("Not ready for this: $$x{CHROM} $$x{POS}: $$dat{GT}\n"); }
+                    if ( @als == 1 )
+                    {
+                        # haploid genotypes have GL of Het=0
+                        $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 1-$$opts{gtconf};
+                        $gl_ar = 0;
+                        $gl_aa = $als[0] eq '0' ? 1-$$opts{gtconf} : $$opts{gtconf};
+                    }
+                    elsif ( $als[0] eq $als[1] )
+                    {
+                        # homozygous diploid genotype
+                        $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 0.5*(1-$$opts{gtconf});
+                        $gl_ar = 0.5*(1-$$opts{gtconf});
+                        $gl_aa = $als[0] eq '0' ? 0.5*(1-$$opts{gtconf}) : $$opts{gtconf};
+                    }
+                    else
+                    {
+                        # heterozygous diploid genotype
+                        $gl_rr = $gl_aa = 0.5*(1-$$opts{gtconf});
+                        $gl_ar = $$opts{gtconf};
+                    }
+                }
+            }
+            else
+            {
+                error("None of the FORMAT tags present at $$x{CHROM} $$x{POS}: GL, PL, GT\n");
+            }
+
+
+			# Check the ploidy
+			if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'|')==-1  ) 
+			{ 
+				$gl_ar = 0;
+				if ( !defined $gl_rr or abs($gl_rr-$gl_aa)<1e-5 ) { $gl_rr = $gl_aa = 0.5 }
+			}
+			elsif ( !defined $gl_rr or (abs($gl_rr-$gl_ar)<1e-5 && abs($gl_ar-$gl_aa)<1e-5) ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
+
+            my $norm = $gl_rr + $gl_ar + $gl_aa;
+            $gl_rr /= $norm;
+            $gl_ar /= $norm;
+            $gl_aa /= $norm;
+
+			printf $fh "\t%f\t%f\t%f", $gl_rr,$gl_ar,$gl_aa;
+		}
+		print $fh "\n";
+	}
+	close($fh) or error("close gzip -c > $$opts{prefix}.impute_haps.part.gz");
+	close($mfh) or error("close $$opts{beagle_markers}.impute.part");
+	rename("$$opts{prefix}.impute_haps.part.gz","$$opts{prefix}.impute_haps.gz");
+	rename("$$opts{beagle_markers}.impute.part","$$opts{beagle_markers}.impute");
+}
+
+sub create_markers
+{
+	my ($opts) = @_;
+
+	if ( ! -s "$$opts{beagle_markers}.known" or ! -s "$$opts{beagle_markers}.impute" )
+	{
+		# Create an empty file if one of the files is empty
+		`touch $$opts{beagle_markers}`;
+		return;
+	}
+
+	my $cmd = "sort -m -k1,1d -k3,3n -k2,2d $$opts{beagle_markers}.known $$opts{beagle_markers}.impute | uniq | cut -f 2- > $$opts{beagle_markers}.part";
+	`$cmd`;
+	if ( $? ) { error("Error: $cmd\n$!\n"); }
+	rename("$$opts{beagle_markers}.part",$$opts{beagle_markers});
+}
+
+sub read_samples
+{
+	my ($file) = @_;
+	my %samples;
+	open(my $fh,'<',$file) or error("$file: $!");
+	<$fh>; 
+	<$fh>;
+	while (my $line=<$fh>)
+	{
+		if ( !($line=~/^(\S+)\s/) ) { error("Could not parse: $line"); }
+		$samples{$1} = 1;
+	}
+	close($fh) or error("close $file");
+	return \%samples;
+}
+
+
+# Check if the sample IDs match or at least overlap
+sub samples_overlap
+{
+	my ($opts) = @_;
+	my $impute = read_samples("$$opts{prefix}.impute_samples");
+	my $known  = read_samples("$$opts{prefix}.known_samples");
+	my @known_only;
+	my @impute_only;
+	my $both = 0;
+	for my $sample (keys %$known)
+	{
+		if ( !exists($$impute{$sample}) ) { push @known_only,$sample; }
+		else { $both++; }
+	}
+	for my $sample (keys %$impute)
+	{
+		if ( !exists($$known{$sample}) ) { push @impute_only,$sample; }
+	}
+	if ( !@known_only && !@impute_only ) { return; }
+
+	printf STDERR "%d samples only in $$opts{prefix}.known_samples\n", scalar @known_only;
+	printf STDERR "%d samples only in $$opts{prefix}.impute_samples\n", scalar @impute_only;
+	printf STDERR "%d samples in both\n", $both;
+	print STDERR "\n";
+	for my $sample (@known_only)
+	{
+		print STDERR "only in $$opts{prefix}.known_samples:\t$sample\n";
+	}
+	for my $sample (@impute_only)
+	{
+		print STDERR "only in $$opts{prefix}.impute_samples:\t$sample\n";
+	}
+}
+
+
+# Break the beagle line to chromosome, position, alleles and unparsed genotypes
+sub next_beagle_line
+{
+	my ($opts, $fh) = @_;
+	my $line = <$fh>;
+	if ( !defined $line ) { return undef; }
+	if ( !($line=~/^([^:\s]+):(\d+)_([^_\s]+)_([^_\s]+)\s+(\S+)\s+(\S+)\s+/) ) { error("next_beagle_line FIXME: could not parse [$line]\n"); }
+	my $chr  = $1;
+	my $pos  = $2;
+	my $ref  = $3;
+	my $alt  = $4;
+	my $nref = $5;
+	my $nalt = $6;
+	my $gts  = $';
+	
+	if ( $ref ne $nref or $alt ne $nalt ) { error("FIXME: yes, this can happen: $chr,$pos,$ref,$alt,$nref,$nalt.\n"); }
+
+	if ( exists($$opts{phase_fh}) )
+	{
+		my $phase_line = readline($$opts{phase_fh});
+		my @items = split(/\s+/,$phase_line);
+		chomp($items[-1]);
+		splice(@items,0,2);
+		$$opts{phase_data} = \@items;
+	}
+
+	return ($pos,$ref,$alt,$gts);
+}
+
+
+# Copy phase from impute to VCF 
+sub merge_lines
+{
+	my ($opts,$vcf,$vcf_line,$a,$b,$imp_line,$samples) = @_;
+
+	chomp($vcf_line);
+	my $rec = $vcf->next_data_hash($vcf_line);
+	my $ref = $$rec{REF};
+	if ( @{$$rec{ALT}} != 1 or $$rec{ALT}[0] eq '.' or $a ne $ref ) 
+	{ 
+		# This can happen when the VCF file contains a site (an indel for example) which was
+		#	left out from imputing and the site is present in the known set. beagle adds
+		#	those on output. In such a case, use the original VCF line.
+		#
+		#	error("Expected biallelic site $$rec{POS} $$rec{ALT}[0], ",@{$$rec{ALT}}); 
+		return $vcf_line."\n";
+	}
+
+	my $gtypes = $$rec{gtypes};
+	my @lks = split(/ /,$imp_line);
+	chomp($lks[-1]);
+	my $n = @$samples / 3;
+	my $log10 = log(10);
+	my $phase = exists($$opts{phase_data}) ? $$opts{phase_data} : undef;
+
+	for (my $i=0; $i<$n; $i++)
+	{
+		my $sample = $$samples[$i*3];
+
+		my $lk_aa = $lks[$i*3];
+		my $lk_ab = $lks[$i*3+1];
+		my $lk_bb = $lks[$i*3+2];
+		if ( $lk_aa eq 0 ) { $lk_aa=1e-12; }
+		if ( $lk_ab eq 0 ) { $lk_ab=1e-12; }
+		if ( $lk_bb eq 0 ) { $lk_bb=1e-12; }
+
+		# Check the ploidy
+		my $ploidy = ( index($$gtypes{$sample}{GT},'/')==-1 && index($$gtypes{$sample}{GT},'|')==-1  ) ? 1 : 2;
+
+		my ($aa,$ab,$bb);
+		if ( defined $phase )
+		{
+			my $sa = $$phase[$i*2];
+			my $sb = $$phase[$i*2+1];
+			
+			$$gtypes{$sample}{GT} = $sa eq $a ? '0' : '1';
+			if ( $ploidy==2 ) 
+			{
+				$$gtypes{$sample}{GT} .= $sb eq $a ? '|0' : '|1';
+			}
+			elsif ( $sa ne $sb ) { error("Two alleles for haploid sample: $$rec{CHROM} $$rec{POS} .. $sample $sa,$sb"); }
+		}
+		else
+		{
+			if ( $ploidy==1 )
+			{
+				$$gtypes{$sample}{GT} = $lk_aa >= $lk_bb ? '0' : '1';
+				if ( $lk_ab>$lk_aa && $lk_ab>$lk_bb ) { error("FIXME: HET GL most likely?! $$rec{CHROM} $$rec{POS} .. $sample $lk_aa $lk_ab $lk_bb\n"); }
+			}
+			elsif ( $lk_aa >= $lk_ab )
+			{
+				$$gtypes{$sample}{GT} = $lk_aa >= $lk_bb ? '0/0' : '1/1';
+			}
+			else
+			{
+				$$gtypes{$sample}{GT} = $lk_ab >= $lk_bb ? '0/1' : '1/1';
+			}
+		}
+
+		$$gtypes{$sample}{GL} = sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+	}
+	$vcf->add_format_field($rec,'GL');
+	return $vcf->format_line($rec);
+}
+
+sub parse_region
+{
+	my ($region) = @_;
+	if ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { return ($1,$2,$3); }
+	elsif ( $region=~/^([^:]+):/ ) { error("Could not parse region [$region]\n"); }
+	return ($region,undef,undef);
+}
+
+sub init_phased_output
+{
+	my ($opts,$samples) = @_;
+	if ( !exists($$opts{beagle_phase}) ) { return; }
+	open($$opts{phase_fh},"zcat $$opts{beagle_phase} |") or error("zcat $$opts{beagle_phase}: $!");
+	my $line = readline($$opts{phase_fh});
+	my @items = split(/\s+/,$line);
+	splice(@items,0,2);
+	if ( @items/2. != @$samples/3. ) { error(sprintf "FIXME: different number of samples: %d vs %d\n", scalar @items,scalar @$samples); }
+	for (my $i=0; $i<@items/2.; $i++) 
+	{
+		if ( $items[$i*2] ne $items[$i*2+1] ) { error("FIXME: did not expect this, the order is different"); }
+		if ( $items[$i*2] ne $$samples[$i*3] ) { error("FIXME: did not expect this, the order is different"); }
+		if ( $items[$i*2] ne $$samples[$i*3+1] ) { error("FIXME: did not expect this, the order is different"); }
+		if ( $items[$i*2] ne $$samples[$i*3+2] ) { error("FIXME: did not expect this, the order is different"); }
+	}
+}
+
+sub beagle_to_vcf
+{
+	my ($opts) = @_;
+
+	my ($reg_chr,$reg_from,$reg_to) = parse_region($$opts{region}{region});
+
+	my $vcf = Vcf->new(file=>$$opts{impute},%{$$opts{region}});
+	$vcf->parse_header();
+	print $vcf->format_header();
+
+	open(my $fh,"zcat $$opts{beagle_out} |") or error("zcat $$opts{beagle_out}: $1");
+	my $header = <$fh>;
+	my @samples = split(/\s+/,$header);
+	splice(@samples,0,3);
+	init_phased_output($opts,\@samples);
+
+	my ($vcf_line,$bgl_line,$vcf_pos,$bgl_pos);
+	while (1)
+	{
+		if ( !defined $vcf_line ) { $vcf_line = $vcf->next_line() or last; undef $vcf_pos; }
+		if ( !defined $bgl_line ) { ($bgl_pos,$a,$b,$bgl_line) = next_beagle_line($opts,$fh); }
+
+		if ( !defined $bgl_line )
+		{ 
+			# There are no more impute lines left
+			print $vcf_line; 
+			undef $vcf_line;
+			next;
+		}
+		if ( !defined $vcf_pos ) 
+		{ 
+			if ( !($vcf_line=~/^[^\t]+\t(\d+)\t/) ) { error("Could not parse VCF pos"); }
+			$vcf_pos = $1;
+		}
+		
+		# Ignore positions which are outside the region
+		if ( defined $reg_from && $vcf_pos<$reg_from or defined $reg_to && $vcf_pos>$reg_to )
+		{
+			undef $vcf_line;
+			next;
+		}
+
+		if ( $vcf_pos<$bgl_pos ) 
+		{ 
+			# beagle is ahead of VCF
+			print $vcf_line;
+			undef $vcf_line;
+			next;
+		}
+
+		if ( $vcf_pos>$bgl_pos )
+		{
+			# VCF is ahead of impute
+			undef $bgl_line;
+			next;
+		}
+
+		# VCF and impute have the same position
+		print merge_lines($opts,$vcf,$vcf_line,$a,$b,$bgl_line,\@samples);
+
+		# Do not undef bgl_line, in case there are duplicate VCF lines
+		undef $vcf_line;
+	}
+	# Skip anything what's left so that the close status can be checked
+	while (my $line=<$fh>) {}
+	close($fh) or error("close zcat $$opts{beagle_out}");
+	if ( exists($$opts{phase_fh}) )  { close($$opts{phase_fh}) or error("close zcat $$opts{beagle_phase}"); }
+}
+

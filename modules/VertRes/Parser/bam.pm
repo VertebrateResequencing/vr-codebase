@@ -449,10 +449,14 @@ sub program_info {
 =head2 program
 
  Title   : program
- Usage   : my $program = $obj->program();
- Function: Return the program used to do the mapping, as given in the header.
+ Usage   : my $program_id = $obj->program();
+ Function: Return the ID of the program used to do the mapping, as given in
+           the header.
            If there is more than 1 PG header line, tries to guess which one is
            for the mapping program.
+           If you want the program name, use program_info, find the PG line
+           with the program id from this function, then pull out PN from the
+           hash.
  Returns : string (undef if no header or not given in header)
  Args    : n/a
 
@@ -481,17 +485,30 @@ sub _guess_mapping_program {
         # }
         
         my (@known_prg,@unknown_prg);
-        for my $program (@programs)
-        {
-            if ( $program =~ /bwa|maq|ssha|bfast|stampy/ ) { push @known_prg, $program; }
-            elsif ( $program !~ /GATK/ ) { push @unknown_prg, $program; }
+        for my $program (@programs) {
+            if ($program =~ /bwa|maq|ssaha|bfast|stampy/) {
+                push @known_prg, $program;
+            }
+            elsif ($program !~ /GATK/) {
+                push @unknown_prg, $program;
+            }
         }
 
-        if ( @known_prg ) { return $known_prg[0]; }
-        elsif ( @unknown_prg ) { return $unknown_prg[0]; }
+        if (@known_prg) {
+            return $known_prg[0];
+        }
+        elsif (@unknown_prg) {
+            return $unknown_prg[0];
+        }
 
         # guess randomly
-        return $programs[0];
+        if (@programs) {
+            return $programs[0];
+        }
+        else {
+            # OMG, there's no PG lines in this bam file!
+            return 'unknown_algorithm';
+        }
     }
 }
 
@@ -623,7 +640,7 @@ sub _handle_multi_line_header_types {
         $all_info{$this_id} = \%this_data;
     }
     
-    if ($id) {
+    if (defined $id) {
         my $id_info = $all_info{$id} || return;
         if ($tag) {
             return $id_info->{$tag};
@@ -1124,7 +1141,7 @@ int next_result(SV* self) {
     self_hash = (HV*)SvRV(self);
     
     if (! hv_exists(self_hash, "_cbam", 5)) {
-        return;
+        return 0;
     }
     SV* bam_ref;
     bam_ref = *(hv_fetch(self_hash, "_cbam", 5, 0));

@@ -3,12 +3,42 @@
 use strict;
 use warnings;
 use Carp;
+use Getopt::Long;
 use VRTrack::Lane;
-use VertRes::Utils::VRTrackFactory;
+use VRTrack::Factory;
 
-my $opts = parse_params();
-my @dbs  = VertRes::Utils::VRTrackFactory->databases(1, $$opts{'old'});
-my $sqls = read_sqls($$opts{sql});
+my $sql_file;
+my $old = 0;
+my $warn = 0;
+my $help = 0;
+GetOptions ("sql|s=s" => \$sql_file,
+            "old|o" => \$old,
+            "warn|w" => \$warn,
+            "help|h" => \$help);
+
+if (! $sql_file || $help) {
+    unless ($help) {
+        warn "Missing the -s option.\n";
+    }
+    die "Usage: update-vrtrack-schema [OPTIONS] [database names]\n",
+        "(without any database names, defaults to all databases on the server, modified by -o)\n",
+        "Options:\n",
+        "   -s, --sql <file>                 File with SQL commands to be performed for each of the database (required).\n",
+        "   -o, --old                        Only default to databases that have old schema version numbers.\n",
+        "   -w, --warn                       Only warn on execute errors, don't die.\n",
+        "   -h, --help                       This help message.\n";
+}
+
+my @dbs;
+if (@ARGV) {
+    @dbs = @ARGV;
+    chomp($dbs[-1]);
+}
+else {
+    @dbs = VRTrack::Factory->databases(1, $old);
+}
+
+my $sqls = read_sqls($sql_file);
 for my $db (@dbs) {
     next if $db eq 'test';
     run_sqls($db,$sqls);
@@ -20,45 +50,18 @@ exit;
 
 sub error
 {
-    my (@msg) = @_;
-    if ( scalar @msg )
-    {
-        if ($opts->{warn}) {
-            carp @msg;
-        }
-        else {
-            croak @msg;
-        }
+    if ($warn) {
+        carp @_;
     }
-    die
-        "Usage: update-vrtrack-schema [OPTIONS]\n",
-        "Options:\n",
-        "   -s, --sql <file>                 File with SQL commands to be performed for each of the database.\n",
-        "   -o, --old                        Only try to update databases that have old schema version numbers.\n",
-        "   -w, --warn                       Only warn on execute errors, don't die.\n",
-        "   -h, -?, --help                   This help message.\n",
-        "\n" unless $opts->{warn};
-}
-
-
-sub parse_params
-{
-    my $opts = {};
-    while (my $arg=shift(@ARGV))
-    {
-        if ( $arg eq '-s' || $arg eq '--sql' ) { $$opts{'sql'} = shift(@ARGV); next }
-        if ( $arg eq '-o' || $arg eq '--old' ) { $$opts{'old'} = 1; next }
-        if ( $arg eq '-w' || $arg eq '--warn' ) { $$opts{'warn'} = 1; next }
-        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+    else {
+        croak @_;
     }
-    if ( !exists($$opts{'sql'}) ) { error("Missing the -s option.\n") }
-    return $opts;
 }
 
 sub init_db
 {
     my ($dbname) = @_;
-    my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
+    my %cd = VRTrack::Factory->connection_details('rw');
     my $dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
     if ( !$dbh ) { error("Unable to connect.\n"); }
     return $dbh;

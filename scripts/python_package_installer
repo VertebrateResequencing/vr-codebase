@@ -1,0 +1,48 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Cwd;
+use Carp;
+
+my ($setupfile, $help);
+my $shell = $ENV{SHELL};
+
+GetOptions(
+    'f|file=s'       =>  \$setupfile,
+    'h|help'	     =>  \$help,
+);
+
+(!$help) or die <<USAGE;
+    Usage: $0 [OPTIONAL -f name_of_installer_file -> defaults to setup.py]
+    
+    This will install a python package to the vertres python library specified below.
+    
+    To use:
+    1. Download distributed package file appropriate for python 2.7.3
+    2. Unpack the package file if necessary (this location MUST be visible to uk10k and precise dev servers (e.g. nfs))
+    3. cd to the package directory 
+    4. Run this script (python_package_installer)
+    NOTE: most python software is packaged using distutils and is installed by running setup.py, which is the default for this script. 
+    If there is a different install script, use the -f flag to specify the file name.
+USAGE
+
+$setupfile ||= 'setup.py';
+
+croak "Unable to open file $setupfile\n" unless -e $setupfile;
+my $cwd = getcwd;
+
+my $pythonpath = '/software/vertres/lib/python/python-2.7.3/lib/python2.7/site-packages';
+my $python_library = '--prefix=/software/vertres/lib/python/python-2.7.3';
+my $python_binary = '/software/vertres/installs/python/python-2.7.3/bin/python';
+#csh/tcsh or POSIX-compliant shells (bash, ksh, dash...) need slightly different pythonpath set up
+my $ppath_setup = ( $shell =~ /tcsh/ || $shell =~ /csh/ ) ? "setenv PYTHONPATH $pythonpath;" : "PYTHONPATH=$pythonpath";
+
+# pass the setup_file and current directory to normal and precise nodes with umask 2
+foreach my $server ('uk10k-login', 'precise-dev64') {
+    warn "\nInstalling $setupfile on $server\n";
+    system(qq[ssh -A $server "umask 002; cd $cwd; $ppath_setup $python_binary $setupfile install $python_library"]);
+}
+
+exit;
