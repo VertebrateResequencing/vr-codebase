@@ -850,6 +850,17 @@ system("touch $lane_path/_heterozygous_snps_done") and die "Error touch $lane_pa
   return $$self{'No'};
 }
 
+sub get_reference_size {
+
+  my ($self,$lane_path) = @_;
+  my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+  my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly});
+  my $reference_size = $assembly->reference_size();
+  unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
+  return $reference_size;
+
+}
+
 sub get_heterozygous_snp_stats {
 
   my ($self) = @_;
@@ -876,116 +887,6 @@ sub get_heterozygous_snp_stats {
   $het_snp_calc->write_het_report;
   $het_snp_calc->remove_temp_vcfs_and_csvs;
 }
-
-sub get_reference_size {
-
-  my ($self,$lane_path) = @_;
-  my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
-  my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly});
-  my $reference_size = $assembly->reference_size();
-  unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
-  return $reference_size;
-
-}
-
-
-sub get_heterozygous_snp_stats_old {
-
-  my ($self,$reference_size) = @_;
-
-
-
-  my $lane_path = $self->{lane_path};
-  my $full_path = $self->{lane_path} . q(/) . $self->{sample_dir} . q(/);
-  my $temp_vcf_file = $full_path . $self->{lane} . q(_temp_vcf.vcf.gz);
-  my $snp_called_vcf_file = $full_path . $self->{lane} . q(_snp_called.vcf.gz);
-  my $filtered_snp_called_vcf_file = $full_path . $self->{lane} . q(_filtered_snp_called.vcf);
-
-  #Two heterozygosity percentages will be reported.
-  #
-  # 1 - The percentage of heterozygous SNPs for the total genome length
-  #
-  # 2 - The percentage of heterozygous SNPs for the total number of genomic
-  #     positions in the vcf file where the coverage of depth is greater than 0
-  #
-  my $genome_length;
-  my $number_of_positions_visited;
-
-  my $heterozygous_snps = 0;
-  my $heterozygous_snp_genome_percentage = 0;
-  my $heterozygous_snp_positions_visited_percentage = 0;
-
-  my $mpileup_to_vcf = $self->{samtools_heterozygosity} . q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
-  $mpileup_to_vcf .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | bgzip > ) . $temp_vcf_file;
-
-  my $mpileup_return = system($mpileup_to_vcf);
-
-  if ( $mpileup_return == 0 && (-e $temp_vcf_file) ) {
-
-    my $positions_visited_command = $self->{bcftools} . q( call -m -f GQ,GP ) . $temp_vcf_file . q( | egrep -v "^#|DP=0" | wc -l);
-    $number_of_positions_visited = `$positions_visited_command`;
-    chomp($number_of_positions_visited);
-
-    my $snp_call_command = $self->{bcftools} . q( call -vm -O z ) . $temp_vcf_file . q( > ) . $snp_called_vcf_file;
-    my $snp_call_return = system($snp_call_command);
-
-    if ( $snp_call_return == 0 && (-e $snp_called_vcf_file) ) {
-      my $bcf_filter_command = $self->{bcftools} . q( filter -i );
-      $bcf_filter_command .= q{"(DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3" } . $snp_called_vcf_file . q{ | };
-      $bcf_filter_command .= $self->{bcftools} . q( filter -i );
-      $bcf_filter_command .= q{"MIN(DP) >= } . $self->{bcft_min_dp};
-      $bcf_filter_command .= q{ & MIN(DV) >= } . $self->{bcft_min_dv};
-      $bcf_filter_command .= q{ & MIN(DV/DP)>= } . $self->{bcft_dp_dv_ratio};
-      $bcf_filter_command .= q{ & QUAL >= } . $self->{bcft_min_qual};
-      $bcf_filter_command .= q{ & (GT='1/0' | GT='0/1' | GT='1/2')" -};
-      $bcf_filter_command .= q{ > } . $filtered_snp_called_vcf_file;
-
-      my $bcf_filter_return = system($bcf_filter_command);
-
-      if( $bcf_filter_return == 0 && (-e $filtered_snp_called_vcf_file) ) {
-
-	my $het_snp_counter_command = $self->{bcftools} . q( query -f "%CHROM %POS\n" ) . $filtered_snp_called_vcf_file . q( | wc -l );
-	$heterozygous_snps = `$het_snp_counter_command`;
-	chomp($heterozygous_snps);
-
-	unless ( $heterozygous_snps == 0 ) {
-	  my $vcf_header_command = $self->{bcftools} . q( view -h ) . $filtered_snp_called_vcf_file;
-	  for my $row ( `$vcf_header_command` ) {
-	    if ($row =~ m/.*length=/) {
-	      my $length = $row;
-	      $length =~ s/.*length=(\d+).*/$1/;
-	      $genome_length += $length;
-	    }
-	  }
-	  $heterozygous_snp_genome_percentage = ($heterozygous_snps * 100)/$genome_length;
-	  $heterozygous_snp_positions_visited_percentage = ($heterozygous_snps * 100)/$number_of_positions_visited;
-	}
-
-	open(my $fh, '>', "$lane_path/heterozygosity_report.txt") or Utils::error("$lane_path/heterozygosity_report.txt: $!");
-	print $fh "##Total Number of Het SNPs\tGenome \% of Het SNPs\tPositions visited \% of Het SNPs\n";
-	print $fh "$heterozygous_snps\t$heterozygous_snp_genome_percentage\t$heterozygous_snp_positions_visited_percentage\n";
-	close($fh);
-
-	#Removing the temporarily created vcf files
-	unlink($temp_vcf_file);
-	unlink($snp_called_vcf_file);
-	unlink($filtered_snp_called_vcf_file);
-
-      }
-      else {
-	croak "Unable to filter the vcf file: $snp_called_vcf_file.\nCouldn't create the file: $filtered_snp_called_vcf_file";
-      }
-    }
-    else {
-      croak "Unable to run the snp calling command on the vcf file: $temp_vcf_file.\nCouldn't create the file: $snp_called_vcf_file";
-    }
-  }
-  else {
-    croak "Unable to run the mpileup command.\nCouldn't create the vcf file: $temp_vcf_file\n";
-  }
-}
-
-
 
 #----------- stats_and_graphs ---------------------
 
