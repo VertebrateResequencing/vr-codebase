@@ -2,6 +2,8 @@
 use strict;
 use warnings;
 use File::Temp;
+use File::Spec;
+use File::Compare;
 use Data::Dumper;
 
 BEGIN {
@@ -73,6 +75,24 @@ ok ( $hsc->get_number_of_het_snps, 'Calculating number of heterozygous SNPs');
 is ( $hsc->number_of_het_snps, '1', 'Number of heterozigous SNPs');
 
 ok ( $hsc->get_total_number_of_snps, 'Calculating total number of SNPs');
+
+#Expected files
+my $temp_master_file = File::Spec->catfile('t/data','15360_1#1_temp_vcf_master.vcf.gz');
+my $snp_called_master_file = File::Spec->catfile('t/data','15360_1#1_snp_called_master.vcf.gz');
+my $filtered_master_file = File::Spec->catfile('t/data','15360_1#1_filtered_snp_called_list_master.csv');
+my $total_number_of_snps_master_file = File::Spec->catfile('t/data','15360_1#1_total_number_of_snps_master.csv');
+
+#Actual output
+my $temp_vcf_file = File::Spec->catfile('t/data/15360_1#1_qc-sample','15360_1#1_temp_vcf.vcf.gz');
+my $snp_called_vcf_file = File::Spec->catfile('t/data/15360_1#1_qc-sample','15360_1#1_snp_called.vcf.gz');
+my $filtered_csv_file = File::Spec->catfile('t/data/15360_1#1_qc-sample','15360_1#1_filtered_snp_called_list.csv');
+my $total_number_of_snps_csv_file = File::Spec->catfile('t/data/15360_1#1_qc-sample','15360_1#1_total_number_of_snps.csv');
+
+is(compare($temp_vcf_file,$temp_master_file),0, 'Temp vcf file');
+is(compare($snp_called_vcf_file,$snp_called_master_file),0, 'Snp called vcf file');
+is(compare($filtered_csv_file,$filtered_master_file),0, 'Filtered csv file');
+is(compare($total_number_of_snps_csv_file,$total_number_of_snps_master_file),0, 'Total number of snps (Het and Hom)');
+
 is ( $hsc->total_number_of_snps, '16893', 'Total number of SNPs (Het and Hom)');
 
 ok ($hsc->get_percentages_of_het_snps, 'Calculating percentages');
@@ -84,13 +104,16 @@ ok ( $hsc->write_het_report, 'Writing heterozygosity report' );
 is ( $hsc->het_report_path, 't/data/heterozygosity_report.txt', 'Het report path' );
 
 my $het_report_file = $hsc->het_report_path;
-open (my $fh, '<', $het_report_file) or die "$het_report_file: $!";
-my @lines = <$fh>;
-
+open (my $fh2, '<', $het_report_file) or die "$het_report_file: $!";
+my @lines = <$fh2>;
+close($fh2);
 is (scalar @lines, 1, 'Only one line in the het report');
 
-chomp(@lines[0]);
-is (@lines[0], "1\t4.55588960350548e-05\t0.00591961167347422", 'Content of het report file');
+chomp($lines[0]);
+is ($lines[0], "1\t4.55588960350548e-05\t0.00591961167347422", 'Content of het report file');
+
+my $het_report_master_file = File::Spec->catfile('t/data','15360_1#1_heterozygosity_report_master.txt');
+is(compare($het_report_file,$het_report_master_file),0, 'Heterozygosity report file');
 
 if (-e $het_report_file) {
   unlink($het_report_file);
