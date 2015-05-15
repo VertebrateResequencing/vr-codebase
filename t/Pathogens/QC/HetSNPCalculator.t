@@ -104,14 +104,6 @@ ok ( $hsc->write_het_report, 'Writing heterozygosity report' );
 is ( $hsc->het_report_path, 't/data/heterozygosity_report.txt', 'Het report path' );
 
 my $het_report_file = $hsc->het_report_path;
-open (my $fh2, '<', $het_report_file) or die "$het_report_file: $!";
-my @lines = <$fh2>;
-close($fh2);
-is (scalar @lines, 1, 'Only one line in the het report');
-
-chomp($lines[0]);
-is ($lines[0], "1\t4.55588960350548e-05\t0.00591961167347422", 'Content of het report file');
-
 my $het_report_master_file = File::Spec->catfile('t/data','15360_1#1_heterozygosity_report_master.txt');
 is(compare($het_report_file,$het_report_master_file),0, 'Heterozygosity report file');
 

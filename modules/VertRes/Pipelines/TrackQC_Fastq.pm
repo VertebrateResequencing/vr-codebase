@@ -21,6 +21,7 @@ use VertRes::Wrapper::bwa;
 use VertRes::Utils::Sam;
 use VRTrack::Assembly;
 use Pathogens::Parser::GenomeCoverage;
+use Pathogens::QC::HetSNPCalculator;
 use Bio::Metagenomics::External::Kraken;
 use Utils;
 
@@ -87,10 +88,10 @@ our @actions =
 
     # Calculates heterozygosity percentage and counts.
     {
-        'name'     => 'snps_and_heterozygosity',
-        'action'   => \&calculate_heterozygosity,
-        'requires' => \&calculate_heterozygosity_requires,
-        'provides' => \&calculate_heterozygosity_provides,
+        'name'     => 'heterozygous_snps',
+        'action'   => \&heterozygous_snps,
+        'requires' => \&heterozygous_snps_requires,
+        'provides' => \&heterozygous_snps_provides,
     },
 
     # Creates some QC graphs and generate some statistics.
@@ -129,12 +130,12 @@ our $options =
     'kraken_report_exec' => 'kraken-report',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
-    'samtools_heterozygosity'        => 'samtools-1.1.30',
+    'samtools_het_snps'        => 'samtools-1.1.30',
     'bcftools'        => 'bcftools-1.2',
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
-    'bsub_opts_snps_and_heterozygosity'   => "-q normal -M500 -R 'select[mem>500] rusage[mem=500]'",
+    'bsub_opts_heterozygous_snps'   => "-q normal -M500 -R 'select[mem>500] rusage[mem=500]'",
     'bsub_opts_stats_and_graphs'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
@@ -147,12 +148,12 @@ our $options =
     'kraken_report'   => 'kraken.report',
     'sample_dir'      => 'qc-sample',
     'sample_size'     => 50e6,
-    'bcft_min_dp'     => 10,
-    'bcft_min_dv'     => 5,
-    'bcft_dp_dv_ratio'     => 0.3,
-    'bcft_min_qual'     => 20,
-    'bcft_dp4_ref_allele_ratio'     => 0.3,
-    'heterozygosity'          => 'heterozygosity_report.txt',
+    'min_rawReadDepth'     => 10,
+    'min_hqNonRefBases'     => 5,
+    'rawReadDepth_hqNonRefBases_ratio'     => 0.3,
+    'min_qual'     => 20,
+    'hqRefReads_hqAltReads_ratio'     => 0.3,
+    'het_report'          => 'heterozygous_snps_report.txt',
     'stats'           => '_stats',
     'stats_detailed'  => '_detailed-stats.txt',
     'stats_dump'      => '_stats.dump',
@@ -790,7 +791,7 @@ sub transposon
 
 #----------- calculate_heterozygousity ---------------------
 
-sub calculate_heterozygosity_requires
+sub heterozygous_snps_requires
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
@@ -798,59 +799,101 @@ sub calculate_heterozygosity_requires
     return \@requires;
 }
 
-sub calculate_heterozygosity_provides
+sub heterozygous_snps_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("_snps_and_heterozygosity_done","heterozygosity_report.txt");
+    my @provides = ("_heterozygous_snps_done","heterozygous_snps_report.txt");
     return \@provides;
 }
 
-sub calculate_heterozygosity
+sub heterozygous_snps
 {
   my ($self,$lane_path,$lock_file) = @_;
 
-  my $fa_ref     = $$self{'fa_ref'};
   my $sample_dir = $$self{'sample_dir'};
-  my $lane  = $$self{lane};
+  my $reference_size = get_reference_size($self,$lane_path);
 
   # Dynamic script to be run by LSF.
-  open(my $fh, '>', "$lane_path/$sample_dir/_snps_and_heterozygosity.pl") or Utils::error("$lane_path/$sample_dir/_snps_and_heterozygosity.pl: $!");
+  open(my $fh, '>', "$lane_path/$sample_dir/_heterozygous_snps.pl") or Utils::error("$lane_path/$sample_dir/_heterozygous_snps.pl: $!");
   print $fh
 qq[
 use VertRes::Pipelines::TrackQC_Fastq;
 
 my \%params =
 (
-    'samtools_heterozygosity' => q[$$self{'samtools_heterozygosity'}],
+    'samtools_het_snps' => q[$$self{'samtools_het_snps'}],
     'bcftools'     => q[$$self{'bcftools'}],
-    'bcft_min_dp'  => q[$$self{'bcft_min_dp'}],
-    'bcft_min_dv'     => q[$$self{'bcft_min_dv'}],
-    'bcft_dp_dv_ratio' => q[$$self{'bcft_dp_dv_ratio'}],
-    'bcft_min_qual'     => q[$$self{'bcft_min_qual'}],
-    'bcft_dp4_ref_allele_ratio' => q[$$self{'bcft_dp4_ref_allele_ratio'}],
+    'min_rawReadDepth'  => q[$$self{'min_rawReadDepth'}],
+    'min_hqNonRefBases'     => q[$$self{'min_hqNonRefBases'}],
+    'rawReadDepth_hqNonRefBases_ratio' => q[$$self{'rawReadDepth_hqNonRefBases_ratio'}],
+    'min_qual'     => q[$$self{'min_qual'}],
+    'hqRefReads_hqAltReads_ratio' => q[$$self{'hqRefReads_hqAltReads_ratio'}],
     'lane_path'    => q[$lane_path],
-    'lane'         => q[$$self{lane}],
+    'lane'         => q[$$self{'lane'}],
     'sample_dir'   => q[$$self{'sample_dir'}],
     'fa_ref'       => q[$$self{fa_ref}],
     'fai_ref'      => q[$$self{fai_ref}],
     'bwa_exec'     => q[$$self{bwa_exec}],
+    'het_report'   => q[$$self{het_report}],
+    'ref_size'     => q[$reference_size]
 
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
-\$qc->run_snp_calling(\$params{lane_path});
-system("touch $lane_path/_snps_and_heterozygosity_done") and die "Error touch $lane_path/_snps_and_heterozygosity_done";
+\$qc->get_heterozygous_snp_stats(\%params);
+system("touch $lane_path/_heterozygous_snps_done") and die "Error touch $lane_path/_heterozygous_snps";
 ];
   close $fh;
 
-  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_snps_and_heterozygosity", {bsub_opts=>$self->{bsub_opts_snps_and_heterozygosity}}, qq{perl -w _snps_and_heterozygosity.pl});
+  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_heterozygous_snps", {bsub_opts=>$self->{bsub_opts_heterozygous_snps}}, qq{perl -w _heterozygous_snps.pl});
   return $$self{'No'};
 }
 
-sub run_snp_calling {
+sub get_heterozygous_snp_stats {
 
   my ($self) = @_;
+
+  my $het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
+						  samtools => $self->{samtools_het_snps},
+						  bcftools => $self->{bcftools},
+						  fa_ref => $self->{fa_ref},
+						  reference_size => $self->{ref_size},
+						  lane_path => $self->{lane_path},
+						  lane => $self->{lane},
+						  sample_dir => $self->{sample_dir},
+						  het_report => $self->{het_report},
+						  min_rawReadDepth => $self->{min_rawReadDepth},
+						  min_hqNonRefBases => $self->{min_hqNonRefBases},
+						  rawReadDepth_hqNonRefBases_ratio => $self->{rawReadDepth_hqNonRefBases_ratio},
+						  min_qual => $self->{min_qual},
+						  hqRefReads_hqAltReads_ratio => $self->{hqRefReads_hqAltReads_ratio},
+						 );
+
+  $het_snp_calc->get_number_of_het_snps;
+  $het_snp_calc->get_total_number_of_snps;
+  $het_snp_calc->get_percentages_of_het_snps;
+  $het_snp_calc->write_het_report;
+  $het_snp_calc->remove_temp_vcfs_and_csvs;
+}
+
+sub get_reference_size {
+
+  my ($self,$lane_path) = @_;
+  my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+  my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly});
+  my $reference_size = $assembly->reference_size();
+  unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
+  return $reference_size;
+
+}
+
+
+sub get_heterozygous_snp_stats_old {
+
+  my ($self,$reference_size) = @_;
+
+
 
   my $lane_path = $self->{lane_path};
   my $full_path = $self->{lane_path} . q(/) . $self->{sample_dir} . q(/);
@@ -950,7 +993,7 @@ sub stats_and_graphs_requires
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @requires = ("$sample_dir/$$self{lane}.bam","heterozygosity_report.txt");
+    my @requires = ("$sample_dir/$$self{lane}.bam","heterozygous_snps_report.txt");
     return \@requires;
 }
 

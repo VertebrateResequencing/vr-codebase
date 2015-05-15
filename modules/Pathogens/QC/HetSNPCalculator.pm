@@ -208,8 +208,9 @@ sub get_percentages_of_het_snps {
 sub _calculate_percentage {
 
   my ($self,$count,$total) = @_;
+  print "COUNT: $count\tTOTAL: $total\n";
   return( ($count*100)/$total ) if ($total > 0);
-  Pathogens::Exception::NullDenominator->throw( error => "The value used as total is null (0). No percentage can be calculated");
+  Pathogens::Exception::NullDenominator->throw( error => "The value used as total is null (0). No percentage can be calculated\n");
 
 }
 
