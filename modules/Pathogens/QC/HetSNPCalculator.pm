@@ -138,7 +138,6 @@ sub get_total_number_of_snps {
   my $total_number_of_snps = _file_path( $self, q(_total_number_of_snps.csv) );
 
   Utils::CMD($self->total_number_of_snps_command);
-  #my $exit_code = system($self->total_number_of_snps_command);
 
   if ( -e $total_number_of_snps) {
     open (my $fh, '<', $total_number_of_snps) or Utils::error("$total_number_of_snps: $!");
