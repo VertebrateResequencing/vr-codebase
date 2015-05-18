@@ -803,7 +803,8 @@ sub heterozygous_snps_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("_heterozygous_snps_done","heterozygous_snps_report.txt");
+    my $het_report = $self->{lane} . '_heterozygous_snps_report.txt';
+    my @provides = ("_heterozygous_snps_done",$het_report);
     return \@provides;
 }
 
@@ -818,30 +819,27 @@ sub heterozygous_snps
   open(my $fh, '>', "$lane_path/$sample_dir/_heterozygous_snps.pl") or Utils::error("$lane_path/$sample_dir/_heterozygous_snps.pl: $!");
   print $fh
 qq[
-use VertRes::Pipelines::TrackQC_Fastq;
+use Pathogens::QC::HetSNPCalculator;
 
-my \%params =
-(
-    'samtools_het_snps' => q[$$self{'samtools_het_snps'}],
-    'bcftools'     => q[$$self{'bcftools'}],
-    'min_rawReadDepth'  => q[$$self{'min_rawReadDepth'}],
-    'min_hqNonRefBases'     => q[$$self{'min_hqNonRefBases'}],
-    'rawReadDepth_hqNonRefBases_ratio' => q[$$self{'rawReadDepth_hqNonRefBases_ratio'}],
-    'min_qual'     => q[$$self{'min_qual'}],
-    'hqRefReads_hqAltReads_ratio' => q[$$self{'hqRefReads_hqAltReads_ratio'}],
-    'lane_path'    => q[$lane_path],
-    'lane'         => q[$$self{'lane'}],
-    'sample_dir'   => q[$$self{'sample_dir'}],
-    'fa_ref'       => q[$$self{fa_ref}],
-    'fai_ref'      => q[$$self{fai_ref}],
-    'bwa_exec'     => q[$$self{bwa_exec}],
-    'het_report'   => q[$$self{het_report}],
-    'ref_size'     => q[$reference_size]
+my \$het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
+						  samtools => q[$self->{samtools_het_snps}],
+						  bcftools => q[$self->{bcftools}],
+						  fa_ref => q[$self->{fa_ref}],
+						  reference_size => q[$reference_size],
+						  lane_path => q[$self->{lane_path}],
+						  lane => q[$self->{lane}],
+						  sample_dir => q[$self->{sample_dir}],
+						  het_report => q[$self->{het_report}],
+						  min_rawReadDepth => q[$self->{min_rawReadDepth}],
+						  min_hqNonRefBases => q[$self->{min_hqNonRefBases}],
+						  rawReadDepth_hqNonRefBases_ratio => q[$self->{rawReadDepth_hqNonRefBases_ratio}],
+						  min_qual => q[$self->{min_qual}],
+						  hqRefReads_hqAltReads_ratio => q[$self->{hqRefReads_hqAltReads_ratio}],
+						 );
 
-);
+\$het_snp_calc->write_het_report;
+\$het_snp_calc->remove_temp_vcfs_and_csvs;
 
-my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
-\$qc->get_heterozygous_snp_stats(\%params);
 system("touch $lane_path/_heterozygous_snps_done") and die "Error touch $lane_path/_heterozygous_snps";
 ];
   close $fh;
@@ -858,35 +856,8 @@ sub get_reference_size {
   my $reference_size = $assembly->reference_size();
   unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
   return $reference_size;
-
 }
 
-sub get_heterozygous_snp_stats {
-
-  my ($self) = @_;
-
-  my $het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
-						  samtools => $self->{samtools_het_snps},
-						  bcftools => $self->{bcftools},
-						  fa_ref => $self->{fa_ref},
-						  reference_size => $self->{ref_size},
-						  lane_path => $self->{lane_path},
-						  lane => $self->{lane},
-						  sample_dir => $self->{sample_dir},
-						  het_report => $self->{het_report},
-						  min_rawReadDepth => $self->{min_rawReadDepth},
-						  min_hqNonRefBases => $self->{min_hqNonRefBases},
-						  rawReadDepth_hqNonRefBases_ratio => $self->{rawReadDepth_hqNonRefBases_ratio},
-						  min_qual => $self->{min_qual},
-						  hqRefReads_hqAltReads_ratio => $self->{hqRefReads_hqAltReads_ratio},
-						 );
-
-  $het_snp_calc->get_number_of_het_snps;
-  $het_snp_calc->get_total_number_of_snps;
-  $het_snp_calc->get_percentages_of_het_snps;
-  $het_snp_calc->write_het_report;
-  $het_snp_calc->remove_temp_vcfs_and_csvs;
-}
 
 #----------- stats_and_graphs ---------------------
 
@@ -894,7 +865,8 @@ sub stats_and_graphs_requires
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @requires = ("$sample_dir/$$self{lane}.bam","heterozygous_snps_report.txt");
+    my $het_report = $self->{lane} . '_heterozygous_snps_report.txt';
+    my @requires = ("$sample_dir/$$self{lane}.bam","$het_report");
     return \@requires;
 }
 
@@ -915,7 +887,7 @@ sub stats_and_graphs
     my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
 
     # Get size of assembly
-    my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
     my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly});
     my $reference_size = $assembly->reference_size();
     unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }

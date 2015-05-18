@@ -16,7 +16,7 @@ has 'rawReadDepth_hqNonRefBases_ratio' => ( is => 'ro', isa => 'Str', required =
 has 'min_qual' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'hqRefReads_hqAltReads_ratio' => ( is => 'ro', isa => 'Str', required => 1 );
 
-#Misc info
+#Misc required info
 has 'fa_ref' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'reference_size' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'lane_path' => ( is => 'ro', isa => 'Str', required => 1 );
@@ -24,17 +24,24 @@ has 'lane' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'sample_dir' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'het_report' => ( is => 'ro', isa => 'Str', required => 1 );
 
+#File path builders
 has 'full_path' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_full_path' );
+has 'bam_file' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bam_file' );
+has 'temp_vcf' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_temp_vcf' );
+has 'snp_called_vcf' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_snp_called_vcf' );
+has 'filtered_snp_called_csv' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_filtered_snp_called_csv' );
+has 'total_number_of_snps_csv' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_total_number_of_snps_csv' );
 has 'het_report_path' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_het_report_path' );
+
+#Command string builders
 has 'mpileup_command' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_mpileup_command' );
 has 'total_number_of_snps_command' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_total_number_of_snps_command' );
 has 'snp_call_command' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_snp_call_command' );
 has 'bcf_query_command' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bcf_query_command' );
 
-has 'number_of_het_snps' => ( is => 'rw', isa => 'Str', lazy => 1, default => 0 );
-has 'total_number_of_snps' => ( is => 'rw', isa => 'Str', lazy => 1, default => 0 );
-has 'het_snps_genome_percentage' => ( is => 'rw', isa => 'Str', lazy => 1, default => 0 );
-has 'het_snps_total_snps_percentage' => ( is => 'rw', isa => 'Str', lazy => 1, default => 0 );
+#Calculations builders
+has 'number_of_het_snps' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_number_of_het_snps' );
+has 'total_number_of_snps' => ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_total_number_of_snps' );
 
 sub build_full_path {
 
@@ -43,79 +50,93 @@ sub build_full_path {
   return($full_path);
 }
 
+sub build_bam_file {
+
+  my ($self) = @_;
+  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . q(.bam) );
+  return($path);
+}
+
+sub build_temp_vcf {
+
+  my ($self) = @_;
+  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . q(_temp_vcf.vcf.gz) );
+  return($path);
+}
+
+sub build_snp_called_vcf {
+
+  my ($self) = @_;
+  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . q(_snp_called.vcf.gz) );
+  return($path);
+}
+
+sub build_filtered_snp_called_csv {
+
+  my ($self) = @_;
+  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . q(_filtered_snp_called_list.csv) );
+  return($path);
+}
+
+sub build_total_number_of_snps_csv {
+
+  my ($self) = @_;
+  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . q(_total_number_of_snps.csv) );
+  return($path);
+}
+
 sub build_het_report_path {
 
   my ($self) = @_;
-  my $het_report_path = File::Spec->catfile( $self->lane_path, $self->het_report );
+  my $het_report_path = File::Spec->catfile( $self->lane_path, $self->lane . q(_) . $self->het_report );
   return($het_report_path);
-}
-
-sub _file_path {
-
-  my ($self,$suffix) = @_;
-  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . $suffix );
-  return($path);
 }
 
 sub build_mpileup_command {
 
   my ($self) = @_;
 
-  my $bam_file = _file_path( $self, q(.bam) );
-  my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
   my $cmd = $self->samtools;
   $cmd .= q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
   $cmd .= $self->fa_ref;
   $cmd .= q( );
-  $cmd .= $bam_file;
+  $cmd .= $self->bam_file;
   $cmd .= q( | bgzip > );
-  $cmd .= $temp_vcf;
+  $cmd .= $self->temp_vcf;
 
   return($cmd);
 }
-
 
 sub build_total_number_of_snps_command {
 
   my ($self) = @_;
 
-  my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
-  my $total_number_of_snps = _file_path( $self, q(_total_number_of_snps.csv) );
-
   my $cmd = $self->{bcftools};
   $cmd .= q( query -f "%CHROM\n");
   $cmd .= q( -i "DP > 0" );
-  $cmd .= $temp_vcf;
+  $cmd .= $self->temp_vcf;
   $cmd .= q( > );
-  $cmd .= $total_number_of_snps;
+  $cmd .= $self->total_number_of_snps_csv;
 
   return($cmd);
 }
-
 
 sub build_snp_call_command {
 
   my ($self) = @_;
 
-  my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
-  my $snp_called_vcf = _file_path( $self, q(_snp_called.vcf.gz) );
-
   my $cmd = $self->bcftools;
   $cmd .= q( call -vm -O z );
-  $cmd .= $temp_vcf;
+  $cmd .= $self->temp_vcf;
   $cmd .= q( > );
-  $cmd .= $snp_called_vcf;
+  $cmd .= $self->snp_called_vcf;
 
   return($cmd);
 }
 
-
 sub build_bcf_query_command {
 
   my ($self) = @_;
-
-  my $snp_called_vcf = _file_path( $self, q(_snp_called.vcf.gz) );
-  my $filtered_snp_called_csv = _file_path( $self, q(_filtered_snp_called_list.csv) );
 
   my $cmd = $self->{bcftools} . q( query -f);
   $cmd .= q{ "%CHROM %POS\n" -i};
@@ -125,65 +146,67 @@ sub build_bcf_query_command {
   $cmd .= q{ & QUAL >= } . $self->{min_qual};
   $cmd .= q{ & (GT='1/0' | GT='0/1' | GT='1/2')};
   $cmd .= q{ & ((DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > } . $self->{hqRefReads_hqAltReads_ratio} . q{)" };
-  $cmd .= $snp_called_vcf;
-  $cmd .= q{ > } . $filtered_snp_called_csv;
+  $cmd .= $self->snp_called_vcf;
+  $cmd .= q{ > } . $self->filtered_snp_called_csv;
 
   return($cmd);
 }
 
-sub get_total_number_of_snps {
+sub build_total_number_of_snps {
 
   my ($self) = @_;
 
-  my $total_number_of_snps = _file_path( $self, q(_total_number_of_snps.csv) );
-
   Utils::CMD($self->total_number_of_snps_command);
 
-  if ( -e $total_number_of_snps) {
-    open (my $fh, '<', $total_number_of_snps) or Utils::error("$total_number_of_snps: $!");
-    $self->total_number_of_snps( _count_file_rows($self,$fh) );
+  if ( -e $self->total_number_of_snps_csv) {
+    open (my $fh, '<', $self->total_number_of_snps_csv) or Utils::error($self->total_number_of_snps_csv . ": $!");
+    return( _count_file_rows($self,$fh) );
   }
   else {
     Pathogens::Exception::HetSNPStepCommand->throw(
 						   error => "A problem occured running the total number of snps command '" .
 						   $self->total_number_of_snps_command .
-						   "'\nThe file '$total_number_of_snps' was not created"
+						   "'\nThe file '" .
+						   $self->total_number_of_snps_csv .
+						   "' was not created"
 						  );
   }
 }
 
-sub get_number_of_het_snps {
+sub build_number_of_het_snps {
 
   my ($self) = @_;
 
-  my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
   Utils::CMD($self->mpileup_command);
 
-  if ( -e $temp_vcf) {
-    my $snp_called_vcf = _file_path( $self, q(_snp_called.vcf.gz) );
+  if ( -e $self->temp_vcf) {
+
     Utils::CMD($self->snp_call_command);
 
-    if ( -e $snp_called_vcf) {
-      my $filtered_snp_called_csv = _file_path( $self, q(_filtered_snp_called_list.csv) );
+    if ( -e $self->snp_called_vcf) {
       Utils::CMD($self->bcf_query_command);
 
-      if ( -e $filtered_snp_called_csv) {
-	open (my $fh, '<', $filtered_snp_called_csv) or Utils::error("$filtered_snp_called_csv: $!");
-	$self->number_of_het_snps( _count_file_rows($self,$fh) );
+      if ( -e $self->filtered_snp_called_csv) {
+	open (my $fh, '<', $self->filtered_snp_called_csv) or Utils::error($self->filtered_snp_called_csv . ": $!");
+	return( _count_file_rows($self,$fh) );
       }
       else {
 	Pathogens::Exception::HetSNPStepCommand->throw(
-						     error => "A problem occured running the bcf query command '" .
-						     $self->bcf_query_command .
-						     "'\nThe file '$filtered_snp_called_csv' was not created"
+						       error => "A problem occured running the bcf query command '" .
+						       $self->bcf_query_command .
+						       "'\nThe file '" .
+						       $self->filtered_snp_called_csv . 
+						       "' was not created"
 						    );
       }
     }
     else {
       Pathogens::Exception::HetSNPStepCommand->throw(
-						   error => "A problem occured running the SNP calling command '" .
-						   $self->snp_call_command .
-						   "'\nThe file '$snp_called_vcf' was not created"
+						     error => "A problem occured running the SNP calling command '" .
+						     $self->snp_call_command .
+						     "'\nThe file '" .
+						     $self->snp_called_vcf .
+						     "' was not created"
 						  );
     }
   }
@@ -191,39 +214,23 @@ sub get_number_of_het_snps {
     Pathogens::Exception::HetSNPStepCommand->throw(
 						   error => "A problem occured running the Mpileup command '" .
 						   $self->mpileup_command .
-						   "'\nThe file '$temp_vcf' was not created"
+						   "'\nThe file '" .
+						   $self->temp_vcf .
+						   "' was not created"
 						  );
   }
 }
 
-sub get_percentages_of_het_snps {
-
-  my ($self) = @_;
-  $self->het_snps_genome_percentage( _calculate_percentage( $self,$self->number_of_het_snps,$self->reference_size ) );
-  $self->het_snps_total_snps_percentage( _calculate_percentage( $self,$self->number_of_het_snps,$self->total_number_of_snps ) );
-
-}
-
-sub _calculate_percentage {
-
-  my ($self,$count,$total) = @_;
-  print "COUNT: $count\tTOTAL: $total\n";
-  return( ($count*100)/$total ) if ($total > 0);
-  Pathogens::Exception::NullDenominator->throw( error => "The value used as total is null (0). No percentage can be calculated\n");
-
-}
-
-
 sub write_het_report {
 
   my ($self) = @_;
-  my $lane_path = $self->lane_path;
-  my $number_of_het_snps = $self->number_of_het_snps;
-  my $het_snps_genome_percentage = $self->het_snps_genome_percentage;
-  my $het_snps_total_snps_percentage = $self->het_snps_total_snps_percentage;
+
+  my $het_snps_genome_percentage = _calculate_percentage( $self,$self->number_of_het_snps,$self->reference_size );
+  my $het_snps_total_snps_percentage = _calculate_percentage( $self,$self->number_of_het_snps,$self->total_number_of_snps );
 
   open(my $fh, '>', $self->het_report_path) or Utils::error($self->het_report_path . ": $!");
-  print $fh "$number_of_het_snps\t$het_snps_genome_percentage\t$het_snps_total_snps_percentage\n";
+  print $fh "total_number_of_het_snps\t\%_of_het_snps_for_total_genome_length\t\%_of_het_snps_for_total_snps_found\n";
+  print $fh ($self->number_of_het_snps,"\t$het_snps_genome_percentage\t$het_snps_total_snps_percentage\n");
   close($fh);
 }
 
@@ -231,14 +238,18 @@ sub remove_temp_vcfs_and_csvs {
 
   my ($self) = @_;
 
-  my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
-  my $snp_called_vcf = _file_path( $self, q(_snp_called.vcf.gz) );
-  my $filtered_snp_called_csv = _file_path( $self, q(_filtered_snp_called_list.csv) );
-  my $total_number_of_snps = _file_path( $self, q(_total_number_of_snps.csv) );
-  unlink($temp_vcf);
-  unlink($snp_called_vcf);
-  unlink($filtered_snp_called_csv);
-  unlink($total_number_of_snps);
+  unlink($self->temp_vcf);
+  unlink($self->snp_called_vcf);
+  unlink($self->filtered_snp_called_csv);
+  unlink($self->total_number_of_snps_csv);
+
+}
+
+sub _calculate_percentage {
+
+  my ($self,$count,$total) = @_;
+  return( ($count*100)/$total ) if ($total > 0);
+  Pathogens::Exception::NullDenominator->throw( error => "The value used as total is null (0). No percentage can be calculated\n");
 
 }
 
