@@ -825,7 +825,17 @@ sub heterozygous_snps {
     my ( $self, $lane_path, $lock_file ) = @_;
 
     my $sample_dir = $$self{'sample_dir'};
-    my $reference_size = get_reference_size( $self, $lane_path );
+
+    my $vrtrack = VRTrack::VRTrack->new( $$self{db} )
+      or $self->throw( "Could not connect to the database: ",
+        join( ',', %{ $$self{db} } ), "\n" );
+    my $assembly = VRTrack::Assembly->new_by_name( $vrtrack, $$self{assembly} );
+    my $reference_size = $assembly->reference_size();
+    unless ($reference_size) {
+        $self->throw(
+            "Failed to find reference genome size for lane $lane_path\n");
+    }
+
 
     # Dynamic script to be run by LSF.
     open( my $fh, '>', "$lane_path/$sample_dir/_heterozygous_snps.pl" )
@@ -864,21 +874,6 @@ system("touch $lane_path/_heterozygous_snps_done") and die "Error touch $lane_pa
         qq{perl -w _heterozygous_snps.pl}
     );
     return $$self{'No'};
-}
-
-sub get_reference_size {
-
-    my ( $self, $lane_path ) = @_;
-    my $vrtrack = VRTrack::VRTrack->new( $$self{db} )
-      or $self->throw( "Could not connect to the database: ",
-        join( ',', %{ $$self{db} } ), "\n" );
-    my $assembly = VRTrack::Assembly->new_by_name( $vrtrack, $$self{assembly} );
-    my $reference_size = $assembly->reference_size();
-    unless ($reference_size) {
-        $self->throw(
-            "Failed to find reference genome size for lane $lane_path\n");
-    }
-    return $reference_size;
 }
 
 #----------- stats_and_graphs ---------------------
