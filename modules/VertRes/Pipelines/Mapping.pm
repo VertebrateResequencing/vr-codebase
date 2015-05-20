@@ -1392,7 +1392,7 @@ sub mark_duplicates {
             $memory = 8000;
         }
         my $java_mem = int($memory * 0.9);
-        my $queue = $memory >= 30000 ? "hugemem" : "normal";
+        my $queue = $memory >= 200000 ? "hugemem" : "normal";
         
         
 
