@@ -68,8 +68,8 @@ q(samtools-1.1.30 mpileup -d 500 -t INFO/DPR,DV -C50 -ugf t/data/15360_1#1_het_t
     'mpileup command'
 );
 is(
-    $hsc->total_number_of_snps_command,
-q(bcftools-1.2 query -f "%CHROM\n" -i "DP > 0" t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_total_number_of_snps.csv),
+    $hsc->total_genome_covered_command,
+q(bcftools-1.2 query -f "%CHROM\n" -i "DP > 0" t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_total_genome_covered.csv),
     'total number of snps command'
 );
 is(
@@ -94,12 +94,12 @@ is( $hsc->_calculate_percentage( 1, 400 ), 0.25, 'percentage calculation' );
 throws_ok { $hsc->_calculate_percentage( 1, 0 ) } qr/The value used as total/,
   'Illegal division';
 
-throws_ok { $hsc->total_number_of_snps } qr/Backtrace:/,
+throws_ok { $hsc->total_genome_covered } qr/Backtrace:/,
   'Total number of SNPs file doesnt exist yet';
 
 is( $hsc->number_of_het_snps, 1, 'Number of heterozigous SNPs' );
 
-is( $hsc->total_number_of_snps, 16893, 'Total number of SNPs (Het and Hom)' );
+is( $hsc->total_genome_covered, 16893, 'Total number of SNPs (Het and Hom)' );
 
 #Expected files
 my $temp_master_file =
@@ -109,7 +109,7 @@ my $snp_called_master_file =
 my $filtered_master_file = File::Spec->catfile( 't/data',
     '15360_1#1_filtered_snp_called_list_master.csv' );
 my $total_number_of_snps_master_file =
-  File::Spec->catfile( 't/data', '15360_1#1_total_number_of_snps_master.csv' );
+  File::Spec->catfile( 't/data', '15360_1#1_total_genome_covered_master.csv' );
 my $het_report_master_file = File::Spec->catfile( 't/data',
     '15360_1#1_heterozygous_snps_report_master.txt' );
 
@@ -120,7 +120,7 @@ is( compare( $hsc->filtered_snp_called_csv, $filtered_master_file ),
     0, 'Filtered csv file' );
 is(
     compare(
-        $hsc->total_number_of_snps_csv, $total_number_of_snps_master_file
+        $hsc->total_genome_covered_csv, $total_number_of_snps_master_file
     ),
     0,
     'Total number of snps (Het and Hom)'

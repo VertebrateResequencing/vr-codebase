@@ -1,2 +1,2 @@
-total_number_of_het_snps	%_of_het_snps_for_total_genome_length	%_of_het_snps_for_total_snps_found
+total_number_of_het_snps	%_of_het_snps_for_total_genome_length	%_of_het_snps_for_total_genome_covered
 1	4.55588960350548e-05	0.00591961167347422
