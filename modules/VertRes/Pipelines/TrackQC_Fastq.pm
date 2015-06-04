@@ -153,8 +153,8 @@ our $options = {
     'chr_regex'        => '^(?:\d+|X|Y)$',
     'gc_depth_bin'     => 20000,
     'gtype_confidence' => 5.0,
-    'kraken_db' =>
-      '/lustre/scratch108/pathogen/pathpipe/kraken/minikraken_20140330/',
+    'kraken_db'       =>
+      '/lustre/scratch108/pathogen/pathpipe/kraken/pi_qc_2015521/',
     'kraken_report'                    => 'kraken.report',
     'sample_dir'                       => 'qc-sample',
     'sample_size'                      => 50e6,
@@ -167,6 +167,8 @@ our $options = {
     'stats'                            => '_stats',
     'stats_detailed'                   => '_detailed-stats.txt',
     'stats_dump'                       => '_stats.dump',
+    'mapviewdepth'    => 'mapviewdepth_sam',
+    'samtools'        => 'samtools',
 };
 
 # --------- OO stuff --------------
