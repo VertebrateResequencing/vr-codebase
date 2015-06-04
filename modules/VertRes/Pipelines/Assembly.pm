@@ -453,7 +453,7 @@ sub decide_appropriate_queue
 {
   my ($self, $memory_required_mb) = @_;
   my $queue = 'long';
-  if($memory_required_mb > 60000)
+  if($memory_required_mb > 200000)
   {
     $queue = 'hugemem';
   }

@@ -251,7 +251,7 @@ sub adjust_bsub_options
         if ($mem>500000) {
             Utils::error("FIXME: This job cannot be run on the farm, more than 500GB of memory is required.");
         }
-        elsif($mem>250000)
+        elsif($mem>200000)
         {
                 warn("$output_file: changing queue to hugemem\n");   
                 $opts =~ s/-q normal/-q hugemem/;
