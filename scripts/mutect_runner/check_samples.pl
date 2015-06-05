@@ -31,7 +31,7 @@ if (!$file) {
 
     # create all_sites.txt file (if tables have DP4T column):
     cut -f 1-5,12- 1_cell_line-vs-1_spleen-MuTect.txt | grep ^#CHR > all_sites.txt
-    cat < mutect_tabs.list | grep -v ^# | cut -f 1-5,12- | sort -uV >> all_sites.txt
+    xargs cat < mutect_tabs.list | grep -v ^# | cut -f 1-5,12- | sort -uV >> all_sites.txt
 
   Example usage:
 
@@ -80,7 +80,11 @@ foreach my $in (@files) {
 while (<>) {
 	my $line = $_;
 	chomp $line;
-	if (/^#/) {
+	if (/^##/) {
+		print "$line\n";
+		next;
+	}
+	elsif (/^#/) {
 		print "$line\t".join ("\t",@samples)."\n";
 		next;
 	}

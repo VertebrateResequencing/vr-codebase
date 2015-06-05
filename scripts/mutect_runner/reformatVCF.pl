@@ -142,6 +142,7 @@ if (!$opts{f} || !$opts{m} || !$opts{o}) {
 	   OPTIONAL
 
 	-t file; BED file (CHR,START,END; start is zero-based) with regions to keep SNV calls
+	   Can be text file or bgzip
 	   OPTIONAL
 
 	-d path; optional output directory, otherwise prints to working dir
@@ -199,7 +200,12 @@ my @targets;
 my $sets;	
 if ($opts{t}) {
 	print STDERR "loading target regsions in $opts{t}\n";
-	open T, "<$opts{t}" || die "Can't open file $opts{t}\n";
+	if ($opts{t} =~ /\.gz$/) {
+		open T, "zcat $opts{t} |" || die "Can't open file $opts{t}\n";
+	}
+	else {
+		open T, "<$opts{t}" || die "Can't open file $opts{t}\n";
+	}
 	my %spans;
 	while (<T>) {
 		chomp;
@@ -427,7 +433,7 @@ sub formatgenes {
 		# order sift scores by most severe first
 		##print STDERR "LINE $line\n";
 		##print STDERR "sift is $c[$csqindex{SIFT}]\n";
-		if ($c[$csqindex{SIFT}] ne "" && $c[$csqindex{SIFT}] >= 0) {
+		if ($c[$csqindex{SIFT}] && $c[$csqindex{SIFT}] ne "" && $c[$csqindex{SIFT}] >= 0) {
 			if ( !defined $info{$c[1]}{"$inf"}{sift}[0]  || ( $c[$csqindex{SIFT}] < $info{$c[1]}{"$inf"}{sift}[0] )) {
 				unshift (@{$info{$c[1]}{"$inf"}{sift}},$c[$csqindex{SIFT}]);
 			#	print STDERR "unshift $c[$csqindex{SIFT}]\n";

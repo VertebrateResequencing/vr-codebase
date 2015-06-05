@@ -34,8 +34,9 @@ END
 
 
 my $file = shift @ARGV or die $help;
-my $colnum = shift @ARGV; # 1-based assumed
-$colnum-- if $colnum;
+my $colnum = shift @ARGV;
+$colnum = '15' if !$colnum; # 1-based assumed
+$colnum--;
 
 if (! -e $file) {
 	die "No such file $file\n";
@@ -59,7 +60,7 @@ while (<F>) {
 		next;
 	}
 	my @line = split "\t", $_;
-	pop @line if $recurrency ==1;
+	pop @line if $recurrency ;
 	my @cell = @line[$colnum..$#line];
 	foreach my $i (0..$#cell) {
 		if ($cell[$i]==1) {
