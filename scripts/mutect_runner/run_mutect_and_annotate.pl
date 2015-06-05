@@ -241,7 +241,7 @@ sub parse_args {
 		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
-		if ($$self{$o} && $o ne 'biotype_filter') {
+		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools') {
 			if ( ! -e $$self{$o} ) {
 				$self->throw("No such file $$self{$o}");
 			}
