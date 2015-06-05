@@ -63,7 +63,8 @@ sub new {
 			bcftools => '] .$$self{bcftools}. q[',
 			# Ensure the VEP version matches the VEP cache and Ensembl API
 			vep => '] .$$self{vep}. q[',
-
+			# OPTIONAL: path to bedtools if using 'targets' key. Default is 'bedtools'
+			bedtools => 'bedtools',
 			# REQUIRED: tab-delimited file of 
 			# tumSampleName,NormalSampleName,tumourBamPath,normalBamPath
 			bams     => 'bams.list',
@@ -200,6 +201,7 @@ sub parse_args {
 		'snpfile',
 		'biotype_filter',
 		'cosmic',
+		'bedtools'
 	);
 
     while (defined(my $arg=shift(@ARGV))) {
@@ -234,6 +236,9 @@ sub parse_args {
 		if (! -e $$self{$f}) {
 			$self->throw("No such file $$self{$f}");
 		}
+	}
+	if ($$self{targets} && !$$self{bedtools}) {
+		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
 		if ($$self{$o} && $o ne 'biotype_filter') {
