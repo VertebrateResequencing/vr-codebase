@@ -630,7 +630,7 @@ sub filter_reject {
 
 sub filter_targets {
 	my ($self,$vcfout,$vcfin) = @_;
-	my $cmd = "$$self{bedtools} -a $vcfin -b $$self{targets} -header | bgzip -c > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp ";
+	my $cmd = "$$self{bedtools} intersect -a $vcfin -b $$self{targets} -header | bgzip -c > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp ";
 	$self->cmd($cmd);
 	rename("$vcfout.tmp.tbi","$vcfout.tbi") or $self->throw("rename $vcfout.tmp.tbi $vcfout.tbi: $!"); 
 	rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
