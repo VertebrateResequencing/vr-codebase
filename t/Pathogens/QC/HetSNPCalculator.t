@@ -78,8 +78,13 @@ q(bcftools-1.2 call -vm -O z t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf.g
     'snp call command'
 );
 is(
+   $hsc->all_snps_command,
+   q(bcftools-1.2 query -f "%CHROM %POS\n" -i "MIN(DP) >= 10 & MIN(DV) >= 5 & MIN(DV/DP)>= 0.3 & QUAL >= 20 & (GT='0/0' | GT='1/1' | GT='0/1' | GT='1/2')" t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_all_snps_list.csv),
+   'all snps command'
+);
+is(
     $hsc->bcf_query_command,
-q(bcftools-1.2 query -f "%CHROM %POS\n" -i "MIN(DP) >= 10 & MIN(DV) >= 5 & MIN(DV/DP)>= 0.3 & QUAL >= 20 & (GT='1/0' | GT='0/1' | GT='1/2') & ((DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3)" t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_filtered_snp_called_list.csv),
+q(bcftools-1.2 query -f "%CHROM %POS\n" -i "MIN(DP) >= 10 & MIN(DV) >= 5 & MIN(DV/DP)>= 0.3 & QUAL >= 20 & (GT='0/1' | GT='1/2') & ((DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3)" t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_filtered_snp_called_list.csv),
     'bcf query filter command'
 );
 
@@ -146,10 +151,13 @@ is( $values[0], '1', 'Total number of Het SNPs' );
 is( $values[1], '4.55588960350548e-05',
     'Percentage of heterozygous SNPs for the whole genome' );
 is( $values[2], '0.00591961167347422',
+    'Percentage of heterozygous SNPs for the genome covered by the sample' );
+chomp($values[3]);
+is( $values[3], '0.819672131147541',
     'Percentage of heterozygous SNPs for all the SNPs called (Het and Hom)' );
 
 if ( -e $hsc->het_report_path ) {
-    unlink( $hsc->het_report_path );
+    #unlink( $hsc->het_report_path );
 }
 
 ok( $hsc->remove_temp_vcfs_and_csvs, 'Removing files created' );

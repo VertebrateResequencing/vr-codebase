@@ -35,6 +35,8 @@ has 'temp_vcf' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_temp_vcf' );
 has 'snp_called_vcf' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_snp_called_vcf' );
+has 'all_snps_csv' =>
+  ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_all_snps_csv' );
 has 'filtered_snp_called_csv' => (
     is      => 'rw',
     isa     => 'Str',
@@ -61,6 +63,8 @@ has 'total_genome_covered_command' => (
 );
 has 'snp_call_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_snp_call_command' );
+has 'all_snps_command' =>
+  ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_all_snps_command' );
 has 'bcf_query_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bcf_query_command' );
 
@@ -76,6 +80,12 @@ has 'total_genome_covered' => (
     isa     => 'Str',
     lazy    => 1,
     builder => 'build_total_genome_covered'
+);
+has 'total_number_of_snps' => (
+    is      => 'rw',
+    isa     => 'Str',
+    lazy    => 1,
+    builder => 'build_total_number_of_snps'
 );
 
 sub build_full_path {
@@ -105,6 +115,14 @@ sub build_snp_called_vcf {
     my ($self) = @_;
     my $path = File::Spec->catfile( $self->full_path,
         $self->{lane} . q(_snp_called.vcf.gz) );
+    return ($path);
+}
+
+sub build_all_snps_csv {
+
+    my ($self) = @_;
+    my $path = File::Spec->catfile( $self->full_path,
+        $self->{lane} . q(_all_snps_list.csv) );
     return ($path);
 }
 
@@ -174,6 +192,23 @@ sub build_snp_call_command {
     return ($cmd);
 }
 
+sub build_all_snps_command {
+
+    my ($self) = @_;
+
+    my $cmd = $self->{bcftools} . q( query -f);
+    $cmd .= q{ "%CHROM %POS\n" -i};
+    $cmd .= q{ "MIN(DP) >= } . $self->{min_rawReadDepth};
+    $cmd .= q{ & MIN(DV) >= } . $self->{min_hqNonRefBases};
+    $cmd .= q{ & MIN(DV/DP)>= } . $self->{rawReadDepth_hqNonRefBases_ratio};
+    $cmd .= q{ & QUAL >= } . $self->{min_qual};
+    $cmd .= q{ & (GT='0/0' | GT='1/1' | GT='0/1' | GT='1/2')" };
+    $cmd .= $self->snp_called_vcf;
+    $cmd .= q{ > } . $self->all_snps_csv;
+
+    return ($cmd);
+}
+
 sub build_bcf_query_command {
 
     my ($self) = @_;
@@ -184,7 +219,7 @@ sub build_bcf_query_command {
     $cmd .= q{ & MIN(DV) >= } . $self->{min_hqNonRefBases};
     $cmd .= q{ & MIN(DV/DP)>= } . $self->{rawReadDepth_hqNonRefBases_ratio};
     $cmd .= q{ & QUAL >= } . $self->{min_qual};
-    $cmd .= q{ & (GT='1/0' | GT='0/1' | GT='1/2')};
+    $cmd .= q{ & (GT='0/1' | GT='1/2')};
     $cmd .= q{ & ((DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > }
       . $self->{hqRefReads_hqAltReads_ratio} . q{)" };
     $cmd .= $self->snp_called_vcf;
@@ -206,10 +241,31 @@ sub build_total_genome_covered {
     }
     else {
         Pathogens::Exception::HetSNPStepCommand->throw( error =>
-                "A problem occured running the total number of snps command '"
+                "A problem occured running the total genome covered command '"
               . $self->total_genome_covered_command
               . "'\nThe file '"
               . $self->total_genome_covered_csv
+              . "' was not created" );
+    }
+}
+
+sub build_total_number_of_snps {
+
+    my ($self) = @_;
+
+    Utils::CMD( $self->all_snps_command );
+
+    if ( -e $self->all_snps_csv ) {
+        open( my $fh, '<', $self->all_snps_csv )
+          or Utils::error( $self->all_snps_csv . ": $!" );
+        return ( _count_file_rows( $self, $fh ) );
+    }
+    else {
+        Pathogens::Exception::HetSNPStepCommand->throw( error =>
+                "A problem occured running the total number of snps command '"
+              . $self->total_genome_covered_command
+              . "'\nThe file '"
+              . $self->all_snps_csv
               . "' was not created" );
     }
 }
@@ -270,14 +326,17 @@ sub write_het_report {
     my $het_snps_total_genome_covered_percentage =
       _calculate_percentage( $self, $self->number_of_het_snps,
         $self->total_genome_covered );
+    my $het_snps_total_number_of_snps_percentage =
+      _calculate_percentage( $self, $self->number_of_het_snps,
+        $self->total_number_of_snps );
 
     open( my $fh, '>', $self->het_report_path )
       or Utils::error( $self->het_report_path . ": $!" );
     print $fh
-"total_number_of_het_snps\t\%_of_het_snps_for_total_genome_length\t\%_of_het_snps_for_total_genome_covered\n";
+"total_number_of_het_snps\t\%_of_het_snps_for_total_genome_length\t\%_of_het_snps_for_total_genome_covered\t\%_of_het_snps_for_total_number_of_snps\n";
     print $fh (
         $self->number_of_het_snps,
-        "\t$het_snps_genome_percentage\t$het_snps_total_genome_covered_percentage\n"
+        "\t$het_snps_genome_percentage\t$het_snps_total_genome_covered_percentage\t$het_snps_total_number_of_snps_percentage\n"
     );
     close($fh);
 }
@@ -290,6 +349,7 @@ sub remove_temp_vcfs_and_csvs {
     unlink( $self->snp_called_vcf );
     unlink( $self->filtered_snp_called_csv );
     unlink( $self->total_genome_covered_csv );
+    unlink( $self->all_snps_csv );
 
 }
 
