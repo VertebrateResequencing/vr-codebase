@@ -147,14 +147,14 @@ close($fh2);
 my @values = split( /\t/, $lines[1] );
 
 $values[2] =~ s/\n//;
-is( $values[0], '1', 'Total number of Het SNPs' );
+is( $values[0], '1', 'No. Het SNPs' );
 is( $values[1], '4.55588960350548e-05',
-    'Percentage of heterozygous SNPs for the whole genome' );
+    '% Het SNPs (Total Genome)' );
 is( $values[2], '0.00591961167347422',
-    'Percentage of heterozygous SNPs for the genome covered by the sample' );
+    '% Het SNPs (Genome Covered)' );
 chomp($values[3]);
 is( $values[3], '0.819672131147541',
-    'Percentage of heterozygous SNPs for all the SNPs called (Het and Hom)' );
+    '% Het SNPs (Total No. of SNPs)' );
 
 if ( -e $hsc->het_report_path ) {
     #unlink( $hsc->het_report_path );

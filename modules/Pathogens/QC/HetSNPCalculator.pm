@@ -333,7 +333,7 @@ sub write_het_report {
     open( my $fh, '>', $self->het_report_path )
       or Utils::error( $self->het_report_path . ": $!" );
     print $fh
-"total_number_of_het_snps\t\%_of_het_snps_for_total_genome_length\t\%_of_het_snps_for_total_genome_covered\t\%_of_het_snps_for_total_number_of_snps\n";
+"No. Het SNPs\t\% Het SNPs (Total Genome)\t\% Het SNPs (Genome Covered)\t\% Het SNPs (Total No. of SNPs)\n";
     print $fh (
         $self->number_of_het_snps,
         "\t$het_snps_genome_percentage\t$het_snps_total_genome_covered_percentage\t$het_snps_total_number_of_snps_percentage\n"
