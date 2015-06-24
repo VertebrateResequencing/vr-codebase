@@ -40,13 +40,13 @@ sub new {
 		'sb10'=> 'Sendu Bala',
 		'rd'  => 'Richard Durbin',
 		'kb1' => 'Karen McLaren',
-		'ylx' => "Yali Xue from Chris's group",
-		'ak6' => 'Anja Kolb-Kokocinski (kuusamo)',
-		'cj5' => 'chris joyce',
+		'ylx' => "Yali Xue",
+		'ak6' => 'Anja Kolb-Kokocinski',
 		'kw10' => 'Kim Wong',
         'sm15' => 'Shane McCarthy',
         'sjl' => 'Sarah Lindsay',
         'dw2' => 'Danielle Walker',
+        'vvi' => 'Vivek Iyer',
 	};
 
     $self->{CSS} = <<CSS ;
