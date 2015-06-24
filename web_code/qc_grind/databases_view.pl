@@ -72,8 +72,7 @@ sub displayDatabasesPage {
     print qq[ </fieldset> ];
 
 	my %done;
-	push (@main_dbs, @uk10k_dbs);
-	foreach (@main_dbs) {
+	foreach (@main_dbs, @uk10k_dbs, @hipsci_dbs) {
 		$done{$_}++;
 	}
     my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
