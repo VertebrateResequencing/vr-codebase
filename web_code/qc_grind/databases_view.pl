@@ -41,7 +41,7 @@ sub displayDatabasesPage {
     print $cgi->p({-align=>"right"},'Find Project <input type="text" id="projFind" />');
     print $cgi->p('<span id="projHint"></span>');
 
-	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes_v5 vrtrack_mouse_wgs_GRCm38 vrtrack_mouse_wes_GRCm38 vrtrack_scerevisiae_wgs);
+	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_GRCh38_wgs_vrpipe vrtrack_human_wes_v5 vrtrack_mouse_wgs_GRCm38 vrtrack_mouse_wes_GRCm38 vrtrack_scerevisiae_wgs);
     print qq[
         <fieldset style="width: 500px">
         <legend>Main Databases</legend>
@@ -51,7 +51,17 @@ sub displayDatabasesPage {
     }
     print qq[ </fieldset> ];
 
-	my @uk10k_dbs = qw (vrtrack_uk10k_cohort vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare);
+    my @hipsci_dbs = qw (vrtrack_hipsci_chipseq_vrpipe vrtrack_hipsci_qc1_expression vrtrack_hipsci_qc1_expression_vrpipe vrtrack_hipsci_qc1_genotyping vrtrack_hipsci_qc1_genotyping_vrpipe vrtrack_hipsci_qc1_pilot vrtrack_hipsci_rnaseq_vrpipe);
+    print qq[
+        <fieldset style="width: 500px">
+        <legend>HipSci Databases</legend>
+    ];
+    foreach( @hipsci_dbs ) {
+        print $cgi->p("<a href='$script?db=$_'> $_ </a>");
+    }
+    print qq[ </fieldset> ];
+
+	my @uk10k_dbs = qw (vrtrack_uk10k_cohort vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare vrtrack_uk10k_obesity_wga vrtrack_uk10k_rare_wga);
     print qq[
         <fieldset style="width: 500px">
         <legend>UK10K Databases</legend>
@@ -62,8 +72,7 @@ sub displayDatabasesPage {
     print qq[ </fieldset> ];
 
 	my %done;
-	push (@main_dbs, @uk10k_dbs);
-	foreach (@main_dbs) {
+	foreach (@main_dbs, @uk10k_dbs, @hipsci_dbs) {
 		$done{$_}++;
 	}
     my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
