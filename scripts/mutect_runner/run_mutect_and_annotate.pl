@@ -12,7 +12,7 @@ my $bin = $Bin;
 
 # input required: config file
 # ./run_mutect_and_annotate.pl +sampleconf
-# to get an exampleo
+# to get an example
 # To run:
 # run_mutect_and_annotate.pl +config mutect.conf -o $PWD +loop 150 +mail kw10@sanger.ac.uk +nocache &>log
 # Requires scripts from the mutect_runner package:
@@ -72,6 +72,9 @@ sub new {
 			# REQUIRED: 'y' or 'n'; run mutect faster by running each chrom in parallel
 			# Highly recommended for WGS data since MuTect can be slow
 			bychrom => 'y',
+
+			# OPTIONAL: mutect options other than cosmic file, snp file, wig file, chromosome, reference file, input/output
+			mutect_opt => "--max_alt_allele_in_normal_fraction 0.1 --pir_median_threshold 5 --heavily_clipped_read_fraction 0.25",
 
 			## Comment/alter or delete this section if not running human data ----##
 			## VEP options, example for human:
@@ -197,6 +200,7 @@ sub parse_args {
 		'vep_cache',
 	);
 	my @optional = (
+		'mutect_opt',
 		'targets',
 		'snpfile',
 		'biotype_filter',
@@ -241,7 +245,7 @@ sub parse_args {
 		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
-		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools') {
+		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt') {
 			if ( ! -e $$self{$o} ) {
 				$self->throw("No such file $$self{$o}");
 			}
@@ -553,6 +557,9 @@ sub mutect_call {
 	}
 	if ( $chr ) { 
 		$cmd .= "-L $chr ";
+	}
+	if ( $$self{mutect_opt} ) {
+		$cmd .= "$$self{mutect_opt} ";
 	}
 	$self->cmd($cmd);
 	$self->cmd("touch $outfile");
