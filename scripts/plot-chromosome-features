@@ -1,0 +1,760 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+# The dump file:
+#   [
+#       dat => {
+#           $chr => {
+#               $bin => $count,
+#           }
+#       }
+#       max => $max_val,
+#       conf => {},
+#   ],
+#
+#
+
+use strict;
+use warnings;
+use Carp;
+use SVG;
+use Vcf;
+use Utils;
+
+my $opts = parse_params();
+read_chr_lengths($opts);
+collect_data($opts);
+draw_graph($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "Usage: plot-chromosome-features [OPTIONS]\n",
+        "Options:\n",
+        "   -c, --config <file>             The config file.\n",
+        "   -l, --line-graph <file.png>     Create line graph, not color graph.\n",
+        "   -s, --save-dump <file>          Do not parse the data files again, save/retrieve the data from a data dump.\n",
+        "   -h, -?, --help                  This help message.\n",
+        "Example:\n",
+        "   plot-chromosome-features -c test.conf -s test.dump 2>test.max | gzip -c > test.svgz\n",
+        "   inkscape -d 150 test.svgz -e test.png\n",
+        "\n";
+}
+
+sub parse_params
+{
+    my $opts = {};
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-c' || $arg eq '--config' ) { $$opts{config_fname}=shift(@ARGV); next }
+        if ( $arg eq '-l' || $arg eq '--line-graph' ) { $$opts{line_graph}=shift(@ARGV); next }
+        if ( $arg eq '-s' || $arg eq '--save-dump' ) { $$opts{save_dump}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{config_fname}) ) { error("Missing the -c option.\n") }
+    $$opts{conf} = { do $$opts{config_fname} };
+    if ( !exists($$opts{conf}{ref_fai}) ) { error("Missing the 'ref_fai' parameter.\n"); }
+    if ( !exists($$opts{conf}{chr_border_style}) )
+    {
+        $$opts{conf}{chr_border_style}    = {stroke=>'black',fill=>'none','stroke-width'=>1,'shape-rendering'=>'crispEdges'};
+		$$opts{conf}{title_font_style}    = {'font-size'=>15,'font-weight'=>'bold','text-anchor'=>'middle'};
+		$$opts{conf}{ylab_font_style}     = {'font-size'=>9, 'font-weight'=>'bold','text-anchor'=>'start'};
+		$$opts{conf}{ideogram_font_style} = {'font-size'=>5};
+		$$opts{conf}{legend_font_style}   = {'font-size'=>9,'text-anchor'=>'middle'};
+    }
+    return $opts;
+}
+
+sub read_chr_lengths
+{
+    my ($opts) = @_;
+
+    my $chr_re;
+    if ( exists($$opts{conf}{chroms}) ) 
+    {
+        my $tmp = join('|',@{$$opts{conf}{chroms}});
+        $chr_re = qr/^($tmp)\s+(\d+)/;
+        $$opts{chroms} = $$opts{conf}{chroms};
+    }
+    elsif ( exists($$opts{conf}{chr_regex}) )
+    {
+        $chr_re = qr/^($$opts{conf}{chr_regex})\s+(\d+)/;
+    }
+    else
+    {
+        qr/^([0-9X]+)\s+(\d+)/;
+    }
+
+    my @chroms;
+    my $max_len;
+    open(my $fh,'<',$$opts{conf}{ref_fai}) or error("$$opts{conf}{ref_fai}: $!");
+    while (my $line=<$fh>)
+    {
+        if ( !($line=~$chr_re) ) { next; }
+        my $chr = $1;
+        my $len = $2;
+
+        $$opts{chr_lengths}{$chr} = $len;
+        if ( !defined($max_len) or $max_len<$len ) { $max_len=$len; }
+        if ( !exists($$opts{conf}{chroms}) ) { push @chroms,$chr; }
+    }
+    close($fh);
+    if ( !defined($max_len) ) { error("No chromosomes matched the regular expression? [$chr_re]\n"); }
+    if ( !exists($$opts{conf}{chroms}) ) { $$opts{chroms} = \@chroms; }
+    $$opts{max_chr_len} = $max_len;
+    
+    $$opts{max_chr_width} = $$opts{conf}{img_width} - $$opts{conf}{margin_left} - $$opts{conf}{margin_right} - $$opts{conf}{ylabel_pad};
+    $$opts{bp_per_px}   = int($$opts{max_chr_len}/$$opts{max_chr_width});
+}
+
+sub collect_data
+{
+    my ($opts) = @_;
+    my $conf = $$opts{conf}; # to save some typing
+
+    # Can we read the data from cache?
+    if ( exists($$opts{save_dump}) && -e $$opts{save_dump} ) 
+    {
+        my $save_to_use = 1;
+        for my $band (@{$$opts{conf}{bands}})
+        {
+            if ( file_newer($$band{file}, $$opts{save_dump}) ) { $save_to_use=0; }
+        }
+        
+        if ( $save_to_use )
+        {
+            print STDERR "Reading from $$opts{save_dump}...\n";
+            $$opts{bands} = do $$opts{save_dump};
+            for (my $i=0; $i<@{$$opts{conf}{bands}}; $i++)
+            {
+                $$opts{bands}[$i]{conf} = $$opts{conf}{bands}[$i];
+            }
+            return;
+        }
+    }
+    print STDERR "Reading from data files...\n";
+
+    # Collect data for each data type ("band")
+    for my $band (@{$$opts{conf}{bands}})
+    {
+        my $reader;
+        if ( !exists($$band{fmt}) ) { error("Missing the format for one of the files.\n"); }
+
+        if ( $$band{fmt} eq 'IDEOGRAM' ) 
+        { 
+            my $dat = read_ideogram($opts,$band);
+            push @{$$opts{bands}}, $dat;
+            next;
+        }
+        elsif ( $$band{fmt} eq 'VCF' ) { $reader = MyVcfReader->new(file=>$$band{file}); }
+        elsif ( $$band{fmt} eq 'TAB' ) { $reader = Reader->new(file=>$$band{file}); }
+        elsif ( $$band{fmt} eq 'CHR_POS' ) { $reader = Reader->new(file=>$$band{file},to=>1); }
+        elsif ( $$band{fmt} eq 'CHR_POS_COUNT' ) { $reader = Reader->new(file=>$$band{file},to=>1,count=>2); }
+        else { error("The format not recognised: $$band{fmt}\n"); }
+
+        my $dat = read_data($opts,$band,$reader);
+        push @{$$opts{bands}}, $dat;
+    }
+
+    # Save the dump if requested
+    if ( exists($$opts{save_dump}) ) 
+    {
+        use Data::Dumper;
+        open(my $fh,'>',$$opts{save_dump}) or error("$$opts{save_dump}: $!");
+        print $fh Dumper($$opts{bands});
+        close($fh);
+    }
+}
+
+sub read_ideogram
+{
+    my ($opts,$band) = @_;
+    open(my $fh,$$band{file}) or error("$$band{file}: $!");
+    my $dat;
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/^#/ ) { next; }
+        chomp($line);
+        my ($chr,$from,$to,$name,$type) = split(/\t/,$line);
+
+        # Is this a chromosome we are interested in?
+        if ( !exists($$opts{chr_lengths}{$chr}) ) { next; }
+
+        my $bin_from = int($from/$$opts{bp_per_px});
+        my $bin_to   = int($to/$$opts{bp_per_px});
+        push @{$$dat{$chr}}, {from=>$bin_from, to=>$bin_to, name=>$name, type=>$type};
+    }
+    close($fh);
+    return { dat=>$dat, conf=>$band };
+}
+
+sub read_data
+{
+    my ($opts,$band,$reader) = @_;
+
+    # Bin resolution: 1bin=1px. How many bp per 1px?
+    my $bp_per_px = $$opts{bp_per_px};
+
+    my $n_exp = 0;
+    my $dat;
+    while (1)
+    {
+        my ($chr,$from,$to,$count) = $reader->next_line();
+        if ( !defined($chr) ) { last; }
+
+        # Is this a chromosome we are interested in?
+        if ( !exists($$opts{chr_lengths}{$chr}) ) { next; }
+
+        # Sanity check. Not used anymore
+        # $n_exp += ($to-$from+1)*$count;
+
+        # What bin does the beginning of the region belong to?
+        my $bin = int($from/$bp_per_px);
+
+        # Does the region fit inside the bin?
+        if ( $to <= ($bin+1)*$bp_per_px )
+        {
+            $$dat{$chr}{$bin} += ($to-$from+1)*$count;
+            next;
+        }
+
+        # Chop off the beginning of the region and add it to the first bin
+        $$dat{$chr}{$bin} += (($bin+1)*$bp_per_px + 1 - $from)*$count;
+        $from = ($bin+1)*$bp_per_px + 1;
+
+        # Increment all bins covered by the region
+        while ( $to-$from+1>=$bp_per_px )
+        {
+            my $prev_bin = $bin;
+            $bin = int($from/$bp_per_px);
+            $$dat{$chr}{$bin} += $bp_per_px*$count;
+            $from = ($bin+1)*$bp_per_px + 1;
+        }
+
+        # And the last bit
+        $bin = int($from/$bp_per_px);
+        $$dat{$chr}{$bin} += ($to-$from+1)*$count;
+    }
+
+    # Find the maximum value
+    my $n=0;
+    my $max_n;
+    for my $chr (values %$dat)
+    {
+        for my $val (values %$chr) 
+        { 
+            if ( !defined($max_n) or $val>$max_n ) { $max_n=$val; } 
+            $n += $val;
+        }
+    }
+    if ( !defined($max_n) ) { error("Could not collect any data from [$$band{file}]\n"); }
+    if ( !$$opts{header_printed} )
+    {
+        $$opts{header_printed}=1;
+        print STDERR 
+            "# The max_value below can be used to control the color scale range\n",
+            "# max_value\tbp_per_px\tfile\n";
+    }
+    #printf STDERR "Max value for $$band{file} .. %d/%d=%f  [%d %d]\n", $max_n,$$opts{bp_per_px},$max_n*1.0/$$opts{bp_per_px},$n_exp,$n;
+    print STDERR $max_n*1.0/$$opts{bp_per_px},"\t$$opts{bp_per_px}\t$$band{file}\n";
+    return { max=>$max_n, dat=>$dat, conf=>$band };
+}
+
+sub iprint
+{
+    my ($fh,@txt) = @_;
+    for my $txt (@txt)
+    {
+        $txt =~ s/\n[ \t]+/\n/g;
+        $txt =~ s/^\\t/\t/g;
+        $txt =~ s/\n\\t\s*/\n\t/g;
+        print $fh $txt;
+    }
+}
+
+sub draw_line_graph
+{
+    my ($opts) = @_;
+    my $nbands      = @{$$opts{bands}};
+    my $nchroms     = @{$$opts{chroms}};
+
+    `mkdir -p $$opts{line_graph}`;
+    open(my $tfh,'>',"$$opts{line_graph}/plot.tex") or error("$$opts{line_graph}/plot.tex: $!");
+    print $tfh q[
+        \nonstopmode
+        \documentclass[17pt]{memoir}
+        \setstocksize{19cm}{25.4cm}
+        \settrimmedsize{\stockheight}{\stockwidth}{*}
+        \settrims{0pt}{0pt}
+        \setlrmarginsandblock{1cm}{*}{*}
+        \setulmarginsandblock{1.5cm}{*}{*}
+        \setheadfoot{1mm}{1cm}
+        \setlength{\parskip}{0pt}
+        \setheaderspaces{*}{1mm}{*}
+        \setmarginnotes{1mm}{1mm}{1mm}
+        \checkandfixthelayout[fixed]
+        \usepackage{charter}    % font
+        \pagestyle{plain}
+        \makeevenfoot{plain}{}{}{\thepage}
+        \makeoddfoot{plain}{}{}{\thepage}
+        \usepackage{graphicx}
+        \begin{document}
+    ];
+
+    open(my $fh,'>',"$$opts{line_graph}/plot.py") or error("$$opts{line_graph}/plot.py: $!");
+    iprint $fh, qq[
+        import matplotlib as mpl
+        mpl.use('Agg')
+        import matplotlib.pyplot as plt
+    ];
+
+    my @total_num;
+    for (my $ichr=0; $ichr<$nchroms; $ichr++)
+    {
+        my $chr = $$opts{chroms}[$ichr];
+        for (my $iband=0; $iband<$nbands; $iband++)
+        {
+            my $dat  = $$opts{bands}[$iband]{dat}{$chr};
+            for my $val (values %$dat) { $total_num[$iband] += $val; }
+        }
+    }
+    for (my $ichr=0; $ichr<$nchroms; $ichr++)
+    {
+        my $chr = $$opts{chroms}[$ichr];
+        my @plots;
+
+        iprint $fh, "
+            #fig, ax = plt.subplots($nbands, sharex='col', sharey='row', figsize=(8,3), dpi=200)
+            fig, ax = plt.subplots($nbands, sharex='col', figsize=(8,3), dpi=200)
+            dat_$chr = [
+        ";
+        for (my $iband=0; $iband<$nbands; $iband++)
+        {
+            my $dat  = $$opts{bands}[$iband]{dat}{$chr};
+            my $conf = $$opts{bands}[$iband]{conf};
+
+            iprint $fh, "[ ";
+            for my $bin (sort {$a<=>$b} keys %$dat)
+            {
+                iprint $fh, $bin*$$opts{bp_per_px}, ",\n";
+            }
+            iprint $fh, "],\n";
+            iprint $fh, "[ ";
+            for my $bin (sort {$a<=>$b} keys %$dat)
+            {
+                iprint $fh, $$dat{$bin}*100./$total_num[$iband], ",\n";
+            }
+            iprint $fh, "],\n";
+            push @plots, "plt.setp(ax[$iband].get_yticklabels(), visible=False)";
+            push @plots, "ax[$iband].plot(dat_${chr}[$iband*2],dat_${chr}[$iband*2+1], 'o', ms=2, color='$$conf{line_graph}{color}', mec='$$conf{line_graph}{color}',label='$$conf{line_graph}{title}')";
+            push @plots, "ax[$iband].legend(loc='upper right',numpoints=1,markerscale=0,prop={'size':8},frameon=False)";
+            if ( $iband+1 < $nbands ) { push @plots, "plt.setp([ax[$iband].get_xticklabels()], visible=False)"; }
+            if ( exists($$conf{line_graph}{ax_cmd}) )
+            {
+                for my $cmd (@{$$conf{line_graph}{ax_cmd}}) { push @plots, "ax[$iband].$cmd"; }
+            }
+            if ( exists($$conf{line_graph}{cmd}) )
+            {
+                for my $cmd (@{$$conf{line_graph}{cmd}}) { push @plots, $cmd; }
+            }
+        }
+        iprint $fh, "]\n";
+        if ( exists($$opts{conf}{line_graph}{cmd}) )
+        {
+            for my $cmd (@{$$opts{conf}{line_graph}{cmd}}) { push @plots, "$cmd"; }
+        }
+        iprint $fh, join("\n", @plots), "\n";
+        iprint $fh, "plt.suptitle('$$opts{conf}{title}, chr$chr')\n";
+        iprint $fh, "plt.savefig('$$opts{line_graph}/chr$chr.png')\n";
+        print $tfh "\\noindent\\centerline{\\includegraphics[type=png,ext=.png,read=.png,width=19cm]{chr$chr}}\\vspace{1em}\n";
+        if ( $ichr%2 ) { print $tfh "\\newpage\n"; }
+    }
+    close($fh);
+    print $tfh "\\end{document}\n";
+    close($tfh);
+    my $cmd = "python $$opts{line_graph}/plot.py\n";
+    print STDERR "Plotting graphs: $cmd\n";
+    system($cmd);
+    if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
+    chdir($$opts{line_graph});
+    $cmd = "pdflatex plot.tex >plot.log 2>&1";
+    print STDERR "Creating PDF: cd $$opts{line_graph}; $cmd\n";
+    system($cmd);
+    if ( $? ) { error("The command exited with non-zero status, please consult the output of pdflatex: $$opts{line_graph}/plot.log\n\n"); }
+    print STDERR "Finished: $$opts{line_graph}/plot.pdf\n";
+}
+
+sub draw_graph
+{
+    my ($opts) = @_;
+
+    if ( $$opts{line_graph} ) { return draw_line_graph($opts); }
+
+    my $nbands      = @{$$opts{bands}};
+    my $nchroms     = @{$$opts{chroms}};
+    my $chrom_pad   = $$opts{conf}{chrom_pad};
+    my $margin_top  = $$opts{conf}{margin_top};
+    my $margin_left = $$opts{conf}{margin_left};
+    my $band_height = $$opts{conf}{band_height};
+    my $width       = $$opts{conf}{img_width};
+    my $height      = $$opts{conf}{img_height};
+    my $ylabel_pad  = $$opts{conf}{ylabel_pad};
+    my $legend_pad  = $$opts{conf}{legend_pad};
+    my $title_pad   = $$opts{conf}{title_pad};
+    my $bands_y     = $margin_top + $title_pad;
+    my $legend_y    = $bands_y + $nchroms*($nbands*$band_height + $chrom_pad);
+
+    # Init the image
+    my $svg = SVG->new(viewBox=>"0 0 $width $height");
+    $svg->rectangle(x=>0,y=>0,width=>$width,height=>$height,style=>{stroke=>'white',fill=>'white'});
+    $$opts{svg} = $svg;
+
+    # Draw the title
+    $svg->text(x=>$width*0.5,y=>$margin_top+$title_pad*0.5,-cdata=>$$opts{conf}{title}, style=>$$opts{conf}{title_font_style});
+
+    # Draw the bands
+    for (my $ichr=0; $ichr<$nchroms; $ichr++)
+    {
+        my $chr = $$opts{chroms}[$ichr];
+        my $x   = $margin_left + $ylabel_pad;
+        my $y   = $bands_y + $ichr*($nbands*$band_height + $chrom_pad);
+        my $chr_width = $$opts{chr_lengths}{$chr}/$$opts{bp_per_px};
+
+        for (my $iband=0; $iband<$nbands; $iband++)
+        {
+            draw_band($opts,$$opts{bands}[$iband],$chr,$x,$y+$iband*$band_height,$chr_width,$band_height);
+        }
+
+        # Add a black border to the chromosome
+        $svg->rectangle(x=>$x,y=>$y,width=>$chr_width,height=>$nbands*$band_height, style=>$$opts{conf}{chr_border_style});
+
+        # Chromosome label
+        my $tx = $x-$ylabel_pad;
+        my $ty = $y+$nbands*$band_height*0.7;
+        $svg->text(x=>$tx,y=>$ty,-cdata=>$chr, style=>$$opts{conf}{ylab_font_style});
+    }
+
+    # Draw the legend
+    my $iy = 0;
+    for (my $iband=0; $iband<$nbands; $iband++)
+    {
+        if ( !exists($$opts{bands}[$iband]{conf}{legend}) ) { next; }
+        my $x = $margin_left + $ylabel_pad;
+        my $y = $legend_y + ($iy+1)*($band_height+$legend_pad);
+        draw_legend($opts,$$opts{bands}[$iband],$x,$y,$band_height);
+        $svg->rectangle(x=>$x,y=>$y+$band_height,width=>$$opts{conf}{legend_width},height=>$band_height, style=>$$opts{conf}{chr_border_style});
+        $iy++;
+    }
+
+    # Write the image
+    print $svg->xmlify;
+}
+
+sub draw_band
+{
+    my ($opts,$band,$chr,$x,$y,$width,$height) = @_;
+
+    if ( $$band{conf}{fmt} eq 'IDEOGRAM' )
+    {
+        draw_ideogram($opts,$band,$chr,$x,$y,$width,$height);
+        return;
+    }
+
+    my $svg    = $$opts{svg};
+    my $dat    = $$band{dat}{$chr};
+    my @cols   = @{$$band{conf}{cols}};
+    my $bp_per_px = $$opts{bp_per_px};
+    my $max    = $$band{conf}{max_value};
+    my $col_threshold = 5/255.; 
+
+    # Draw the background rectangle
+    $svg->rectangle(x=>$x,y=>$y,width=>$width,height=>$height,
+            style=>{stroke=>'none',fill=>$cols[0],'stroke-width'=>0,'shape-rendering'=>'crispEdges'});
+
+    # Draw the lines
+    for my $bin (sort {$a<=>$b} keys %$dat)
+    {
+        # Scale the value to the range [0,1]
+        my $val = $$dat{$bin}*1.0/$bp_per_px;   # scale from cummulative per bin values to per base values
+        if ( $val>$max ) { $val=$max; }
+        $val /=  $max;
+
+        # Determine the color value
+        my $col = get_color_string(@cols,$val);
+
+        # Skip the color lines which differ only slightly from the background
+        if ( color_distance($col,$cols[0])<$col_threshold ) { next; }
+
+        my $lx = $x+$bin;
+        $svg->line(x1=>$lx,y1=>$y,x2=>$lx,y2=>$y+$height,style=>{stroke=>"$col",'stroke-width'=>1,'shape-rendering'=>'crispEdges'});
+    }
+}
+
+sub draw_ideogram
+{
+    my ($opts,$band,$chr,$x,$y,$width,$height) = @_;
+    my $svg = $$opts{svg};
+
+    for my $part (@{$$band{dat}{$chr}})
+    {
+        my $col = $$band{conf}{cols}{ $$part{type} };
+        if ( !defined $col ) { error("No color for the ideogram type [$$part{type}]?"); }
+
+        $svg->rectangle(x=>$x+$$part{from},y=>$y,width=>$$part{to}-$$part{from},height=>$height,
+                style=>{stroke=>'none',fill=>$col,'stroke-width'=>0,'shape-rendering'=>'crispEdges'});
+        if ( defined $$part{name} )
+        {
+            my ($r,$g,$b) = parse_color($col);
+            my $tcol = $r+$g+$b<3*0.5 ? '#ffffff' : '#000000';
+            $svg->text(x=>$x+$$part{from}+($$part{to}-$$part{from})*0.5,y=>$y+$height*0.7,-cdata=>$$part{name},
+                style=>{'text-anchor'=>'middle',fill=>$tcol,%{$$opts{conf}{ideogram_font_style}}});
+        }
+    }
+}
+
+sub draw_legend
+{
+    my ($opts,$band,$x,$y,$height) = @_;
+
+    my $width = $$opts{conf}{legend_width};
+    my @cols  = @{$$band{conf}{cols}};
+    my $svg   = $$opts{svg};
+    my $max   = $$band{conf}{max_value};
+    my $delta = $$band{conf}{legend}{delta};
+    my $fmt   = $$band{conf}{legend}{fmt};
+    my $scale = $$band{conf}{legend}{scale};
+    my $units = $$band{conf}{legend}{units};
+
+    for (my $i=0; $i<$width; $i++)
+    {
+        my $col = get_color_string(@cols,$i*1.0/$width);
+        $svg->line(x1=>$i+$x,y1=>$y+$height,x2=>$i+$x,y2=>$y+2*$height,style=>{stroke=>"$col",'stroke-width'=>1,'shape-rendering'=>'crispEdges'});
+    }
+    # convert the maximum value per px ($max) to user units, i.e. max value per $scale*bp
+    my $umax = $scale * $max;
+    my $n  = $delta && int($umax/$delta) ? int($umax/$delta) : 0;
+    if ( !$n or $n>50 ) { $n = 10; }
+    my $dx = $width/$n; 
+    for (my $i=0; $i<=$n; $i++)
+    {
+        my $col = get_color_string(@cols,$i*1.0/$n);
+    
+        my $from = $i*$delta;
+        my $txt  = $i==$n ? sprintf(">$fmt$units",$from) : sprintf("$fmt$units",$from);
+        my $xpos = $x+$i*$dx;
+        $svg->text(x=>$xpos,y=>$y+$height*0.4,-cdata=>$txt,style=>{%{$$opts{conf}{legend_font_style}},'text-anchor'=>'middle'});
+        $svg->line(x1=>$xpos,y1=>$y+$height,x2=>$xpos,y2=>$y+$height-0.4*$height,style=>{stroke=>'black','stroke-width'=>1,'shape-rendering'=>'crispEdges'});
+    }
+
+    $svg->text(x=>$x+$width+3*$$opts{conf}{legend_pad},y=>$y+$height*1.7,-cdata=>$$band{conf}{legend}{title},style=>$$opts{conf}{legend_font_style});
+}
+
+sub file_newer
+{
+    my ($afile,$bfile) = @_;
+    my (@astat) = stat($afile) or error("stat $afile: $!");
+    my (@bstat) = stat($bfile) or error("stat $bfile: $!");
+
+    if ( $astat[9]>$bstat[9] ) { return 1 }
+    return 0;
+}
+
+
+# Value from the interval 0-1 is converted to a color with the colorscale
+#   where $min corresponds to $minc, $max corresponds to $maxc, and $avg to $avgc.
+#   The colors ($minc,$maxc,$avgc) are strings such as #ffffff.
+#   If no $min,$max, and $avg are given, the values 0,1, and 0.5 are used.
+#
+sub get_color
+{
+    my ($minc,$avgc,$maxc,$value,$min,$avg,$max) = @_;
+
+    my ($minr,$ming,$minb) = parse_color($minc);
+    my ($maxr,$maxg,$maxb) = parse_color($maxc);
+    my ($avgr,$avgg,$avgb) = parse_color($avgc);
+    if ( !defined $max )
+    {
+        $min = 0.0;
+        $avg = 0.5;
+        $max = 1.0;
+    }
+
+    if ( $value<$min ) { $value=$min }
+    if ( $value>$max ) { $value=$max }
+
+    $value -= $min;
+
+    my @color = ();
+    if ( $avgc eq $minc or $avgc eq $maxc )
+    {
+        @color =
+            (
+             $value*($maxr-$minr) + $minr ,
+             $value*($maxg-$ming) + $ming ,
+             $value*($maxb-$minb) + $minb ,
+            );
+    }
+    else
+    {
+        my ($avgr,$avgg,$avgb) = parse_color($avgc);
+        if ( $value < $avg )
+        {
+            @color =
+                (
+                 ($value/$avg)*($avgr-$minr) + $minr ,
+                 ($value/$avg)*($avgg-$ming) + $ming ,
+                 ($value/$avg)*($avgb-$minb) + $minb ,
+                );
+        }
+        else
+        {
+            @color =
+                (
+                 (($value-$avg)/($max-$avg))*($maxr-$avgr) + $avgr ,
+                 (($value-$avg)/($max-$avg))*($maxg-$avgg) + $avgg ,
+                 (($value-$avg)/($max-$avg))*($maxb-$avgb) + $avgb ,
+                );
+        }
+    }
+    if ( $color[0]>255 || $color[0]<0 ) { error("FIXME: The color calculation incorrect: ",join(",",@_)," -> $color[0],$color[1],$color[2]\n") }
+    if ( $color[1]>255 || $color[1]<0 ) { error("FIXME: The color calculation incorrect: ",join(",",@_)," -> $color[0],$color[1],$color[2]\n") }
+    if ( $color[2]>255 || $color[2]<0 ) { error("FIXME: The color calculation incorrect: ",join(",",@_)," -> $color[0],$color[1],$color[2]\n") }
+    return \@color;
+}
+
+
+# Accepts the same arguments as get_color, but returns the color as
+#   a hex string, e.g. #ffffff
+sub get_color_string
+{
+    my $color = get_color(@_);
+    return sprintf "#%02x%02x%02x", $$color[0]*255, $$color[1]*255, $$color[2]*255;
+}
+
+
+# fffff -> 1.0,1.0,1.0
+# 00000 ->  .0, .0, .0
+sub parse_color
+{
+    my ($color) = @_;
+    if ( $color=~/^#/ ) { $color=$'; }
+    my $r = hex(substr($color,0,2)) / 255.;
+    my $g = hex(substr($color,2,2)) / 255.;
+    my $b = hex(substr($color,4,2)) / 255.;
+    return ($r,$g,$b);
+}
+
+# 1.0,1.0,1.0 -> ffffff
+sub values_to_hexstring
+{
+    my ($r,$g,$b) = @_;
+    return sprintf "%02x%02x%02x",$r*255,$g*255,$b*255;
+}
+
+sub color_distance
+{
+    my ($a,$b) = @_;
+    my ($ar,$ag,$ab) = parse_color($a);
+    my ($br,$bg,$bb) = parse_color($b);
+    return sqrt(($ar-$br)**2 + ($ag-$bg)**2 + ($ab-$bb)**2);
+}
+
+
+
+#---------------------------------
+
+package Reader;
+
+use strict;
+use warnings;
+use Carp;
+
+sub Reader::new
+{
+    my ($class,@args) = @_;
+    my $self = @args ? {@args} : {};
+    bless $self, ref($class) || $class;
+    if ( $$self{cmd} )
+    {
+        $$self{file} = '';
+        open($$self{fh},$$self{cmd}) or $self->throw("$$self{cmd}: $!");
+    }
+    if ( !$$self{file} && !$$self{fh} ) { $self->throw("Expected the file or fh option.\n"); }
+    if ( !exists($$self{delim}) ) { $$self{delim} = qr/\s+/; }
+    if ( !exists($$self{chr}) ) { $$self{chr} = 0; }    # the index of the chromosome column (indexed from 0)
+    if ( !exists($$self{from}) ) { $$self{from} = 1; }    # the index of the position column
+    if ( !exists($$self{to}) ) { $$self{to} = 2; }  
+    $self->open();
+    return $self;
+}
+
+sub Reader::throw
+{
+    my ($self,@msg) = @_;
+    confess @msg;
+}
+
+sub Reader::close
+{
+    my ($self,@msg) = @_;
+    if ( $$self{fh} ) { close($$self{fh}); }
+}
+
+sub Reader::open
+{
+    my ($self) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    $self->close();
+    if ( $$self{file}=~/\.gz$/i )
+    {
+        open($$self{fh},"zcat $$self{file} |") or $self->throw("zcat $$self{file} |: $!");
+    }
+    else
+    {
+        open($$self{fh},'<',$$self{file}) or $self->throw("$$self{file}: $!");
+    }
+}
+
+sub Reader::next_line
+{
+    my ($self) = @_;
+    my $line;
+    while (!defined($line))
+    {
+        $line = readline($$self{fh});
+        if ( !$line ) { last; }
+        if ( $line=~/^#/ ) { undef($line); next; }
+    }
+    if ( !$line ) { return undef; }
+    my @items = split($$self{delim},$line);
+    my $count = exists($$self{count}) ? $items[$$self{count}] : 1;
+    return ($items[$$self{chr}],$items[$$self{from}],$items[$$self{to}],$count);
+}
+
+
+#---------------------------------
+
+package MyVcfReader;
+
+use strict;
+use warnings;
+use base qw(Reader);
+use Carp;
+
+sub MyVcfReader::new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(chr=>0,from=>1,to=>1,@args);
+    bless($self,$class);
+    return $self;
+}
+
+
