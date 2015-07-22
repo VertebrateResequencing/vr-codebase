@@ -57,6 +57,8 @@ data => {
     adapter_removal_tool => 'trimmomatic' # trimmomatic is the only option for now
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
+    iva_qc => 1, # If set, run iva_qc. Default - do not run iva_qc
+    kraken_db => 'path to kraken db', #for iva_qc
 },
 
 
@@ -105,6 +107,7 @@ use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 use Bio::AssemblyImprovement::Util::FastaTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
+use Bio::AssemblyImprovement::IvaQC::Main;
 
 
 use base qw(VertRes::Pipeline);
@@ -140,6 +143,8 @@ our %options = (
                 khmer_exec		 => '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
                 QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+                iva_qc_exec		 => '/software/pathogen/external/bin/iva_qc',
+                kraken_db		 => 'link to kraken db',
                 adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
                 primers_file     => '',
                 remove_primers   => 0,
@@ -154,6 +159,10 @@ our %options = (
                 iva_seed_ext_min_ratio => 2,
                 iva_ext_min_cov        => 5,
                 iva_ext_min_ratio      => 2,
+                iva_insert_size		   => 800,
+                iva_strand_bias        => 0,
+                iva_qc	=> 0,
+                kraken_db => '/path/to/kraken',
                );
 
 sub new {
@@ -390,6 +399,8 @@ my \$assembler = $assembler_class->new(
   iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
   iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
   iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
+  iva_insert_size	     => qq[$self->{iva_insert_size}],
+  iva_strand_bias		 => qq[$self->{iva_strand_bias}],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
@@ -415,6 +426,19 @@ if('$self->{assembler}' eq 'velvet')
 
 die "Missing assembly directory - assembly didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
 system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
+
+# Run iva_qc if needed
+if(defined($self->{iva_qc}) && $self->{iva_qc} && defined($self->{kraken_db})) 
+{
+  	my $iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
+    			'db'      			  => $self->{kraken_db},
+    			'forward_reads'       => qq[$tmp_directory].'/forward.fastq',
+    			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
+    			'assembly'			  => \$assembler->optimised_assembly_file_path(),
+    			'iva_qc_exec'         => $self->{iva_qc_exec},
+    			);
+    $iva_qc->run();
+}
 
 unlink(qq[$tmp_directory].'/forward.fastq');
 unlink(qq[$tmp_directory].'/reverse.fastq');
@@ -573,6 +597,10 @@ sub improve_assembly
   my $order_contigs = Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename  => $assembly_file );
   $order_contigs->run();
   move($order_contigs->output_filename,$assembly_file);
+  
+ 
+  
+  }
 }
 
 
