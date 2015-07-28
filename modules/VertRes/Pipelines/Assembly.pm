@@ -144,7 +144,8 @@ our %options = (
                 QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
                 iva_qc_exec		 => '/software/pathogen/external/bin/iva_qc',
-                kraken_db		 => 'link to kraken db',
+                iva_qc	=> 0,
+                kraken_db => '/lustre/scratch108/pathogen/pathpipe/kraken/assemblyqc_fluhiv_20150728',
                 adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
                 primers_file     => '',
                 remove_primers   => 0,
@@ -159,10 +160,9 @@ our %options = (
                 iva_seed_ext_min_ratio => 2,
                 iva_ext_min_cov        => 5,
                 iva_ext_min_ratio      => 2,
-                iva_insert_size		   => 800,
-                iva_strand_bias        => 0,
-                iva_qc	=> 0,
-                kraken_db => '/path/to/kraken',
+                iva_insert_size		   => 500,
+                iva_strand_bias        => 0.1,
+ 
                );
 
 sub new {
@@ -600,7 +600,7 @@ sub improve_assembly
   
  
   
-  }
+  
 }
 
 
