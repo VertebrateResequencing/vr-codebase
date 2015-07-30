@@ -356,6 +356,7 @@ use Cwd;
 use File::Path qw(make_path remove_tree);
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
+use Bio::AssemblyImprovement::IvaQC::Main;
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 system("rm -rf $self->{assembler}_assembly_*");
@@ -430,14 +431,14 @@ system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
 # Run iva_qc if needed
 if(defined($self->{iva_qc}) && $self->{iva_qc} && defined($self->{kraken_db})) 
 {
-  	my $iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
+  	my \$iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
     			'db'      			  => $self->{kraken_db},
     			'forward_reads'       => qq[$tmp_directory].'/forward.fastq',
     			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
     			'assembly'			  => \$assembler->optimised_assembly_file_path(),
     			'iva_qc_exec'         => $self->{iva_qc_exec},
     			);
-    $iva_qc->run();
+    \$iva_qc->run();
 }
 
 unlink(qq[$tmp_directory].'/forward.fastq');
