@@ -57,6 +57,8 @@ data => {
     adapter_removal_tool => 'trimmomatic' # trimmomatic is the only option for now
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
+    iva_qc => 1, # If set, run iva_qc. Default - do not run iva_qc
+    kraken_db => 'path to kraken db', #for iva_qc
 },
 
 
@@ -105,6 +107,7 @@ use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 use Bio::AssemblyImprovement::Util::FastaTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
+use Bio::AssemblyImprovement::IvaQC::Main;
 
 
 use base qw(VertRes::Pipeline);
@@ -140,6 +143,9 @@ our %options = (
                 khmer_exec		 => '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
                 QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+                iva_qc_exec		 => '/software/pathogen/external/bin/iva_qc',
+                iva_qc	=> 0,
+                kraken_db => '/lustre/scratch108/pathogen/pathpipe/kraken/assemblyqc_fluhiv_20150728',
                 adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
                 primers_file     => '',
                 remove_primers   => 0,
@@ -154,6 +160,9 @@ our %options = (
                 iva_seed_ext_min_ratio => 2,
                 iva_ext_min_cov        => 5,
                 iva_ext_min_ratio      => 2,
+                iva_insert_size		   => 800,
+                iva_strand_bias        => 0,
+ 
                );
 
 sub new {
@@ -336,7 +345,6 @@ sub optimise_parameters
       my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
 
       my $contigs_base_name = $self->generate_contig_base_name();
-
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
 use strict;
@@ -347,6 +355,7 @@ use Cwd;
 use File::Path qw(make_path remove_tree);
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
+use Bio::AssemblyImprovement::IvaQC::Main;
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 system("rm -rf $self->{assembler}_assembly_*");
@@ -390,6 +399,8 @@ my \$assembler = $assembler_class->new(
   iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
   iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
   iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
+  iva_insert_size	     => qq[$self->{iva_insert_size}],
+  iva_strand_bias		 => qq[$self->{iva_strand_bias}],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
@@ -404,6 +415,26 @@ if ($self->{improve_assembly})
   \$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(\$assembler->optimised_assembly_file_path(), qq[$tmp_directory]);
   \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
 }
+
+# Run iva_qc if needed
+if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}])) 
+{
+	# If improve assembly has already been run, the forward and reverse fastq files should already be here
+	# If not, rerun the split reads method
+	if (! (-e qq[$tmp_directory].'/forward.fastq' && -e qq[$tmp_directory].'/reverse.fastq')){
+		\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+	}
+  	my \$iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
+    			'db'      			  => qq[$self->{kraken_db}],
+    			'forward_reads'       => qq[$tmp_directory].'/forward.fastq',
+    			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
+    			'assembly'			  => \$assembler->optimised_assembly_file_path(),
+    			'iva_qc_exec'         => qq[$self->{iva_qc_exec}],
+    			);
+    \$iva_qc->run();
+    system('touch $output_directory/_iva_qc_done');
+}
+
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
@@ -573,6 +604,10 @@ sub improve_assembly
   my $order_contigs = Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename  => $assembly_file );
   $order_contigs->run();
   move($order_contigs->output_filename,$assembly_file);
+  
+ 
+  
+  
 }
 
 
