@@ -87,13 +87,9 @@ sub optimise_parameters
     "--seed_ext_min_ratio", (defined($self->{iva_seed_ext_min_ratio})) ? $self->{iva_seed_ext_min_ratio} : 2, 
     "--ext_min_cov",        (defined($self->{iva_ext_min_cov}))        ? $self->{iva_ext_min_cov}        : 5,
     "--ext_min_ratio",      (defined($self->{iva_ext_min_ratio}))      ? $self->{iva_ext_min_ratio}      : 2,
-  ));
-  
-  # insert size 
-  my $insert_size_opt = join(' ', ( "--max_insert", (defined($self->{iva_insert_size}))   ? $self->{iva_insert_size}   : 500) );
-  
-  # strand bias opt
-  my $strand_bias_opt = join(' ', ("--strand_bias", (defined($self->{iva_strand_bias}))   ? $self->{iva_strand_bias}   : 0) );
+    "--max_insert",         (defined($self->{iva_insert_size}))        ? $self->{iva_insert_size}        : 800,
+    "--strand_bias",        (defined($self->{iva_strand_bias}))        ? $self->{iva_strand_bias}        : 0,
+  ));  
   
   `$self->{optimiser_exec} $extension_opts $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly`;
   File::Copy::move(File::Spec->catfile($self->optimised_directory(), 'contigs.fasta'), File::Spec->catfile($self->optimised_directory(), 'contigs.fa'));
