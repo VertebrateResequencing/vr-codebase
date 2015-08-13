@@ -160,8 +160,8 @@ our %options = (
                 iva_seed_ext_min_ratio => 2,
                 iva_ext_min_cov        => 5,
                 iva_ext_min_ratio      => 2,
-                iva_insert_size		   => 500,
-                iva_strand_bias        => 0.1,
+                iva_insert_size		   => 800,
+                iva_strand_bias        => 0,
  
                );
 
@@ -345,7 +345,6 @@ sub optimise_parameters
       my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
 
       my $contigs_base_name = $self->generate_contig_base_name();
-
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
 use strict;
@@ -417,6 +416,26 @@ if ($self->{improve_assembly})
   \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
 }
 
+# Run iva_qc if needed
+if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}])) 
+{
+	# If improve assembly has already been run, the forward and reverse fastq files should already be here
+	# If not, rerun the split reads method
+	if (! (-e qq[$tmp_directory].'/forward.fastq' && -e qq[$tmp_directory].'/reverse.fastq')){
+		\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+	}
+  	my \$iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
+    			'db'      			  => qq[$self->{kraken_db}],
+    			'forward_reads'       => qq[$tmp_directory].'/forward.fastq',
+    			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
+    			'assembly'			  => \$assembler->optimised_assembly_file_path(),
+    			'iva_qc_exec'         => qq[$self->{iva_qc_exec}],
+    			);
+    \$iva_qc->run();
+    system('touch $output_directory/_iva_qc_done');
+}
+
+
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
 if('$self->{assembler}' eq 'velvet')
@@ -427,19 +446,6 @@ if('$self->{assembler}' eq 'velvet')
 
 die "Missing assembly directory - assembly didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
 system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
-
-# Run iva_qc if needed
-if(defined($self->{iva_qc}) && $self->{iva_qc} && defined($self->{kraken_db})) 
-{
-  	my \$iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
-    			'db'      			  => $self->{kraken_db},
-    			'forward_reads'       => qq[$tmp_directory].'/forward.fastq',
-    			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
-    			'assembly'			  => \$assembler->optimised_assembly_file_path(),
-    			'iva_qc_exec'         => $self->{iva_qc_exec},
-    			);
-    \$iva_qc->run();
-}
 
 unlink(qq[$tmp_directory].'/forward.fastq');
 unlink(qq[$tmp_directory].'/reverse.fastq');
