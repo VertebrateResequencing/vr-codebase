@@ -430,9 +430,10 @@ if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}]
     			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
     			'assembly'			  => \$assembler->optimised_assembly_file_path(),
     			'iva_qc_exec'         => qq[$self->{iva_qc_exec}],
+    			'working_directory'	  => qq[$tmp_directory/$self->{assembler}_assembly], #run iva_qc inside assembly directory. eventually all files will be in a directory like iva_assembly inside lane directory
     			);
     \$iva_qc->run();
-    system('touch $output_directory/_iva_qc_done');
+    system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_done'); #The prefix in the config file is not always the name of assembler, so we append assembler name
 }
 
 
