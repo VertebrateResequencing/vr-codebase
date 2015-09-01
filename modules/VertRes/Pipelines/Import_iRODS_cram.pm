@@ -99,7 +99,7 @@ our %options = (
     bsub_opts  => '',
     cramtools_jar  => '/software/pathogen/external/apps/usr/share/java/cramtools-2.1.jar',
     cramtools_java => '/software/jdk1.8.0_11/bin/java',
-    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.1.30'
+    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.2'
 );
 
 sub new {
