@@ -69,6 +69,7 @@ sub print_quotas {
         print "------------------------------------------------------------------------------------------\n";
 
         my ($disk_used_total,$disk_limit_total,$files_total,$file_limit_total);
+        my (%result, %usage);
         foreach my $group (@groups)
         {
             chomp $group;
@@ -79,17 +80,22 @@ sub print_quotas {
             my (undef,undef,undef,$disk_used,undef,$disk_limit,undef,undef,$files,undef,$file_limit,undef) = split /\s+/, $res;
             next unless $disk_used;
             if ($disk_limit eq "unlimited" || $file_limit eq "unlimited") {
-                printf ("%-20s %-15s %10s       unlimited %10d       unlimited\n", $disk, $group, displayK($disk_used), $files);
+                $result{$group} = sprintf ("%-20s %-15s %10s       unlimited %10d       unlimited\n", $disk, $group, displayK($disk_used), $files);
+                $usage{$group} = 1000;
             }
             else {
                 my $disk_pct = $disk_limit ? ($disk_used/$disk_limit) * 100 : 0;
                 my $file_pct = $file_limit ? ($files/$file_limit) * 100 : 0;
-                printf ("%-20s %-15s %10s %10s %3.0f%% %10d %10d %3.0f%%\n", $disk, $group, displayK($disk_used), displayK($disk_limit), $disk_pct, $files, $file_limit, $file_pct);
+                $result{$group} = sprintf ("%-20s %-15s %10s %10s %3.0f%% %10d %10d %3.0f%%\n", $disk, $group, displayK($disk_used), displayK($disk_limit), $disk_pct, $files, $file_limit, $file_pct);
+                $usage{$group} = $disk_pct > $file_pct ? $disk_pct : $file_pct;
             }
             $disk_used_total += $disk_used;
             $disk_limit_total += $disk_limit unless ($disk_limit eq "unlimited");
             $files_total += $files;
             $file_limit_total += $file_limit unless ($file_limit eq "unlimited");
+        }
+        foreach my $group (sort { $usage{$b} <=> $usage{$a} } keys(%usage) ) {
+            print $result{$group};
         }
         my $disk_pct_total = $disk_limit_total ? ($disk_used_total/$disk_limit_total) * 100 : 0;
         my $file_pct_total = $file_limit_total ? ($files_total/$file_limit_total) * 100 : 0;
