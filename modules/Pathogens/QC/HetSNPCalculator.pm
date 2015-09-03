@@ -357,6 +357,7 @@ sub _calculate_percentage {
 
     my ( $self, $count, $total ) = @_;
     return ( ( $count * 100 ) / $total ) if ( $total > 0 );
+	return 0;
     Pathogens::Exception::NullDenominator->throw( error =>
 "The value used as total is null (0). No percentage can be calculated\n"
     );
