@@ -59,8 +59,8 @@ sub parse_params
 {
     my $opts = 
     {
-        manifest => '/lustre/scratch107/user/pd3/hipSci/HumanCoreExome-12v1-0_A.sorted.cvs.gz',
-        refseq => '/lustre/scratch107/vrpipe/refs/human/ncbi37/human_g1k_v37.fasta',
+        manifest => '/lustre/scratch116/vr/ref/human/ncbi37/resources/hipsci/HumanCoreExome-12v1-0_A.sorted.cvs.gz',
+        refseq => '/lustre/scratch116/vr/ref/human/ncbi37/human_g1k_v37.fasta',
 	bcftools => 'bcftools',
     };
     while (defined(my $arg=shift(@ARGV)))
