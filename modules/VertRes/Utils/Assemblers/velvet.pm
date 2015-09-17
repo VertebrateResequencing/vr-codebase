@@ -166,9 +166,9 @@ sub estimate_memory_required
   my $memory_required = 0.5 * $input_params->{total_number_of_reads} + 1500000;
   $memory_required = $memory_required/2 if $input_params->{error_correct};
 
-  if($memory_required < 1000000)
+  if($memory_required < 8000000)
   {
-    $memory_required = 1000000;
+    $memory_required = 8000000;
   }
   elsif($memory_required > 400000000)
   {
