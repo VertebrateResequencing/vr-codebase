@@ -90,6 +90,7 @@ sub new {
 			# The Ensemble vep_cache version must match the api version
 			ens_version => '75',
 			species => 'human',
+			assembly => 'GRCh37',
 			ensembl_api => '/software/vertres/installs/ensembl/75/',
 			vep_cache => '/lustre/scratch105/projects/g1k/ref/vep_cache',
 			vep_stats => 'n',
@@ -137,7 +138,8 @@ sub new {
 			summary_table => 'y',
 			
 			# REQUIRED: 'default', 'all' or a list of "|" separated SO consequences used in VEP
-			# 'default' is 'transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_'
+			# http://www.ensembl.org/info/genome/variation/predicted_data.html#consequences
+			# 'default' is 'transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|initiator_c|start_lost|transcript_amp|frameshift_v|inframe_'
 			conseq_list    => 'default',
 			# OPTIONAL: filter by transcript biotype
 			# Keep consequences with transcripts of these Ensembl biotypes; separate with "|"
@@ -205,7 +207,8 @@ sub parse_args {
 		'snpfile',
 		'biotype_filter',
 		'cosmic',
-		'bedtools'
+		'bedtools',
+		'assembly'
 	);
 
     while (defined(my $arg=shift(@ARGV))) {
@@ -245,7 +248,7 @@ sub parse_args {
 		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
-		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt') {
+		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly') {
 			if ( ! -e $$self{$o} ) {
 				$self->throw("No such file $$self{$o}");
 			}
@@ -656,7 +659,8 @@ sub run_vep {
 	# vep
 	# vep outputs an unzipped vcf txt file
 	my $cmd = "perl -I $$self{ensembl_api} $$self{vep} -i $vcfin --db_version $$self{ens_version}  -t SO --format vcf -o $vcfout.tmp --force_overwrite --cache --dir $$self{vep_cache} --buffer 20000 --species $$self{species} --offline --symbol --biotype --vcf --sift s ";
-	$cmd .= "--no_stats" if $$self{vep_stats} eq 'no' || $$self{vep_stats} eq 'n' ;
+	$cmd .= "--no_stats " if $$self{vep_stats} eq 'no' || $$self{vep_stats} eq 'n' ;
+	$cmd .= "--assembly $$self{assembly} " if $$self{assembly};
 	$self->cmd($cmd);
 	if ( -e "$vcfout.tmp") {
 		rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 

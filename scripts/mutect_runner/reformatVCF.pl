@@ -90,6 +90,8 @@ my @all_cons = (
 	'transcript_ablation',
 	'transcript_amplification',
 	'upstream_gene_variant',
+	'start_lost', # new; replaces initiator codin variant
+	'protein_altering_variant', # new
 );
 
 my %opts;
@@ -122,7 +124,7 @@ if (!$opts{f} || !$opts{m} || !$opts{o}) {
 	   'all' -keep all
 	   list is a "|" separated list, eg: "missense|stop_gained|stop_lost"
 	   'default' -list is "/transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|
-	   initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_/"
+	   initiator_c|transcript_amp|frameshift_v|inframe_/"
 	   REQUIRED
 
 	-m extended|default; add or exclude DP4T in table format
@@ -167,7 +169,7 @@ if ($which ne 'all' && $which ne 'default') {
 my $consequences;
 
 if ($which eq 'default') {
-	$consequences = "transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_";
+	$consequences = "transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|initiator_c|transcript_amp|frameshift_v|inframe_|start_lost";
 }
 elsif ($which ne 'all') {
 	$consequences = $which;
@@ -276,7 +278,7 @@ while (<>) {
 			if ($outformat ne 'vcf') {
 				open F, ">$dir/$sample-vs-$ref-MuTect.txt" or die "Can't open $dir/$sample-vs-$ref-MuTect.txt" ;
 				print F "##Reformatted MuTect calls with ENSEMBL VEP consequence annotations\n";
-				print F "##Filtered for conseqeuences: transcript_ablation|stop_lost|stop_gain|missense|splice_donor|splice_acceptor|initiator_codon|transcript_amp|TF_binding|regulatory_reg|frameshift_variant|inframe_insertion|inframe_deletion\n" if $which eq 'limit';
+				print F "##Filtered for conseqeuences: transcript_ablation|stop_lost|stop_gain|missense|splice_donor|splice_acceptor|initiator_codon|start_lost|frameshift_variant|inframe_insertion|inframe_deletion\n" if $which eq 'limit';
 				print F "##Excludes consequences affecting NMD and non-coding transcripts\n" if $which eq 'limit';
 				print F "##No consequence filtering\n" if $which eq 'all';
 				print F $reference."\n";
@@ -342,14 +344,15 @@ while (<>) {
 			my @c = split /,/, $csq; 
 			chomp @c;
 			# Format: Allele|Gene|Feature|Feature_type|Consequence|cDNA_position|CDS_position|Protein_position|Amino_acids|Codons|Existing_variation|DISTANCE|STRAND|SYMBOL|SYMBOL_SOURCE|BIOTYPE"
+			# human, vep81;  Format: Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|EXON|INTRON|HGVSc|HGVSp|cDNA_position|CDS_position|Protein_position|Amino_acids|Codons|Existing_variation|DISTANCE|STRAND|SYMBOL_SOURCE|HGNC_ID|SIFT"
 			my @tmp;
 			for (@c) {
 				if ($which eq 'default') {
 					if ($biotype) {
-						push @tmp, $_ if $_=~/$consequences/ && $_ !~/NMD_|nc_trans/ && $_ !~/$biotype/;
+						push @tmp, $_ if $_=~/$consequences/ && $_ !~/NMD_|nc_trans|non_coding/ && $_ =~/$biotype/;
 					}
 					else {
-						push @tmp, $_ if $_=~/$consequences/ && $_ !~/NMD_|nc_trans/;
+						push @tmp, $_ if $_=~/$consequences/ && $_ !~/NMD_|nc_trans|non_coding/;
 					}
 				}
 				elsif ($biotype && $consequences) {
@@ -426,20 +429,22 @@ sub formatgenes {
 			$inf.= $c[$index] ? $c[$index] : '-';
 			$inf .= "\t" unless $_ eq 'Amino_acids';
 		}
-		$c[1] = '-' if !$c[1];
+		$csqindex{Gene} = $csqindex{Gene}; 
+		$csqindex{Gene} = '-' if !$csqindex{Gene}; 
+		#$c[1] = '-' if !$c[1];
 		# push trans and biotypes for each gene/cons combination 
-		push @{$info{$c[1]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
-		push @{$info{$c[1]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
+		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
+		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
 		# order sift scores by most severe first
 		##print STDERR "LINE $line\n";
 		##print STDERR "sift is $c[$csqindex{SIFT}]\n";
 		if ($c[$csqindex{SIFT}] && $c[$csqindex{SIFT}] ne "" && $c[$csqindex{SIFT}] >= 0) {
-			if ( !defined $info{$c[1]}{"$inf"}{sift}[0]  || ( $c[$csqindex{SIFT}] < $info{$c[1]}{"$inf"}{sift}[0] )) {
-				unshift (@{$info{$c[1]}{"$inf"}{sift}},$c[$csqindex{SIFT}]);
+			if ( !defined $info{$c[$csqindex{Gene}]}{"$inf"}{sift}[0]  || ( $c[$csqindex{SIFT}] < $info{$c[$csqindex{Gene}]}{"$inf"}{sift}[0] )) {
+				unshift (@{$info{$c[$csqindex{Gene}]}{"$inf"}{sift}},$c[$csqindex{SIFT}]);
 			#	print STDERR "unshift $c[$csqindex{SIFT}]\n";
 			}
 			else {
-				#push (@{$info{$c[1]}{"$inf"}{sift}},$c[$csqindex{SIFT}]);
+				#push (@{$info{$c[$csqindex{Gene}]}{"$inf"}{sift}},$c[$csqindex{SIFT}]);
 			#	print STDERR "add $c[$csqindex{SIFT}]\n";
 			}
 		}
