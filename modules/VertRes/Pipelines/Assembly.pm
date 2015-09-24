@@ -357,7 +357,9 @@ use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
 use Bio::AssemblyImprovement::IvaQC::Main;
 
-my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
+my \$assembly_pipeline = VertRes::Pipelines::Assembly->new(
+  assembler => "$self->{assembler}"
+);
 system("rm -rf $self->{assembler}_assembly_*");
 
 remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
