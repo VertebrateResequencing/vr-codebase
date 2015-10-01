@@ -1,6 +1,9 @@
 package VertRes::QCGrind::Util;
 # QC Grind common variables and modules
 use strict;
+use LWP::UserAgent;
+
+our $ua;
 
 sub new {
 
@@ -310,16 +313,17 @@ sub bp_to_nearest_unit
 }
 
 sub set_graph_lane_node_qc_status {
-    my ($self, $lane_unique, $qc_status) = @_;
+    my ($self, $lane, $status) = @_;
+    
+    unless ($ua) {
+        $ua = LWP::UserAgent->new;
+        $ua->ssl_opts(verify_hostname => 0, SSL_verify_mode => 0x00);
+    }
     
     # we don't use VRPipe code directly here, because it is too slow to load
-    # up VRPipe; instead we get the VRPipe web server to do the update, which
-    # in turn is handled by a little script (which has the webserver address
-    # hard-coded inside, so we don't want that stuff here)
-    my $script = '/software/vertres/codebase/scripts/qcgrind_set_graph_lane_status.pl';
-    if (-x $script) { 
-        system("$script $lane_unique $qc_status");
-    }
+    # up VRPipe; instead we get the VRPipe web server to do the update
+    my $req = HTTP::Request->new(GET => "https://vr-2-2-02.internal.sanger.ac.uk:9090/qcgrind_lane_status_update/$lane/$status");
+    my $res = $ua->request($req);
 }
 
 1;
