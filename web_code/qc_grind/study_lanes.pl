@@ -7,10 +7,15 @@
 
 use strict;
 use warnings;
+
+use lib ('/var/www/lib', '/software/vertres/lib/perl/lib/perl5/x86_64-linux-thread-multi', '/software/vertres/lib/perl/lib/perl5');
+BEGIN {
+    require "/software/vertres/lib/perl/lib/perl5/Module/Runtime.pm";
+}
+
 use CGI::Carp qw(fatalsToBrowser);
 use URI;
 
-use lib ('/var/www/lib', '/software/vertres/lib/perl/lib/perl5/x86_64-linux-thread-multi', '/software/vertres/lib/perl/lib/perl5');
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;
