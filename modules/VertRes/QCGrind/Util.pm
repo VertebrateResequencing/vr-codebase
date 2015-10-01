@@ -2,6 +2,10 @@ package VertRes::QCGrind::Util;
 # QC Grind common variables and modules
 use strict;
 
+use VRPipe;
+use VRPipe::Schema;
+our $graph_schema;
+
 sub new {
 
     $ENV{VRTRACK_HOST} = 'rdgroup-db';
@@ -308,4 +312,19 @@ sub bp_to_nearest_unit
 	}
 	return $unit_str;
 }
+
+sub get_graph_lane_node {
+    my ($self, $lane_unique) = @_;
+    $graph_schema ||= VRPipe::Schema->create("VRTrack");
+    return $graph_schema->get("Lane", unique => $lane_unique);
+}
+
+sub set_graph_lane_node_qc_status {
+    my ($self, $lane_unique, $qc_status) = @_;
+    my $graph_lane = $self->get_graph_lane_node($lane_unique);
+    if ($graph_lane) {
+        $graph_lane->qcgrind_qc_status($qc_status);
+    }
+}
+
 1;

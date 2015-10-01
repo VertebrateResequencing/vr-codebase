@@ -290,6 +290,8 @@ sub update_lanelet_status
                     $lanelet->qc_status($status);
                     $lanelet->update;
                 }
+                
+                $utl->set_graph_lane_node_qc_status($lanelet->name, $status);
             }
         }
     }

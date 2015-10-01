@@ -292,6 +292,11 @@ sub updateLaneData
                 $lane->qc_status($status); #set the new status
                 $lane->update;
             }
+            
+            # add this information to the lane node in the graph database;
+            # we don't add to the cram file node because the QC decision does
+            # not change if the file changes (due to remapping, for example)
+            $utl->set_graph_lane_node_qc_status($lane->name, $status);
         }
     }
 }
