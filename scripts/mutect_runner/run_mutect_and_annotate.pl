@@ -94,6 +94,7 @@ sub new {
 			ensembl_api => '/software/vertres/installs/ensembl/75/',
 			vep_cache => '/lustre/scratch105/projects/g1k/ref/vep_cache',
 			vep_stats => 'n',
+			add_hgvs => 'y',
 			chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ],
 			##--------------------------------------------------------------------##
 
@@ -166,6 +167,7 @@ sub parse_args {
 	my ($self) = @_;
 	my @required = (
 		'add_DP4T',
+		'add_hgvs',
 		'bams',
 		'bcftools',
 		'bychrom',
@@ -189,7 +191,8 @@ sub parse_args {
 		'vep_stats',
 		'add_DP4T',
 		'remove_fail',
-		'summary_table'
+		'summary_table',
+		'add_hgvs',
 	);
 	my @files = (
 		'bams',
@@ -661,6 +664,7 @@ sub run_vep {
 	my $cmd = "perl -I $$self{ensembl_api} $$self{vep} -i $vcfin --db_version $$self{ens_version}  -t SO --format vcf -o $vcfout.tmp --force_overwrite --cache --dir $$self{vep_cache} --buffer 20000 --species $$self{species} --offline --symbol --biotype --vcf --sift s ";
 	$cmd .= "--no_stats " if $$self{vep_stats} eq 'no' || $$self{vep_stats} eq 'n' ;
 	$cmd .= "--assembly $$self{assembly} " if $$self{assembly};
+	$cmd .= "--hgvs --shift_hgvs 1 --fasta $$self{reference} " if $$self{add_hgvs};
 	$self->cmd($cmd);
 	if ( -e "$vcfout.tmp") {
 		rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
