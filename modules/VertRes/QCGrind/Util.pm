@@ -2,10 +2,6 @@ package VertRes::QCGrind::Util;
 # QC Grind common variables and modules
 use strict;
 
-use VRPipe;
-use VRPipe::Schema;
-our $graph_schema;
-
 sub new {
 
     $ENV{VRTRACK_HOST} = 'rdgroup-db';
@@ -313,17 +309,16 @@ sub bp_to_nearest_unit
 	return $unit_str;
 }
 
-sub get_graph_lane_node {
-    my ($self, $lane_unique) = @_;
-    $graph_schema ||= VRPipe::Schema->create("VRTrack");
-    return $graph_schema->get("Lane", unique => $lane_unique);
-}
-
 sub set_graph_lane_node_qc_status {
     my ($self, $lane_unique, $qc_status) = @_;
-    my $graph_lane = $self->get_graph_lane_node($lane_unique);
-    if ($graph_lane) {
-        $graph_lane->qcgrind_qc_status($qc_status);
+    
+    # we don't use VRPipe code directly here, because it is too slow to load
+    # up VRPipe; instead we get the VRPipe web server to do the update, which
+    # in turn is handled by a little script (which has the webserver address
+    # hard-coded inside, so we don't want that stuff here)
+    my $script = '/software/vertres/codebase/scripts/qcgrind_set_graph_lane_status.pl';
+    if (-x $script) { 
+        system("$script $lane_unique $qc_status");
     }
 }
 
