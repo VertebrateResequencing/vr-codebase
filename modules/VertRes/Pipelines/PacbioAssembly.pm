@@ -53,6 +53,7 @@ use base qw(VertRes::Pipeline);
 use VertRes::Utils::FileSystem;
 use File::Spec;
 use Utils;
+use Bio::AssemblyImprovement::Circlator::Main;
 
 our $actions = [
     {
@@ -69,7 +70,9 @@ our $actions = [
     }
 ];
 
-our %options = ( bsub_opts => '' );
+our %options = ( bsub_opts => '' ,
+				 circularise => 0,
+				 circlator_exec => '/software/pathogen/external/bin/circlator',);
 
 sub new {
     my ( $class, @args ) = @_;
@@ -142,6 +145,20 @@ sub pacbio_assembly {
   
   system("touch $output_dir/pipeline_version_$pipeline_version");
   system("touch $self->{prefix}pacbio_assembly_done");  
+  
+  # Run circlator if needed
+  if(defined($self->{circularise})) 
+  {
+  	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
+    			'assembly'			  => qq[$output_dir/contigs.fa],
+    			'corrected_reads'     => qq[$self->{lane_path}].'/'.$lane_name.'.corrected.fastq.gz',
+    			'circlator_exec'      => qq[$self->{circlator_exec}],
+    			'working_directory'	  => qq[$output_dir],
+    			);
+    \$circlator->run();
+    system('touch $self->{lane_path}/$self->{prefix}$self->{assembler}_circularise_done'); 
+  }
+      
   exit;
       };
       close $scriptfh;
