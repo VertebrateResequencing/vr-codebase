@@ -523,7 +523,7 @@ sub symlinktarg {
 
 sub symlink {
 	my ($self,$vcfout,$dir) = @_;
-	my $cmd = "cd $$self{outdir}/$dir && ln -svf $dir.filt.vcf.gz all.final.vcf.gz.tmp && ln -svf $dir.filt.vcf.gz.tbi all.final.vcf.gz.tmp.tbi && cd $$self{outdir}";
+	my $cmd = "cd $$self{outdir}/$dir && ln -svf $dir.filt.vcf.gz all.final.vcf.gz.tmp && ln -svf $dir.filt.vcf.gz.tbi all.final.vcf.gz.tmp.tbi";
 	$self->cmd($cmd);
 	rename("$vcfout.tmp.tbi","$vcfout.tbi") or $self->throw("rename $vcfout.tmp.tbi $vcfout.tbi: $!"); 
 	rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
