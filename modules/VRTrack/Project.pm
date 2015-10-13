@@ -56,6 +56,7 @@ sub fields_dispatch {
                ssid              => sub { $self->ssid(@_)},
                hierarchy_name    => sub { $self->hierarchy_name(@_)},
                study_id          => sub { $self->study_id(@_)},
+			   data_access_group => sub { $self->data_access_group(@_)},
 	       name              => sub { $self->name(@_)});
     
     return \%fields;
@@ -343,6 +344,37 @@ sub get_study_by_acc {
 
 sub _get_child_methods {
     return qw(samples);
+}
+
+=head2 data_access_group
+
+  Arg [1]    : data_access_group
+  Example    : my $num_bp = $file->data_access_group();
+	       $file->data_access_group('abc');
+  Description: Get/Set for data_access_group
+  Returntype : string
+
+=cut
+
+sub data_access_group {
+    my $self = shift;
+    return $self->_get_set('data_access_group', 'string', @_);
+}
+
+=head2 main_data_access_group
+
+  Arg [1]    : main_data_access_group
+  Example    : my $num_bp = $file->main_data_access_group();
+  Description: Get main_data_access_group
+  Returntype : string
+
+=cut
+
+sub main_data_access_group {
+    my $self = shift;
+	return undef unless(defined($self->data_access_group()));
+	my @data_access_groups = split(/\s/,$self->data_access_group);
+	return $data_access_groups[0];
 }
 
 1;

@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '28';
+use constant SCHEMA_VERSION => '29';
 
 our $DEFAULT_PORT = 3306;
 
@@ -2032,6 +2032,7 @@ CREATE TABLE `project` (
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
+  `data_access_group` varchar(255) DEFAULT NULL,
   `study_id` smallint(5) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
