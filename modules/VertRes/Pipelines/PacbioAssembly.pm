@@ -128,6 +128,7 @@ sub pacbio_assembly {
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
   use strict;
+  use Bio::AssemblyImprovement::Circlator::Main;
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
@@ -151,7 +152,7 @@ sub pacbio_assembly {
   {
   	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
     			'assembly'			  => qq[$output_dir/contigs.fa],
-    			'corrected_reads'     => qq[$self->{lane_path}].'/'.$lane_name.'.corrected.fastq.gz',
+    			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fastq.gz',
     			'circlator_exec'      => qq[$self->{circlator_exec}],
     			'working_directory'	  => qq[$output_dir],
     			);
