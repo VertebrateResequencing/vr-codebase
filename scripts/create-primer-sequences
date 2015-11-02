@@ -135,7 +135,7 @@ sub init
     if ( $$opts{outdir} )
     {
         $tmp_file = "$$opts{outdir}/";
-        `mkdir -p $$opts{outdir}`;
+        cmd($opts,"mkdir -p $$opts{outdir}");
     }
     else
     {
