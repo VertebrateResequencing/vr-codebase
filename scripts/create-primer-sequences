@@ -173,8 +173,8 @@ sub run_primer3
 
     my @sites = ();
 
-    open(my $fh_prm, ">", $$opts{prmr3_input}) or error ("Unable to create $$opts{prmr3_input}");
-    open(my $fh_sites, "<", $$opts{sites}) or error ("Unable to open $$opts{sites}");
+    open(my $fh_prm, ">", $$opts{prmr3_input}) or error ("Unable to create $$opts{prmr3_input}: $!");
+    open(my $fh_sites, "<", $$opts{sites}) or error ("Unable to open $$opts{sites}: $!");
     while (my $line=<$fh_sites>)
     {
         if ( $line=~/^#/ ) { next; }
@@ -358,8 +358,8 @@ sub run_exonerate
     my $id;
     my ($nseqs,$nfound);
     
-    open (my $fa_fh, ">", $$opts{prmrs_fa}) or error ("Unable to create $$opts{prmrs_fa}");
-    open (my $prm_fh, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
+    open (my $fa_fh, ">", $$opts{prmrs_fa}) or error ("Unable to create $$opts{prmrs_fa}: $!");
+    open (my $prm_fh, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}: $!");
     while (my $line = <$prm_fh>) 
     {
 		chomp $line;
@@ -396,7 +396,7 @@ sub select_unique_primers
 
     # Parse exonerate output and collect the vulgar strings
     my ($hit,$exn);
-    open(my $exn_fh, "<", $$opts{exonerate_output}) or error ("Unable to open $$opts{exonerate_output}");
+    open(my $exn_fh, "<", $$opts{exonerate_output}) or error ("Unable to open $$opts{exonerate_output}: $!");
     while (my $line = <$exn_fh>)
     {
         # vulgar: MATCH_DEL_RAW_19_46278660_1026_1027bp_R4 0 20 + 1 6081126 6081106 - 100 M 20 20
