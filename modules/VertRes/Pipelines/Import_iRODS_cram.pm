@@ -68,6 +68,9 @@ use File::Basename;
 use Cwd 'abs_path';
 use Bio::Tradis::DetectTags;
 use Bio::Tradis::AddTagsToSeq;
+use Bio::VertRes::Permissions::ModifyPermissions;
+use Bio::VertRes::Permissions::Groups;
+
 
 
 our $actions = [
@@ -99,7 +102,8 @@ our %options = (
     bsub_opts  => '',
     cramtools_jar  => '/software/pathogen/external/apps/usr/share/java/cramtools-2.1.jar',
     cramtools_java => '/software/jdk1.8.0_11/bin/java',
-    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.2'
+    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.2',
+	unix_group     => 'pathogen',
 );
 
 sub new {
@@ -282,6 +286,9 @@ sub get_files {
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
     my $opts     = $self->dump_opts(qw(files));
+	
+    my $unix_group = $self->get_unix_group();
+
     `mkdir -p $lane_path`;
     
     open( my $fh, '>', "$work_dir/${prefix}import_files.pl" ) or $self->throw("$work_dir/${prefix}import_files.pl: $!");
@@ -293,7 +300,7 @@ sub get_files {
   my $opts
 
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new(%\$opts);
-  \$import->download_files();
+  \$import->download_files("$unix_group");
 
   ];
 
@@ -303,11 +310,31 @@ sub get_files {
     return $$self{No};
 }
 
+sub get_unix_group
+{
+	my ( $self ) = @_;
+	my $unix_group = $$self{unix_group};
+	my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
+	my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+	my $lane_objs = $vrtrack->lane_hierarchy_objects($vrlane);
+	if(defined($lane_objs->{project}) 
+    {
+       if(defined($lane_objs->{project}->data_access_group) )
+       {
+		   my $obj = Bio::VertRes::Permissions::Groups->new();
+		   my $group = $obj->is_member_of_group($lane_objs->{project}->data_access_group);
+		   $unix_group = if(defined($group));
+       }
+    }
+	return $unix_group;
+}
+
 sub download_files {
-    my ($self) = @_;
+    my ($self, $unix_group) = @_;
 
     my $irods = VertRes::Wrapper::iRODS->new();
 
+    my @output_directories;
     for my $file ( @{ $$self{files} } ) {
         next unless ( $file =~ /\.cram/ );
         my $ifile = $irods->find_file_by_name($file);
@@ -336,9 +363,16 @@ sub download_files {
         close($fh);
 
         move( $outfile . '.tmp', $outfile );
-        chmod 0664, $outfile;
-
+		
+		my ( $filename_out, $dirs_out, $suffix_out ) = fileparse(abs_path($outfile));
+	    push(@output_directories, $dirs_out );
     }
+    my $change_permissions_obj = Bio::VertRes::Permissions::ModifyPermissions->new(
+	    input_directories => \@output_directories,
+	    group => $unix_group,
+	    octal_permissions => '750');
+    $change_permissions_obj->update_permissions;	
+
 }
 
 # Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
