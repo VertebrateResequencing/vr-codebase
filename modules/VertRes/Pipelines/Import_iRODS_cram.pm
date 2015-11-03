@@ -153,13 +153,14 @@ sub convert_to_fastq {
     
     my $file = $lane_path.'/'.$self->{files}->[0];
     my $is_paired = $self->{vrlane}->{is_paired};
+	my $umask    = $self->umask_str;
     
     open( my $fh, '>', "$work_dir/${prefix}convert_to_fastq.pl" ) or $self->throw("$work_dir/${prefix}convert_to_fastq.pl: $!");
     print $fh qq[
   use strict;
   use warnings;
   use VertRes::Pipelines::Import_iRODS_cram;
-  
+  $umask
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
   \$import->cram_to_fastq(qq[$file],$is_paired);
   system('touch _cram_to_fastq_done');
@@ -281,6 +282,7 @@ sub get_files {
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
     my $opts     = $self->dump_opts(qw(files));
+    my $umask    = $self->umask_str;
 
     `mkdir -p $lane_path`;
     
@@ -289,7 +291,7 @@ sub get_files {
   use strict;
   use warnings;
   use VertRes::Pipelines::Import_iRODS_cram;
-
+  $umask
   my $opts
 
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new(%\$opts);

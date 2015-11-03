@@ -459,6 +459,7 @@ sub bam_to_fastq {
     
     my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
+	my $umask    = $self->umask_str;
     
     
     my $fastqs_str ; 
@@ -479,6 +480,7 @@ sub bam_to_fastq {
 use strict;
 use VertRes::Utils::Sam;
 use File::Spec;
+$umask
 
 my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
@@ -568,7 +570,8 @@ sub split {
     my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     my $chunk_size = $self->{chunk_size} || 0; # if 0, will get set to mapper's default size
-    
+    my $umask    = $self->umask_str;
+	
     # run split in an LSF call to a temp script;
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -585,6 +588,7 @@ sub split {
 use strict;
 use $mapper_class;
 use VertRes::IO;
+$umask
 
 my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
 
@@ -763,7 +767,7 @@ sub map {
     my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane},(no_coverage => 1 ));
     my $insert_size_for_mapping = $info{insert_size} || 2000;
     my $insert_size_for_samheader = $info{insert_size} || 0;
-    
+	my $umask    = $self->umask_str;
     
     my $mapper_class = $self->{mapper_class};
     my $mapper_exe = $self->{mapper_obj}->exe;
@@ -824,6 +828,7 @@ sub map {
 use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
+$umask
 
 my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe] );
 
@@ -1019,6 +1024,7 @@ sub merge {
     my $mapper_class = $self->{mapper_class};
     my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
+	my $umask    = $self->umask_str;
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -1063,6 +1069,7 @@ use VertRes::Wrapper::samtools;
 use VertRes::Utils::Sam;
 use File::Copy;
 use $mapper_class;
+$umask
 
 my \$mapper = $mapper_class->new(exe => qq[$mapper_exe] );
 
@@ -1196,6 +1203,7 @@ sub statistics {
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
     my $release_date = $self->{release_date};
+	my $umask    = $self->umask_str;
 
     # get_genome_coverage needs reference_size
     my $reference_size = 0;
@@ -1224,6 +1232,7 @@ sub statistics {
 use strict;
 use VertRes::Utils::Sam;
 use VertRes::Pipelines::Mapping;
+$umask
         };
         
 	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
@@ -1372,6 +1381,7 @@ sub mark_duplicates {
       my ($self, $lane_path, $action_lock) = @_;
       
       my $verbose = $self->verbose;
+	  my $umask    = $self->umask_str;
 
       foreach my $ended ('se', 'pe') {
         my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
@@ -1400,6 +1410,7 @@ sub mark_duplicates {
   use strict;
   use VertRes::Wrapper::samtools;
   use VertRes::Utils::Sam;
+  $umask
 
   my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem);
  

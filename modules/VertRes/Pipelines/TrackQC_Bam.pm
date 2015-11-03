@@ -334,10 +334,11 @@ sub rename_and_merge
 
     # If there are multiple bam files with the same mapstat_id, merge them
     my $bams = join(' ',@files);
-
+    my $umask    = $self->umask_str;
     open($fh,'>', "$work_dir/_merge.pl") or Utils::error("$work_dir/_merge.pl: $!");
     print $fh qq[
 use Utils;
+$umask
 Utils::CMD("$samtools merge x$name.bam $bams");
 if ( ! -s "x$name.bam" ) { Utils::error("The command ended with an error:\\n\\t$samtools merge x$name.bam ../$bams\\n"); }
 rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \$!");
@@ -493,6 +494,7 @@ sub stats_and_graphs
     my $lane  = $$self{lane};
     my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
     my $class = (caller(0))[0];  # In case we are called from a inherited object
+	my $umask    = $self->umask_str;
     
     my $name = $$self{lane};
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
@@ -505,6 +507,7 @@ sub stats_and_graphs
     print $fh 
 qq[
 use VertRes::Pipelines::TrackQC_Bam;
+$umask
 
 my \%params = 
 (
@@ -1093,7 +1096,7 @@ sub update_db
             rename($sample_dir,"$sample_dir.$mapstats_id");
         }
     }
- 
+    $self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
 

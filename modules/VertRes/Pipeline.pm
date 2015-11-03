@@ -554,6 +554,17 @@ sub update_file_permissions
     }
 }
 
+sub umask_str
+{
+	my ( $self ) = @_;
+	my $umask_string = "";
+	if($$self{umask})
+	{
+		$umask_string = ' umask '.$$self{umask}."; ";
+	}
+	return $umask_string;
+}
+
 
 1;
 

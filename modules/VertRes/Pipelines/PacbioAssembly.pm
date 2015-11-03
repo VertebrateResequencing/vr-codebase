@@ -118,6 +118,7 @@ sub pacbio_assembly {
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '6.0';
     my $target_coverage = $self->{target_coverage} || 30;
+	my $umask    = $self->umask_str;
     
     my $lane_name = $self->{vrlane}->name;
     
@@ -125,6 +126,7 @@ sub pacbio_assembly {
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
   use strict;
+  $umask
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);

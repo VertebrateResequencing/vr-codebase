@@ -12,7 +12,7 @@ our $Error   = 2;
 our $Unknown = 4;
 our $No      = 8;
 our $Done    = 16;
-our $Max_jobs_to_check = 10;
+our $Max_jobs_to_check = 3;
 
 
 =pod
