@@ -1708,7 +1708,7 @@ sub cleanup {
     unlink($self->{fsu}->catfile($lane_path, 'GATK_Error.log'));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
-    
+    $self->update_file_permissions($lane_path);
     return $self->{Yes};
 }
 

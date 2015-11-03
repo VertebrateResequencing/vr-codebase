@@ -1080,7 +1080,7 @@ sub cleanup {
     
   }
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
-
+  $self->update_file_permissions($lane_path);
   return $self->{Yes};
 }
 

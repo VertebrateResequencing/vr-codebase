@@ -1595,6 +1595,7 @@ sub cleanup {
     my $file_list = File::Spec->catfile($lane_path, 'file.list');
     Utils::CMD("rm $file_list") if (-e $file_list);
     Utils::CMD("touch " . File::Spec->catfile($lane_path, '.snps_done'));
+	$self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
 
