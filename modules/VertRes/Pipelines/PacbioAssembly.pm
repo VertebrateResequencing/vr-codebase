@@ -162,14 +162,14 @@ sub pacbio_assembly {
     # If circlator was succesful, run quiver
     my \$circlator_final_file = qq[$output_dir/circularised/circlator.final.fasta];
     
-    if(-e $circlator_final_file]) {
+    if(-e $circlator_final_file) {
   		# run quiver
-  		my $quiver = Bio::AssemblyImprovement::Quiver::Main->new(
+  		my \$quiver = Bio::AssemblyImprovement::Quiver::Main->new(
     			'reference'      	  => \$circlator_final_file,
     			'bax_files'           => qq[$output_dir/*.bax.h5],
     			'working_directory'   => qq[$output_dir/circularised],	
     			);
-    	$quiver->run();
+    	\$quiver->run();
     	
     	my \$quiver_final_file = qq[$output_dir/circularised/quiver/circlator.final.fasta];
     	
