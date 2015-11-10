@@ -1802,7 +1802,9 @@ sub get_snps_jobs_from_vrtrack {
             }
 
             my $bam_reference = get_bam_reference($file);
-            if(defined($bam_reference) && $config_data->{data}{fa_ref} eq $bam_reference)
+			my $bam_reference_file = basename($bam_reference);
+			my $config_reference_file = basename($config_data->{data}{fa_ref});
+            if(defined($bam_reference_file) && $config_reference_file eq $bam_reference_file)
             {
               push @{$mapstat_ids{$mapstats_id}}, $file;
             }
