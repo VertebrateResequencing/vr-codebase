@@ -526,13 +526,13 @@ sub get_unix_group
 	my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
 	my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
 	my $lane_objs = $vrtrack->lane_hierarchy_objects($vrlane);
-	if(defined($lane_objs->{project}) 
+	if(defined($lane_objs->{project}) )
     {
        if(defined($lane_objs->{project}->data_access_group) )
        {
 		   my $obj = Bio::VertRes::Permissions::Groups->new();
 		   my $group = $obj->is_member_of_group($lane_objs->{project}->data_access_group);
-		   $unix_group = if(defined($group));
+		   $unix_group = $group if(defined($group));
        }
     }
 	return $unix_group;
@@ -547,7 +547,7 @@ sub update_file_permissions
 	if(defined($unix_group) )
 	{
         my $change_permissions_obj = Bio::VertRes::Permissions::ModifyPermissions->new(
-            input_directories => \@output_directories,
+            input_directories => [$lane_path],
             group             => $unix_group,
             octal_permissions => $$self{octal_permissions});
         $change_permissions_obj->update_permissions;	
