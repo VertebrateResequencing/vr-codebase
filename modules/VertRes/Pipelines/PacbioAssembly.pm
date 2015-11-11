@@ -53,6 +53,7 @@ use base qw(VertRes::Pipeline);
 use VertRes::Utils::FileSystem;
 use File::Spec;
 use Utils;
+use Bio::AssemblyImprovement::Circlator::Main;
 
 our $actions = [
     {
@@ -69,7 +70,10 @@ our $actions = [
     }
 ];
 
-our %options = ( bsub_opts => '' );
+our %options = ( bsub_opts => '' ,
+				 circularise => 0,
+				 circlator_exec => '/software/pathogen/external/bin/circlator',
+				 quiver_exec => '/software/pathogen/internal/prod/bin/pacbio_smrtanalysis');
 
 sub new {
     my ( $class, @args ) = @_;
@@ -116,7 +120,7 @@ sub pacbio_assembly {
     my $files = join(' ', @{$self->pacbio_assembly_requires()});
     my $output_dir= $self->{lane_path}."/pacbio_assembly";
     my $queue = $self->{queue}|| "normal";
-    my $pipeline_version = $self->{pipeline_version} || '6.0';
+    my $pipeline_version = $self->{pipeline_version} || '7.0';
     my $target_coverage = $self->{target_coverage} || 30;
     
     my $lane_name = $self->{vrlane}->name;
@@ -125,6 +129,9 @@ sub pacbio_assembly {
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
   use strict;
+  use Bio::AssemblyImprovement::Circlator::Main;
+  use Bio::AssemblyImprovement::Quiver::Main
+   
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
@@ -139,9 +146,64 @@ sub pacbio_assembly {
 
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
   system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
+
+  system("touch $self->{prefix}hgap_pacbio_assembly_done");  
   
-  system("touch $output_dir/pipeline_version_$pipeline_version");
-  system("touch $self->{prefix}pacbio_assembly_done");  
+  # Run circlator and quiver if needed
+  if(defined($self->{circularise})) {
+  
+  	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
+    			'assembly'			  => qq[$output_dir/contigs.fa],
+    			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fastq.gz',
+    			'circlator_exec'      => qq[$self->{circlator_exec}],
+    			'working_directory'	  => qq[$output_dir],
+    			);
+    \$circlator->run();
+    
+    # If circlator was succesful, run quiver
+    my \$circlator_final_file = qq[$output_dir/circularised/circlator.final.fasta];
+    
+    if(-e \$circlator_final_file) {
+  		# run quiver
+  		my \$quiver = Bio::AssemblyImprovement::Quiver::Main->new(
+    			'reference'      	  => \$circlator_final_file,
+    			'bax_files'           => qq[$output_dir/*.bax.h5],
+    			'working_directory'   => qq[$output_dir/circularised],	
+			'quiver_exec'         => qq[$self->{quiver_exec}],
+    			);
+    	\$quiver->run();
+    	
+    	my \$quiver_final_file = qq[$output_dir/circularised/quiver/circlator.final.fasta];
+    	
+    	if(-e \$quiver_final_file){
+    		# do some renaming of files,  and touch a done file & pipeline version
+		# all the old files relating to hgap assembly will have hgap. prepended to the filenames
+    		system(qq[mv \$quiver_final_file $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa]);
+    		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]);
+    		system(qq[mv $output_dir/contigs.fa.fai $output_dir/hgap.contigs.fa.fai]);
+    		system(qq[mv $output_dir/contigs.fa.gc $output_dir/hgap.contigs.fa.gc]);
+    		system(qq[mv $output_dir/contigs.fa.stats $output_dir/hgap.contigs.fa.stats]);
+		system(qq[mv $output_dir/contigs.mapped.sorted.bam $output_dir/hgap.contigs.mapped.sorted.bam]);
+		system(qq[mv $output_dir/contigs.mapped.sorted.bam.bai $output_dir/hgap.contigs.mapped.sorted.bam.bai]);
+		 system(qq[mv $output_dir/contigs.mapped.sorted.bam.bc $output_dir/hgap.contigs.mapped.sorted.bam.bc]);
+    		    		
+    		# create a symlink called contigs.fa pointing to the new quiverised fasta file
+    		system(qq[ln -s $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa $output_dir/contigs.fa]);
+
+		# run assembly stats on new assembly
+		system("assembly_stats $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa  > $output_dir/contigs.fa.stats");
+    		
+    		# touch done file and pipeline_version_7		   
+  		system("touch $output_dir/pipeline_version_$pipeline_version");
+  		system("touch $self->{prefix}circularise_assembly_done");  
+  			
+  		# The update db process will only be done after this, hence the assembled flag for lanes will be set only after circlator and quiver has been run
+    	
+    	}
+    
+    }
+  }
+      
   exit;
       };
       close $scriptfh;
