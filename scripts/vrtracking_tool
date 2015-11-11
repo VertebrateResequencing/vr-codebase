@@ -319,7 +319,17 @@ while (<>){
                 #Files from update db and clean up stages                                    
                 "[\\w]*cleanup_done\$",    
                 "[\\w]*update_db_done\$",
-                 "^_assembly_job_status\$"],
+                 "^_assembly_job_status\$",
+                # Done/failed files from circularisation & pacbio assembly
+                "[\\w]*circlator_failed\$",
+                "[\\w]*quiver_failed\$",
+                "[\\w]*circularise_done\$",
+                "[\\w]*pacbio_assembly_done\$",
+                "[\\w]*pacbio_assembly\.(e|o|pl|jids)", 
+                # Done/failed files from iva_qc
+                "[\\w]*iva_qc_failed\$", 
+                "[\\w]*iva_qc_done\$",                 
+                ],                 
       mapped => ["^\.[\\w]+mark_duplicates_[ps]e_[0-9]+.[oe].archive\$",
                  "^\.[\\w]+statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
                  "^\.[\\w]+merge_[ps]e_[0-9]+\.[oe]\.archive\$",
