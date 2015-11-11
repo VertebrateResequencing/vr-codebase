@@ -525,15 +525,15 @@ sub get_unix_group
 	my $unix_group = $$self{unix_group};
 	my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
 	my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
-	my $lane_objs = $vrtrack->lane_hierarchy_objects($vrlane);
-	if(defined($lane_objs->{project}) )
+	my %lane_objs = $vrtrack->lane_hierarchy_objects($vrlane);
+	if(defined($lane_objs{project}) )
     {
-       if(defined($lane_objs->{project}->data_access_group) )
-       {
-		   my $obj = Bio::VertRes::Permissions::Groups->new();
-		   my $group = $obj->is_member_of_group($lane_objs->{project}->data_access_group);
-		   $unix_group = $group if(defined($group));
-       }
+        if(defined($lane_objs{project}->data_access_group) )
+        {
+            my $obj = Bio::VertRes::Permissions::Groups->new();
+            my $group = $obj->is_member_of_group($lane_objs{project}->data_access_group);
+            $unix_group = $group if(defined($group));
+        }
     }
 	return $unix_group;
 }
