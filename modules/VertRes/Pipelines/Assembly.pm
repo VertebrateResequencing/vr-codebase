@@ -435,7 +435,13 @@ if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}]
     			'working_directory'	  => qq[$tmp_directory/$self->{assembler}_assembly], #run iva_qc inside assembly directory. eventually all files will be in a directory like iva_assembly inside lane directory
     			);
     \$iva_qc->run();
-    system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_done'); #The prefix in the config file is not always the name of assembler, so we append assembler name
+    
+    if(-e qq[$tmp_directory/$self->{assembler}_assembly/iva_qc/iva_qc.stats.txt]) {
+    	system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_done'); #The prefix in the config file is not always the name of assembler, so we append assembler name
+    }else{
+    	system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_failed');
+    }
+    	
 }
 
 
