@@ -364,8 +364,8 @@ sub move {
     if (-d $source) {
         unless ($self->directory_structure_same($source, $tmp_dest, consider_files => 1)) {
             unless ($dest_dir_exists) {
-                #$self->rmtree($tmp_dest) unless $dest_dir_exists;
-                $self->warn("Source directory '$source' was updated before the move completed, so the temporary destination '$tmp_dest' should be deleted and the source will be left untouched");
+                $self->rmtree($tmp_dest) unless $dest_dir_exists;
+                $self->warn("Source directory '$source' was updated before the move completed, so the temporary destination '$tmp_dest' will be deleted and the source will be left untouched");
             }
             else {
                 $self->warn("Source directory '$source' was updated before the move completed, so the destination is now in an unknown state!");

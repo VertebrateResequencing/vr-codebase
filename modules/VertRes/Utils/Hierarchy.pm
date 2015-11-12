@@ -1389,6 +1389,7 @@ sub store_lane {
     
     my $storage_path = $self->lane_storage_path($lane);
     my $storage_path_temp = $storage_path."_store_lane_temp";
+    my $storage_path_internal_temp  = $storage_path."_store_lane_temp_move_tmp";
     my $do_move = 1;
     if (-d $storage_path && $lane->is_processed('stored')) {
         return 1;
@@ -1396,11 +1397,12 @@ sub store_lane {
     elsif (-l $hroot && -d $storage_path) {
         $do_move = 0;
     }
-    elsif (-d $hroot && (-d $storage_path || -d $storage_path_temp)) {
-        $self->throw("storage path '$storage_path' already exists");
-        #$self->warn("storage path '$storage_path' already exists; will delete it first");
-        #$fsu->rmtree($storage_path);
-        #$fsu->rmtree($storage_path_temp);
+    elsif (-d $hroot && (-d $storage_path || -d $storage_path_temp || -d $storage_path_internal_temp)) {
+        #$self->throw("storage path '$storage_path' already exists");
+        $self->warn("storage path '$storage_path' already exists; will delete it first");
+        $fsu->rmtree($storage_path);
+        $fsu->rmtree($storage_path_temp);
+        $fsu->rmtree($storage_path_internal_temp);
     }
     elsif (-l $hroot && abs_path($hroot) =~ /hashed_lanes/ ) {
           $do_move = 0;
