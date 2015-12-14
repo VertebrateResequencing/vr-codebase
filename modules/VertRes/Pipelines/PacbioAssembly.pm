@@ -150,7 +150,7 @@ sub pacbio_assembly {
   system("touch $self->{prefix}hgap_pacbio_assembly_done");  
   
   # Run circlator and quiver if needed
-  if(defined($self->{circularise})) {
+  if(defined($self->{circularise}) && $self->{circularise} == 1) {
   
   	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
     			'assembly'			  => qq[$output_dir/contigs.fa],
