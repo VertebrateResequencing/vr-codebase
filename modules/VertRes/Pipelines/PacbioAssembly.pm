@@ -145,7 +145,7 @@ sub pacbio_assembly {
   system("bamcheck -c 1,20000,5 -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
 
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
-  system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
+  system("gzip -f -9 $self->{lane_path}/$lane_name.corrected.fastq");
 
   system("touch $self->{prefix}hgap_pacbio_assembly_done");  
   
