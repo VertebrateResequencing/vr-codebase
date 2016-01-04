@@ -203,7 +203,8 @@ sub pacbio_assembly {
     
     }
   }
-      
+  system("touch $self->{prefix}pacbio_assembly_done");  
+			
   exit;
       };
       close $scriptfh;
