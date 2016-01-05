@@ -479,11 +479,13 @@ sub merge_vcf_files
 {
     my ($self,$vcfs,$name) = @_;
 
+    my $umask    = $self->umask_str;
     my $args = join(' ',@$vcfs);
     return qq[
 use strict;
 use warnings;
 use Utils;
+$umask
 Utils::CMD(qq[$$self{merge_vcf} $args | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
@@ -698,6 +700,7 @@ sub dump_opts
 sub glue_vcf_chunks
 {
     my ($self,$chunks,$name,$work_dir) = @_;
+	my $umask    = $self->umask_str;
 
     open(my $fh,'>',"$work_dir/$name.chunks.list") or $self->throw("$work_dir/$name.chunks.list: $!");
     for my $chunk (@$chunks)
@@ -710,6 +713,7 @@ sub glue_vcf_chunks
 use strict;
 use warnings;
 use Utils;
+$umask
 
 Utils::CMD("rm -f $name.vcf-tmp.gz.part");
 Utils::CMD("vcf-concat -s 3 -f $name.chunks.list | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part");
@@ -793,11 +797,12 @@ sub run_varfilter
 sub varfilter_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
-
+    my $umask    = $self->umask_str;
     return qq[
 use strict;
 use warnings;
 use VertRes::Pipelines::SNPs;
+$umask
 
 my \$opts = {
     file_list  => q[$$self{file_list}],
@@ -816,7 +821,7 @@ my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
 sub varfilter_merge_chunks
 {
     my ($self,$chunks,$name,$work_dir) = @_;
-
+    my $umask    = $self->umask_str;
     open(my $fh,'>',"$work_dir/$name.chunks.list") or $self->throw("$work_dir/$name.chunks.list: $!");
     for my $chunk (@$chunks)
     {
@@ -829,6 +834,7 @@ sub varfilter_merge_chunks
 use strict;
 use warnings;
 use Utils;
+$umask
 
 if ( !-e "$name.pileup.gz" )
 {
@@ -870,7 +876,7 @@ sub pseudo_genome_provides
 # Create a pseudo genome for the organism
 sub pseudo_genome {
     my ($self,$lane_path,$action_lock) = @_;
-
+    my $umask    = $self->umask_str;
     #$self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
     #my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack}, $self->{lane}); 
     
@@ -896,6 +902,7 @@ use warnings;
 use Log::Log4perl qw(get_logger);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 use Pathogens::Variant::Exception qw(:try);
+$umask
 
 Log::Log4perl->init(\\ qq{
     log4perl.logger = INFO, AppInfo, AppError
@@ -1076,14 +1083,14 @@ sub run_mpileup
 sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
-
+    my $umask    = $self->umask_str;
     my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd mpileup_samples bcftools bcf_based filter4vcf));
 
     return qq[
 use strict;
 use warnings;
 use VertRes::Pipelines::SNPs;
-
+$umask
 my $opts
 
 my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
@@ -1097,7 +1104,7 @@ my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
 sub mpileup_postprocess
 {
     my ($self,$vcfs,$name) = @_;
-
+    my $umask    = $self->umask_str;
     if ( scalar @$vcfs > 1 ) { $self->throw("FIXME: expected one file only\n"); }
 
     my $basename = $$vcfs[0];
@@ -1108,6 +1115,7 @@ sub mpileup_postprocess
 use strict;
 use warnings;
 use Utils;
+$umask
 
 if ( -e "$basename.vcf.gz" )
 {
@@ -1223,14 +1231,14 @@ sub gatk
 sub gatk_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
-
+    my $umask    = $self->umask_str;
     my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts have_dbSNP indel_mask));
 
     return qq[
 use strict;
 use warnings;
 use VertRes::Pipelines::SNPs;
-
+$umask
 my $opts
 
 my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
@@ -1311,7 +1319,7 @@ sub run_gatk_chunk
 sub gatk_postprocess
 {
     my ($self,$vcfs,$name) = @_;
-
+    my $umask    = $self->umask_str;
     if ( scalar @$vcfs > 1 ) { $self->throw("FIXME: expected one file only\n"); }
 
     my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts have_dbSNP indel_mask));
@@ -1320,7 +1328,7 @@ sub gatk_postprocess
 use strict;
 use warnings;
 use VertRes::Pipelines::SNPs;
-
+$umask
 my $opts
 
 my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
@@ -1433,14 +1441,14 @@ sub qcall
 sub qcall_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
-
+    my $umask    = $self->umask_str;
     my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd split_size qcall_cmd sort_cmd prefix));
 
     return qq[
 use strict;
 use warnings;
 use VertRes::Pipelines::SNPs;
-
+$umask
 my $opts
 
 my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
@@ -1595,6 +1603,7 @@ sub cleanup {
     my $file_list = File::Spec->catfile($lane_path, 'file.list');
     Utils::CMD("rm $file_list") if (-e $file_list);
     Utils::CMD("touch " . File::Spec->catfile($lane_path, '.snps_done'));
+	$self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
 

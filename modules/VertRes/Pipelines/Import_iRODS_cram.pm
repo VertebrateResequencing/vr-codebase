@@ -69,7 +69,6 @@ use Cwd 'abs_path';
 use Bio::Tradis::DetectTags;
 use Bio::Tradis::AddTagsToSeq;
 
-
 our $actions = [
 
     # Create the hierarchy path, download the files.
@@ -99,7 +98,7 @@ our %options = (
     bsub_opts  => '',
     cramtools_jar  => '/software/pathogen/external/apps/usr/share/java/cramtools-2.1.jar',
     cramtools_java => '/software/jdk1.8.0_11/bin/java',
-    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.2'
+    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.2',
 );
 
 sub new {
@@ -154,13 +153,14 @@ sub convert_to_fastq {
     
     my $file = $lane_path.'/'.$self->{files}->[0];
     my $is_paired = $self->{vrlane}->{is_paired};
+	my $umask    = $self->umask_str;
     
     open( my $fh, '>', "$work_dir/${prefix}convert_to_fastq.pl" ) or $self->throw("$work_dir/${prefix}convert_to_fastq.pl: $!");
     print $fh qq[
   use strict;
   use warnings;
   use VertRes::Pipelines::Import_iRODS_cram;
-  
+  $umask
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
   \$import->cram_to_fastq(qq[$file],$is_paired);
   system('touch _cram_to_fastq_done');
@@ -282,6 +282,8 @@ sub get_files {
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
     my $opts     = $self->dump_opts(qw(files));
+    my $umask    = $self->umask_str;
+
     `mkdir -p $lane_path`;
     
     open( my $fh, '>', "$work_dir/${prefix}import_files.pl" ) or $self->throw("$work_dir/${prefix}import_files.pl: $!");
@@ -289,7 +291,7 @@ sub get_files {
   use strict;
   use warnings;
   use VertRes::Pipelines::Import_iRODS_cram;
-
+  $umask
   my $opts
 
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new(%\$opts);
@@ -303,11 +305,13 @@ sub get_files {
     return $$self{No};
 }
 
+
 sub download_files {
     my ($self) = @_;
 
     my $irods = VertRes::Wrapper::iRODS->new();
 
+    my @output_directories;
     for my $file ( @{ $$self{files} } ) {
         next unless ( $file =~ /\.cram/ );
         my $ifile = $irods->find_file_by_name($file);
@@ -336,10 +340,14 @@ sub download_files {
         close($fh);
 
         move( $outfile . '.tmp', $outfile );
-        chmod 0664, $outfile;
-
+		
+		my ( $filename_out, $dirs_out, $suffix_out ) = fileparse(abs_path($outfile));
+	    push(@output_directories, $dirs_out );
     }
 }
+
+
+
 
 # Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
 sub update_db_requires {
@@ -410,6 +418,7 @@ sub update_db {
     $vrlane->raw_bases($rawbases);
     $vrlane->update();
     $vrtrack->transaction_commit();
+	$self->update_file_permissions($lane_path);
     return $$self{Yes};
 }
 

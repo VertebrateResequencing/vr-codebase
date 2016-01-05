@@ -122,6 +122,7 @@ sub pacbio_assembly {
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '7.0';
     my $target_coverage = $self->{target_coverage} || 30;
+	my $umask    = $self->umask_str;
     
     my $lane_name = $self->{vrlane}->name;
     
@@ -131,7 +132,7 @@ sub pacbio_assembly {
   use strict;
   use Bio::AssemblyImprovement::Circlator::Main;
   use Bio::AssemblyImprovement::Quiver::Main
-   
+  $umask
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
@@ -292,7 +293,7 @@ sub update_db {
     }
     
     Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}pacbio_assembly_update_db_done")   );  
-
+    $self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
 

@@ -369,6 +369,7 @@ sub assign_taxonomy {
     my ( $self, $lane_path, $lock_file ) = @_;
     $$self{kraken_db} or $self->throw("Missing the option kraken_db.\n");
     my $name        = $$self{lane};
+	my $umask    = $self->umask_str;
     my $fastq_files = existing_fastq_files("$lane_path/$name");
     scalar @$fastq_files or $self->throw("No fastq files in $lane_path??\n");
     my $reads_1 = $fastq_files->[0];
@@ -385,6 +386,7 @@ sub assign_taxonomy {
 use strict;
 use warnings;
 use Bio::Metagenomics::External::Kraken;
+$umask
 
 my \$kraken = Bio::Metagenomics::External::Kraken->new(
     database => "$$self{kraken_db}",
@@ -447,6 +449,7 @@ sub subsample {
 
     my $sample_dir = $$self{'sample_dir'};
     my $name       = $$self{'lane'};
+	my $umask    = $self->umask_str;
 
     Utils::create_dir("$lane_path/$sample_dir/");
 
@@ -463,7 +466,7 @@ sub subsample {
 #   the variable $seq_list is not used. If there are multiple, $seq_list is passed
 #   only to subsequent calls of FastQ::sample.
 #
-    print $fh "use FastQ;\n";
+    print $fh "use FastQ;$umask \n";
     for ( my $i = $nfiles ; $i > 0 ; $i-- ) {
         my $print_seq_list = '';
         if ( $i == 2 ) {
@@ -521,6 +524,7 @@ sub process_fastqs {
     my ( $self, $lane_path, $lock_file ) = @_;
 
     if ( !$$self{bwa_ref} ) { $self->throw("Missing the option bwa_ref.\n"); }
+	my $umask    = $self->umask_str;
 
     my $name     = $$self{lane};
     my $work_dir = "$lane_path/$$self{sample_dir}";
@@ -550,6 +554,7 @@ sub process_fastqs {
 use strict;
 use warnings;
 use Utils;
+$umask
 
 Utils::CMD("$bwa aln -q $$self{bwa_clip} -l 32 $bwa_ref ${name}_$i.fastq.gz > ${name}_$i.saix");
 if ( ! -s "${name}_$i.saix" )
@@ -672,6 +677,7 @@ sub map_sample {
         @paired = ( $$fastq_files[0], $$fastq_files[1] )
           ;    # paired-end must be named _1 and _2
     }
+	my $umask    = $self->umask_str;
 
 # Dynamic script to be run by LSF. We must check that the bwa exists alright
 #   - samtools do not return proper status and create .bam file even when there was
@@ -679,7 +685,7 @@ sub map_sample {
 #
     open( my $fh, '>', "$work_dir/_map.pl" )
       or Utils::error("$work_dir/_map.pl: $!");
-    print $fh "use Utils;\n";
+    print $fh "use Utils;$umask\n";
     my @single_bams;
     for my $single (@singles) {
         if ( !( $single =~ m{/?(${name}_\d+).fastq.gz$} ) ) {
@@ -768,6 +774,7 @@ sub transposon_provides {
 sub transposon {
     my ( $self, $lane_path, $lock_file ) = @_;
     my $sample_dir = $$self{'sample_dir'};
+	my $umask    = $self->umask_str;
 
     if ( ( defined $$self{reads_contain_transposon} )
         && $$self{reads_contain_transposon} )
@@ -789,6 +796,7 @@ sub transposon {
           use strict;
           use warnings;
           use Pathogens::Parser::Transposon;
+		  $umask
           my \$transposon = Pathogens::Parser::Transposon->new(
             'filename'   => '$$self{lane}_1.fastq.gz',
             'tag_length' => $tag_length,
@@ -828,12 +836,14 @@ sub heterozygous_snps {
 
     my $sample_dir = $$self{'sample_dir'};
     my $reference_size = get_reference_size( $self, $lane_path );
+	my $umask    = $self->umask_str;
 
     # Dynamic script to be run by LSF.
     open( my $fh, '>', "$lane_path/$sample_dir/_heterozygous_snps.pl" )
       or Utils::error("$lane_path/$sample_dir/_heterozygous_snps.pl: $!");
     print $fh qq[
 use Pathogens::QC::HetSNPCalculator;
+$umask
 
 my \$het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
 						  samtools => q[$self->{samtools_het_snps}],
@@ -907,6 +917,7 @@ sub stats_and_graphs {
     my $sample_dir = $$self{'sample_dir'};
     my $lane       = $$self{lane};
     my $stats_ref  = exists( $$self{stats_ref} ) ? $$self{stats_ref} : '';
+	my $umask    = $self->umask_str;
 
     # Get size of assembly
     my $vrtrack = VRTrack::VRTrack->new( $$self{db} )
@@ -932,6 +943,7 @@ sub stats_and_graphs {
       or Utils::error("$lane_path/$sample_dir/_graphs.pl: $!");
     print $fh qq[
 use VertRes::Pipelines::TrackQC_Fastq;
+$umask
 
 my \%params =
 (

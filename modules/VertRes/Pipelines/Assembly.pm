@@ -242,7 +242,7 @@ sub mapping_and_generate_stats
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
   my $base_path = $self->{seq_pipeline_root};
-
+  my $umask    = $self->umask_str;
   my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
 
@@ -264,7 +264,7 @@ sub mapping_and_generate_stats
   print $scriptfh qq{
   use strict;
   use $assembler_class;
-
+  $umask
   my \@lane_paths = $lane_paths_str;
 
   my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory] $reference_str );
@@ -315,7 +315,7 @@ sub optimise_parameters
       my $output_directory = $self->{lane_path};
       my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
       my $base_path = $self->{seq_pipeline_root};
-
+      my $umask    = $self->umask_str;
       my $assembler_class = $self->{assembler_class};
       my $optimiser_exec = $self->{optimiser_exec};
 
@@ -356,6 +356,7 @@ use File::Path qw(make_path remove_tree);
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
 use Bio::AssemblyImprovement::IvaQC::Main;
+$umask
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new(
   assembler => "$self->{assembler}"
@@ -686,29 +687,6 @@ sub lane_read_length
   return $read_length;
 }
 
-# check kmers between 66% and 90% of read size. Choose lane and find out read size
-# sub calculate_kmer_size
-# {
-#   my ($self) = @_;
-#   my %kmer_size;
-#   my $read_length = $self->lane_read_length();
-#
-#   $kmer_size{min} = int($read_length*0.66);
-#   $kmer_size{max} = int($read_length*0.90);
-#
-#   if($kmer_size{min} % 2 == 0)
-#   {
-#     $kmer_size{min}--;
-#   }
-#
-#   if($kmer_size{max} % 2 == 0)
-#   {
-#     $kmer_size{max}--;
-#   }
-#
-#   return \%kmer_size;
-# }
-
 sub number_of_threads
 {
   my ($self, $memory_required_mb) = @_;
@@ -746,6 +724,7 @@ sub pool_fastqs {
     my $output_directory = $self->{lane_path} . "/" . $self->{prefix} . $self->{assembler} . "_pool_fastq_tmp_files";
     my $base_path        = $self->{seq_pipeline_root};
     my $assembler        = $self->{assembler};
+	my $umask    = $self->umask_str;
 
     my $script_name = $self->{fsu}->catfile( $build_path, $self->{prefix} . "pool_fastqs.pl" );
     open( my $scriptfh, '>', $script_name ) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -757,6 +736,7 @@ use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use Bio::AssemblyImprovement::PrimerRemoval::Main;
 use Bio::AssemblyImprovement::AdapterRemoval::Trimmomatic::Main;
 use File::Copy;
+$umask
 my \$assembly= VertRes::Pipelines::Assembly->new(assembler => qq[$assembler]);
 my \@lane_names;
 
@@ -1086,7 +1066,7 @@ sub cleanup {
     
   }
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
-
+  $self->update_file_permissions($lane_path);
   return $self->{Yes};
 }
 

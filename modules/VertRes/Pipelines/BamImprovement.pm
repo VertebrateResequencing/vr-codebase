@@ -1626,7 +1626,7 @@ sub cleanup {
     }
     
     unlink($self->{fsu}->catfile($lane_path, 'GATK_Error.log'));
-    
+    $self->update_file_permissions($lane_path);
     return $self->{Yes};
 }
 

@@ -150,6 +150,7 @@ sub store_nfs {
     my $vrtrack = $vrlane->vrtrack;
     my $db = $vrtrack->database_params;
     my $lane_name = $vrlane->name;
+	my $umask    = $self->umask_str;
     
     my $host = $db->{host} || $self->throw("db params missing host");
     my $database = $db->{database} || $self->throw("db params missing database");
@@ -167,6 +168,7 @@ use warnings;
 use VertRes::Utils::Hierarchy;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
+$umask
 
 my \$vrtrack = VRTrack::VRTrack->new({host => '$host',
                                      port => '$port',
