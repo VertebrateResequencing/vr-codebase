@@ -21,7 +21,7 @@ my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
-    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/jquery-1.4.2.min.js','http://www.sanger.ac.uk/modelorgs/mousegenomes/jquery.coolfieldset.js'],
+    'jsfile'  => ['/js.sanger.ac.uk/prototype.js','/js.sanger.ac.uk/jquery-1.4.2.min.js','http://www.sanger.ac.uk/modelorgs/mousegenomes/jquery.coolfieldset.js'],
     'style'   => $utl->{CSS},
 });
 

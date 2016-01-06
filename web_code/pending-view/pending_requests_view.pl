@@ -17,7 +17,7 @@ my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
-    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/toggle.js','http://jsdev.sanger.ac.uk/scriptaculous/scriptaculous.js','http://jsdev.sanger.ac.uk/sidebar.js','http://jsdev.sanger.ac.uk/urchin.js','http://jsdev.sanger.ac.uk/zebra.js','http://js.sanger.ac.uk/sorttable_v2.js',],  
+    'jsfile'  => ['/js.sanger.ac.uk/prototype.js','/js.sanger.ac.uk/toggle.js','/js.sanger.ac.uk/scriptaculous/scriptaculous.js','/js.sanger.ac.uk/sidebar.js','/js.sanger.ac.uk/urchin.js','/js.sanger.ac.uk/zebra.js','/js.sanger.ac.uk/sorttable_v2.js',],  
     'style'   => $utl->{CSS},
 });
 

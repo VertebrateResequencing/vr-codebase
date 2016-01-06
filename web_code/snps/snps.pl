@@ -51,7 +51,7 @@ my $params =
     'lseq_display_sv' => 'display=|perfect|single|inversions|pairlinks|potsnps|uniqueness|gc|coverage|orientation|',
     'imgs'         => '/modelorgs/mousegenomes/snps-gfx',
     'css'          => ['/modelorgs/mousegenomes/snps.css'],
-    'jsfile'       => ['http://js.sanger.ac.uk/jquery-1.3.2.min.js','/modelorgs/mousegenomes/snps.js'],
+    'jsfile'       => ['/js.sanger.ac.uk/jquery-1.3.2.min.js','/modelorgs/mousegenomes/snps.js'],
 
     'store_hours' => 1,     # The stored data are few bytes big only so far
     'store_key'   => 'modelorgs/mousegenomes/',
