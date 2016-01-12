@@ -54,6 +54,7 @@ use VertRes::Utils::FileSystem;
 use File::Spec;
 use Utils;
 use Bio::AssemblyImprovement::Circlator::Main;
+use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 
 our $actions = [
     {
@@ -122,6 +123,7 @@ sub pacbio_assembly {
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '7.0';
     my $target_coverage = $self->{target_coverage} || 30;
+    my $contigs_base_name = $self->generate_contig_base_name();
     
     my $lane_name = $self->{vrlane}->name;
     
@@ -131,19 +133,20 @@ sub pacbio_assembly {
   use strict;
   use Bio::AssemblyImprovement::Circlator::Main;
   use Bio::AssemblyImprovement::Quiver::Main;
+  use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
    
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
   
   system("mv $output_dir/assembly.fasta $output_dir/contigs.fa");
-  system("sed -i.bak -e 's/|/_/' $output_dir/contigs.fa");;
+  system("sed -i.bak -e 's/|/_/' $output_dir/contigs.fa");
   
   system("mv $output_dir/All_output/data/aligned_reads.bam $output_dir/contigs.mapped.sorted.bam");
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
   system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
   system("rm -rf $output_dir/All_output/");
-  system("touch $self->{prefix}hgap_pacbio_assembly_done");  
+  system("touch $self->{prefix}_pacbio_assembly_done");  
   
   # Run circlator and quiver if needed
   if(defined($self->{circularise})) {
@@ -170,6 +173,8 @@ sub pacbio_assembly {
     	
     	my \$quiver_final_file = qq[$output_dir/circularised/quiver/quiver.final.fasta];
     	my \$quiver_bam_file = qq[$output_dir/circularised/quiver/quiver.aligned_reads.bam];
+    	my \$quiver_bai_file = qq[$output_dir/circularised/quiver/quiver.aligned_reads.bam.bai];
+    	
     	
     	if(-e \$quiver_final_file){
 
@@ -180,8 +185,9 @@ sub pacbio_assembly {
     		system(qq[rm -f $output_dir/contigs.fa.gc]);
     		system(qq[rm -f $output_dir/contigs.fa.stats]);
 		    system(qq[rm -f $output_dir/contigs.mapped.sorted.bam*]);
+		    system(qq[rm -f \$quiver_bai_file]); #We generate our own during bamcheck
 		    
-		    # copy over new bam and generate index
+		    # copy over new bam 
 		    system(qq[mv \$quiver_bam_file $output_dir/contigs.mapped.sorted.bam]);
 		    
 		    # create a symlink called contigs.fa pointing to the new quiverised fasta file
@@ -198,13 +204,18 @@ sub pacbio_assembly {
     }#end circlator success
   }#end if circularised
   
+  # get rid of _quiver from contig names
+  system("sed -i.bak -e 's/_quiver//' $output_dir/contigs.fa");;  
   # run assembly stats and bamcheck on resulting files
   system("samtools index $output_dir/contigs.mapped.sorted.bam");
   system("bamcheck -c 1,20000,5 -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
   system("assembly_stats $output_dir/contigs.fa  > $output_dir/contigs.fa.stats");
-    		      
+  # rename contigs to keep in line with what we do for illumina assemblies
+  Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(
+  					input_assembly => $output_dir/contigs.fa,
+  					base_contig_name => qq[$contigs_base_name])->run();    		      
   exit;
-      };
+  };
       close $scriptfh;
 
     my $job_name = $self->{prefix}.'pacbio_assembly';
@@ -213,6 +224,27 @@ sub pacbio_assembly {
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
 
     return $self->{No};
+}
+
+=head2 generate_contig_base_name
+
+ Title   : generate_contig_base_name
+ Usage   : 
+ Function: Generates a name that can be used as a prefix for contig names in assembly
+ Returns : base name
+ Args    : lane path
+
+=cut
+
+sub generate_contig_base_name
+{
+  my ($self, $lane_name) = @_;
+  my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
+  if(defined($vrlane->acc())) {
+      return join('.',($vrlane->acc(),$lane_name));
+    
+  }
+  return join('.',('',$lane_name));
 }
 
 
