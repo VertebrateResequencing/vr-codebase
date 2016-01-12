@@ -549,6 +549,7 @@ sub update_file_permissions
         my $change_permissions_obj = Bio::VertRes::Permissions::ModifyPermissions->new(
             input_directories => [$lane_path],
             group             => $unix_group,
+		        threads           => 0,
             octal_permissions => $$self{octal_permissions});
         $change_permissions_obj->update_permissions;	
     }
