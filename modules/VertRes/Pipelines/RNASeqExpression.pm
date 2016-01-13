@@ -158,6 +158,7 @@ sub _create_expression_job
 {
   my ($self, $build_path,$action_lock, $sequencing_filename) = @_;
   my $output_directory = $self->{lane_path};
+  my $umask    = $self->umask_str;
 
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
@@ -234,6 +235,7 @@ sub _create_expression_job
   use strict;
   use Bio::RNASeq;
   use Bio::RNASeq::$plots_class;
+  $umask
   
 $feature_counts_cmd
 
@@ -461,7 +463,7 @@ sub cleanup {
   }
   
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,$prefix."rna_seq_cleanup_done")   );  
-  
+  $self->update_file_permissions($lane_path);
   return $self->{Yes};
 }
 

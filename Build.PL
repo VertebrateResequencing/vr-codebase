@@ -48,6 +48,7 @@ my $build = MyBuild->new(
         'Bio::Assembly::Improvement' => 0,
         'Bio::AutomatedAnnotation'   => 0,
         'Bio::RNASeq'                => 0,
+		'Bio::VertRes::Permissions'  => 0,
     },
     pm_files     => get_pm_files(),
     script_files => 'scripts'

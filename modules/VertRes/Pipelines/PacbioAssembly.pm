@@ -124,38 +124,37 @@ sub pacbio_assembly {
     my $pipeline_version = $self->{pipeline_version} || '7.0';
     my $target_coverage = $self->{target_coverage} || 30;
     my $contigs_base_name = $self->generate_contig_base_name();
-    
+    my $umask    = $self->umask_str;
     my $lane_name = $self->{vrlane}->name;
     
-      my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."pacbio_assembly.pl");
-      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-      print $scriptfh qq{
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."pacbio_assembly.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
   use strict;
   use Bio::AssemblyImprovement::Circlator::Main;
   use Bio::AssemblyImprovement::Quiver::Main;
   use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
-   
+  $umask
+
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
   
   system("mv $output_dir/assembly.fasta $output_dir/contigs.fa");
-  system("sed -i.bak -e 's/|/_/' $output_dir/contigs.fa");
-  
+  system("sed -i.bak -e 's/|/_/' $output_dir/contigs.fa");  
   system("mv $output_dir/All_output/data/aligned_reads.bam $output_dir/contigs.mapped.sorted.bam");
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
-  system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
+  system("gzip -f -9 $self->{lane_path}/$lane_name.corrected.fastq");
   system("rm -rf $output_dir/All_output/");
-  system("touch $self->{prefix}_pacbio_assembly_done");  
   
   # Run circlator and quiver if needed
-  if(defined($self->{circularise})) {
+  if(defined($self->{circularise}) && $self->{circularise} == 1) {
   
   	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
-    			'assembly'			  => qq[$output_dir/contigs.fa],
+    			'assembly'	      => qq[$output_dir/contigs.fa],
     			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fastq.gz',
     			'circlator_exec'      => qq[$self->{circlator_exec}],
-    			'working_directory'	  => qq[$output_dir],
+    			'working_directory'   => qq[$output_dir],
     			);
     \$circlator->run();
     my \$circlator_final_file = qq[$output_dir/circularised/circlator.final.fasta];
@@ -179,34 +178,17 @@ sub pacbio_assembly {
     	if(-e \$quiver_final_file){
 
     		system(qq[mv \$quiver_final_file $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa]); # rename final assembly
-    		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]); # rename original assembly
-    		# clean up files related to old assembly
-    		system(qq[rm -f $output_dir/contigs.fa.fai]); 
-    		system(qq[rm -f $output_dir/contigs.fa.gc]);
-    		system(qq[rm -f $output_dir/contigs.fa.stats]);
-		    system(qq[rm -f $output_dir/contigs.mapped.sorted.bam*]);
-		    system(qq[rm -f \$quiver_bai_file]); #We generate our own during bamcheck
-		    
-		    # copy over new bam 
-		    system(qq[mv \$quiver_bam_file $output_dir/contigs.mapped.sorted.bam]);
-		    
-		    # create a symlink called contigs.fa pointing to the new quiverised fasta file
+                system("sed -i.bak -e 's/|quiver$//' $output_dir/contigs.fa"); # remove the |quiver
+    		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]); # rename original hgap assembly
+		system(qq[mv \$quiver_bam_file $output_dir/contigs.mapped.sorted.bam]); # copy over bam file
+		# create a symlink called contigs.fa pointing to the new quiverised fasta file
     		system(qq[ln -s $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa $output_dir/contigs.fa]);
-
-    		# touch done file and pipeline_version_7		   
-  			system("touch $output_dir/pipeline_version_$pipeline_version");
-  			system("touch $self->{prefix}circularise_assembly_done");  
-  			
-  			# The update db process will only be done after this, hence the assembled flag for lanes will be set only after circlator and quiver has been run
-    	
-    	}#end quiver success
-    
+  	        # The update db process will only be done after this, hence the assembled flag for lanes will be set only after circlator and quiver has been run (if applicable)
+    	}#end quiver success   
     }#end circlator success
   }#end if circularised
   
-  # get rid of _quiver from contig names
-  system("sed -i.bak -e 's/_quiver//' $output_dir/contigs.fa");;  
-  # run assembly stats and bamcheck on resulting files
+  # run assembly stats and bamcheck on assembly
   system("samtools index $output_dir/contigs.mapped.sorted.bam");
   system("bamcheck -c 1,20000,5 -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
   system("assembly_stats $output_dir/contigs.fa  > $output_dir/contigs.fa.stats");
@@ -214,11 +196,15 @@ sub pacbio_assembly {
   Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(
   					input_assembly => $output_dir/contigs.fa,
   					base_contig_name => qq[$contigs_base_name])->run();    		      
+  
+  # touch done file and pipeline_version_7
+  system("touch $output_dir/pipeline_version_$pipeline_version");
+  system("touch $self->{prefix}pacbio_assembly_done");
   exit;
   };
-      close $scriptfh;
-
-    my $job_name = $self->{prefix}.'pacbio_assembly';
+  close $scriptfh;
+ 
+  my $job_name = $self->{prefix}.'pacbio_assembly';
       
     $self->archive_bsub_files($lane_path, $job_name);
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
@@ -230,7 +216,7 @@ sub pacbio_assembly {
 
  Title   : generate_contig_base_name
  Usage   : 
- Function: Generates a name that can be used as a prefix for contig names in assembly
+ Function: Generates a name that can be used as a prefix for contig names in assembly (usually the lane's accession number)
  Returns : base name
  Args    : lane path
 
@@ -239,6 +225,7 @@ sub pacbio_assembly {
 sub generate_contig_base_name
 {
   my ($self, $lane_name) = @_;
+  $self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
   my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
   if(defined($vrlane->acc())) {
       return join('.',($vrlane->acc(),$lane_name));
@@ -322,7 +309,7 @@ sub update_db {
     }
     
     Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}pacbio_assembly_update_db_done")   );  
-
+    $self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
 

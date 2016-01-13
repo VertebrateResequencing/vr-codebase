@@ -206,7 +206,7 @@ sub annotate_assembly {
     my $lane_name = $self->{vrlane}->name;
     my $genus = $self->_genus_of_lane($self->{vrlane}, $self->{vrtrack});
     my $sample_accession = $self->_sample_accession_of_lane($self->{vrlane}, $self->{vrtrack});
-    
+    my $umask    = $self->umask_str;
     my $pipeline_version = join('/',($self->_annotation_base_directory,'pipeline_version_'.$self->{pipeline_version}));
     my $kingdom = $self->{kingdom} || "Bacteria";
     
@@ -215,6 +215,7 @@ sub annotate_assembly {
       print $scriptfh qq{
   use strict;
   use Bio::AutomatedAnnotation;
+  $umask
 
   my \$obj = Bio::AutomatedAnnotation->new(
     assembly_file => qq[$self->{assembly_file}],
@@ -366,7 +367,7 @@ sub cleanup {
       }
   }
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}annotate_cleanup_done")   );  
-  
+  $self->update_file_permissions($lane_path);
   return $self->{Yes};
 }
 

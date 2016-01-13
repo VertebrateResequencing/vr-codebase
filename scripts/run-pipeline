@@ -2627,6 +2627,9 @@ sub Job::new
     }
     if ( !exists($$self{data}{prefix}) ) { $$self{data}{prefix}=$$self{prefix}; }
     if ( !exists($$self{data}{log}) && $$self{log} ) { $$self{data}{log}=$$self{log}; }
+	if ( exists($$self{unix_group}) ) { $$self{data}{unix_group}=$$self{unix_group}; }
+	if ( exists($$self{octal_permissions}) ) { $$self{data}{octal_permissions}=$$self{octal_permissions}; }
+	if ( exists($$self{umask}) ) { $$self{data}{umask}=$$self{umask}; }
 
     return $self;
 }
@@ -2846,6 +2849,10 @@ sub Job::run
 
     my %opts = ();
     if ( $$self{verbose} ) { $opts{verbose}=1; }    # If verbose>1, warn is changed to throw in Base :-(
+    if ($$self{umask})
+    {
+        umask $$self{umask};
+    }
 
     my $lock = VertRes::Pipeline::lock_file($$self{run_lock},1) or $self->throw("Could not lock $$self{run_lock}: $!");
     $self->register_for_unlinking($$self{run_lock});
