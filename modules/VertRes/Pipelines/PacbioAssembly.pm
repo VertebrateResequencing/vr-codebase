@@ -90,7 +90,7 @@ sub new {
 
 sub pacbio_assembly_provides {
     my ($self) = @_;
-    return [$self->{lane_path}."/pacbio_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."pacbio_assembly_done"];
+    return [$self->{lane_path}."/pacbio_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."assembly_done"];
 }
 
 sub pacbio_assembly_requires {
@@ -127,7 +127,7 @@ sub pacbio_assembly {
     my $lane_name = $self->{vrlane}->name;
     my $contigs_base_name = $self->generate_contig_base_name($lane_name);
     
-    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."pacbio_assembly.pl");
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."assembly.pl");
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
   use strict;
