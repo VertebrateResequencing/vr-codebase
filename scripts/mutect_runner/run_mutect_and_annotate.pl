@@ -307,12 +307,16 @@ sub main {
 			}
 		}
 	}
-	# run on whole bam:
+	# run on whole bam or a subset (if the chroms array has still been specified)
 	else {
 		foreach my $sample (sort keys %samples) {
 			`mkdir -p $outdir/$sample`;
 			my $prefix = "$outdir/$sample/$sample";
-			$self->spawn('mutect_call',"$outdir/$sample/mutect.done",$prefix,$samples{$sample}{tbam},$samples{$sample}{nbam});
+			if($$self{chroms}){
+				$self->spawn('mutect_call',"$outdir/$sample/mutect.done",$prefix,$samples{$sample}{tbam},$samples{$sample}{nbam},$$self{chroms});
+			}else{
+				$self->spawn('mutect_call',"$outdir/$sample/mutect.done",$prefix,$samples{$sample}{tbam},$samples{$sample}{nbam});
+			}
 		}
 	}
 	$self->wait;
@@ -333,8 +337,8 @@ sub main {
 	if ($$self{add_DP4T} eq 'y') {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample/$sample";
-			my ($statfile,$vcfin,$vcfout) = $$self{bychrom} eq 'no' ? ("$out.mutect_stats.txt","$out.vcf","$out.filt.vcf.gz") : ("$out.mutect_stats.txt","$out.vcf.gz","$out.filt.vcf.gz");
-		##	print STDOUT qq(FOUND: 'add_dp4',"$vcfout.gz",$$self{remove_fail},$statfile,$vcfin,$out)."\n\n";
+			my ($statfile,$vcfin,$vcfout) = $$self{bychrom} eq 'n' ? ("$out.mutect_stats.txt","$out.vcf","$out.filt.vcf.gz") : ("$out.mutect_stats.txt","$out.vcf.gz","$out.filt.vcf.gz");
+			print STDOUT qq(FOUND: 'add_dp4', $$self{bychrom}, "$vcfout.gz",$$self{remove_fail},$statfile,$vcfin,$out)."\n\n";
 			$self->spawn('add_dp4',"$vcfout",$$self{remove_fail},$statfile,$vcfin,$outdir,$sample);
 		}
 	}
@@ -378,34 +382,51 @@ sub main {
 		
 	}
 	$self->wait;
-	# for each tum/norm pair, run VEP by chromosome
-	foreach my $sample (sort keys %samples) {
-		my $out = "$outdir/$sample";
-        for my $chr (@{$$self{chroms}}) {
-			$self->spawn('split_vcf',"$out/all.$chr.vcf.gz","$out/all.final.vcf.gz",$chr);
+
+	# for each tum/norm pair, split vcf by chromosome in prep for vep, if 'bychrom' is set to 'y' 
+	if($$self{bychrom} eq 'y'){
+		foreach my $sample (sort keys %samples) {
+			my $out = "$outdir/$sample";
+	        	for my $chr (@{$$self{chroms}}) {
+				$self->spawn('split_vcf',"$out/all.$chr.vcf.gz","$out/all.final.vcf.gz",$chr);
+			}
 		}
+		$self->wait;
 	}
-	$self->wait;
-    $self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+
+	# Submit vep runs. based on bychrom flag: 
+	# Either one for each sample x chromosome or just one for each sample
+    	$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
-        for my $chr (@{$$self{chroms}}) {
-			$self->spawn('run_vep',"$out/vep.$chr.done","$out/all.$chr.cons.vcf","$out/all.$chr.vcf.gz",);
+		if($$self{bychrom} eq 'y'){
+	       		for my $chr (@{$$self{chroms}}) {
+				$self->spawn('run_vep',"$out/vep.$chr.done","$out/all.$chr.cons.vcf","$out/all.$chr.vcf.gz",);
+			}
+		}else{
+			$self->spawn('run_vep',"$out/vep.done","$out/all.cons.vcf","$out/all.final.vcf.gz",);
 		}
 	}
 	$self->wait;
 	# check for missing chrom files (eg: if no chrY snps, vep does not output a file!
 	# make bgzip and tabix
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    	$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
-        for my $chr (@{$$self{chroms}}) {
-			$self->spawn('check_vep',"$out/check_vep.$chr.done","$out/all.$chr.cons.vcf","$out/all.$chr.vcf.gz","$out/vep.$chr.done");
+		if($$self{bychrom} eq 'y'){
+	        	for my $chr (@{$$self{chroms}}) {
+				$self->spawn('check_vep',"$out/check_vep.$chr.done","$out/all.$chr.cons.vcf","$out/all.$chr.vcf.gz","$out/vep.$chr.done");
+			}
+		}else{
+			$self->spawn('check_vep',"$out/check_vep.done","$out/all.cons.vcf","$out/all.vcf.gz","$out/vep.done");
 		}
 	}
 	$self->wait;
+
 	# merge annotated VCFs (unfiltered)
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+	# If bychrom eq 'y' then this does a bcfconcat for each chromosome, else it just
+	# copies all.cons.vcf.gz => all.cons.merged.vcf.gz. 
+    	$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
 		$self->spawn('concat_vcfs',"$out/all.cons.merged.vcf.gz",$out);
@@ -450,14 +471,26 @@ sub main {
 		$self->spawn('mutectlist',$list,@mutect_list);
 		$self->wait;
 		$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+
+		#First write out a list of unique sites to write sample-by-sample indications to
 		$self->spawn('summary_table_sites',"$$self{outdir}/all_sites.annot",$$self{add_DP4T},$list);
 		$self->wait;
 		$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
-        for my $chr (@{$$self{chroms}}) {
-			$self->spawn('summary_table',"$$self{outdir}/mutect_summary.$chr.txt",$chr,"$$self{outdir}/all_sites.annot",$list);
+
+		#Now write out which samples have a mutation at the list of sites 
+		if($$self{bychrom} eq 'y'){
+	        	for my $chr (@{$$self{chroms}}) {
+				$self->spawn('summary_table',"$$self{outdir}/mutect_summary.$chr.txt",$chr,"$$self{outdir}/all_sites.annot",$list);
+			}
+		}else{
+			$self->spawn('summary_table',"$$self{outdir}/mutect_summary.txt",undef,"$$self{outdir}/all_sites.annot",$list);
 		}
+
 		$self->wait;
-		$self->spawn('concat_summary',"$$self{outdir}/summary_table-MuTect.txt",$$self{outdir});
+		if($$self{bychrom} eq 'y'){
+			$self->spawn('concat_summary',"$$self{outdir}/summary_table-MuTect.txt",$$self{outdir});
+		}else{
+		}
 		$self->wait;
 	}
 	# not implemented yet
@@ -534,12 +567,18 @@ sub mutectlist {
 	my ($self,$list,@samples) = @_;
 	my @list;
 	foreach my $sample (@samples) {
+		#
+		# it could be that @filename is an _empty_ list of dir contents.
+		# If we don't find it, probably better to skip over?
 		my @filename = `dir $$self{outdir}/$sample/*-MuTect.txt`;
 		if (!@filename || (@filename && @filename > 1)) {
-			die "Problem with *-MuTect.txt file in  $$self{outdir}/$sample\n";
+			# print a problem instead of DIE 
+			# absence of a file here means no sites survived being filtered & being in target region
+			print "Couldn't find *-MuTect.txt file in  $$self{outdir}/$sample\n";
+		} else {
+			chomp @filename;
+			push @list, $filename[0];
 		}
-		chomp @filename;
-		push @list, $filename[0];
 		#push @list, "$$self{outdir}/$sample/$sample-MuTect.txt";
 	}
 	open L, ">$list" or die;
@@ -551,25 +590,53 @@ sub mutectlist {
 sub mutect_call {
     my ($self,$outfile,$prefix,$tbam,$nbam,$chr) = @_;
 #java -Xmx2g -jar /software/team113/algorithms/muTect/muTect-1.1.4.jar --analysis_type MuTect --reference_sequence /lustre/scratch105/vrpipe/refs/human/ncbi37/human_g1k_v37.fasta --dbsnp  /lustre/scratch105/vrpipe/refs/human/ncbi37/dbsnp/dbsnp_141.b37.vcf.gz --input_file:normal ./BAMS/A04_LCL/A04_LCL.bam --input_file:tumor ./BAMS/A04/A04.bam --out test.stats --coverage_file  test.cov   --cosmic /lustre/scratch107/user/kw10/mouse/SEQCAP_Identification_of_drug_resistance_genes_in_melanoma/BAMS_REMAPPED/MUTECT/CosmicCodingMuts.vcf.gz --test.vcf
-	my $vcf = $chr ? "$prefix.$chr.vcf" : "$prefix.vcf";
-	my $out = $chr ? "$prefix.mutect_stats.$chr.txt" : "$prefix.mutect_stats.txt";
-	my $wig= $chr ? "$prefix.coverage.$chr.wig" : "$prefix.coverage.wig";
 
-	my $cmd = "$$self{java} -Xmx2g -jar $$self{mutect} --enable_extended_output --analysis_type MuTect --reference_sequence $$self{reference} --vcf $vcf --input_file:normal $nbam  --input_file:tumor $tbam --out $out --coverage_file $wig ";
-	if ( $$self{snpfile} ) {
-		$cmd .= "--dbsnp $$self{snpfile} ";
+    	# If the $chr argument was passed in, it could be a scalar or an array.
+	# If a scalar, then we assume this is a segment of a parallel run.
+	# If array, then no parallelisation, but we DO set the -L flag to span all the chr's passed in  
+	my $vcf;
+	my $out;
+	my $wig;
+
+	print STDERR "IN MUTECT CALL FOR $prefix $tbam $nbam and chr-ref $chr\n";
+    	if($chr && !(ref($chr) eq 'ARRAY')){
+		$vcf = "$prefix.$chr.vcf";
+		$out = "$prefix.mutect_stats.$chr.txt";
+		$wig= "$prefix.coverage.$chr.wig";
+	}else{
+		$vcf = "$prefix.vcf";
+		$out = "$prefix.mutect_stats.txt";
+		$wig =  "$prefix.coverage.wig";
 	}
-	if ( $$self{cosmic} )  {
-		$cmd .= "--cosmic $$self{cosmic} ";
-	}
-	if ( $chr ) { 
-		$cmd .= "-L $chr ";
-	}
-	if ( $$self{mutect_opt} ) {
-		$cmd .= "$$self{mutect_opt} ";
-	}
-	$self->cmd($cmd);
-	$self->cmd("touch $outfile");
+	
+		my $cmd = "$$self{java} -Xmx2g -jar $$self{mutect} --enable_extended_output --analysis_type MuTect --reference_sequence $$self{reference} --vcf $vcf --input_file:normal $nbam --input_file:tumor $tbam --out $out --coverage_file $wig ";
+		if ( $$self{snpfile} ) {
+			$cmd .= "--dbsnp $$self{snpfile} ";
+		}
+		if ( $$self{cosmic} )  {
+			$cmd .= "--cosmic $$self{cosmic} ";
+		}
+
+		# The -L argument can look like this: -L 1 or can point to a sample-wide file (chromosomes.list) which has a list of chromosomes in it to be used for all samples.
+		if ( $chr ) { 
+			if(ref($chr) eq 'ARRAY'){
+				my $chr_str = join "\n", @$chr;
+				# This will be re-created for every sample thread - overhead is minimal, I hope 
+				# More worrying is possibility of partial overwrite / incomplete file  
+				open(CHRS,">chromosomes.list");
+				print CHRS "$chr_str\n"; # the last carriage-return is important
+				close(CHRS);
+				$cmd .= "-L chromosomes.list ";
+			}else{
+				$cmd .= "-L $chr ";
+			}
+		}
+		if ( $$self{mutect_opt} ) {
+			$cmd .= "$$self{mutect_opt} ";
+		}
+		print STDERR ">>>$cmd\n";
+		$self->cmd($cmd);
+		$self->cmd("touch $outfile");
 }
 
 # sort and concat split mutect output
@@ -657,6 +724,7 @@ sub split_vcf {
 	rename("$vcfout.tmp.tbi","$vcfout.tbi") or $self->throw("rename $vcfout.tmp.tbi $vcfout.tbi: $!"); 
 	rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
 }
+
 sub run_vep {
 	my ($self,$outfile,$vcfout,$vcfin) = @_;
 	# run vep by chrom
@@ -693,12 +761,17 @@ sub check_vep {
 # sort and concat annotated VCFs
 sub concat_vcfs {
 	my ($self,$vcfout,$outdir) = @_;
-	my $chrlist = join (" ", @{$$self{chroms}});
-	print STDOUT "CHR: $chrlist\n";
-	my $getlist = "for f in $chrlist; do echo $outdir/all.\$f.cons.vcf.gz; done > $outdir/vep.mergelist";
-	system($getlist) == 0 || die "$getlist failed : $!";
-	my $cmd = "$$self{bcftools} concat -f $outdir/vep.mergelist -O z > $vcfout.tmp && tabix -p vcf $vcfout.tmp";
-	$self->cmd($cmd);
+	if($$self{bychrom} eq 'y'){
+		my $chrlist = join (" ", @{$$self{chroms}});
+		print STDOUT "CHR: $chrlist\n";
+		my $getlist = "for f in $chrlist; do echo $outdir/all.\$f.cons.vcf.gz; done > $outdir/vep.mergelist";
+		system($getlist) == 0 || die "$getlist failed : $!";
+		my $cmd = "$$self{bcftools} concat -f $outdir/vep.mergelist -O z > $vcfout.tmp && tabix -p vcf $vcfout.tmp";
+		$self->cmd($cmd);
+	}else{
+		my $cmd = "cp $outdir/all.cons.vcf.gz  $vcfout.tmp && tabix -p vcf $vcfout.tmp";
+		$self->cmd($cmd);
+	}
 	rename("$vcfout.tmp.tbi","$vcfout.tbi") or $self->throw("rename $vcfout.tmp.tbi $vcfout.tbi: $!"); 
 	rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
 }
@@ -732,9 +805,17 @@ sub summary_table_sites {
 
 sub summary_table {
 	my ($self,$outfile,$chr,$sitelist,$filelist) = @_;
-	my $cmd2 = "awk '\$1~/^#/ || \$1==\"$chr\"' $sitelist | $$self{mutect_summary} $filelist > $$self{outdir}/mutect_summary.$chr.tmp";
-	$self->cmd($cmd2);
-	rename("$$self{outdir}/mutect_summary.$chr.tmp",$outfile) or $self->throw("rename $$self{outdir}/mutect_summary.$chr.tmp $outfile: $!"); 
+	# outfile = summary_table.txt, sitelist = all_sites.annot, filelist = mutect_table.list 
+	# perl check_samples.pl mutect_table.list < all_sites.annot > mutect_summary[.chr?].tmp
+	if($chr){
+		my $cmd2 = "awk '\$1~/^#/ || \$1==\"$chr\"' $sitelist | $$self{mutect_summary} $filelist > $$self{outdir}/mutect_summary.$chr.tmp";
+		$self->cmd($cmd2);
+		rename("$$self{outdir}/mutect_summary.$chr.tmp",$outfile) or $self->throw("rename $$self{outdir}/mutect_summary.$chr.tmp $outfile: $!"); 
+	}else{
+		my $cmd2 = "cat $sitelist | $$self{mutect_summary} $filelist > $$self{outdir}/mutect_summary.tmp";
+		$self->cmd($cmd2);
+		rename("$$self{outdir}/mutect_summary.tmp",$outfile) or $self->throw("rename $$self{outdir}/mutect_summary.tmp $outfile: $!"); 
+	}
 }
 
 sub concat_summary {
