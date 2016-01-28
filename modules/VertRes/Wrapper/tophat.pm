@@ -291,7 +291,7 @@ sub add_unmapped {
 
     #Once sorted, we can now run samtools fixmate on it. We will use the most recent version of fixmate (hence the full path to it's location)
     #This should be updated once the new verison of samtools is released and available in /software
-    my $most_recent_samtools_fixmate_exe = qq[ /software/vertres/bin-external/samtools-exp-rc fixmate ];
+    my $most_recent_samtools_fixmate_exe = qq[ /software/pathogen/external/apps/usr/bin/samtools-1.3 fixmate ];
 
     Utils::CMD( qq[ $most_recent_samtools_fixmate_exe $op_files{merge_sorted_bam} $op_files{merge_sorted_fixed_bam} ] );
 
