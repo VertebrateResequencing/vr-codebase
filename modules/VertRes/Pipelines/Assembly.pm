@@ -419,6 +419,10 @@ if ($self->{improve_assembly})
   \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
 }
 
+# Rename contigs
+Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
+
+
 # Run iva_qc if needed
 if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}])) 
 {
@@ -445,8 +449,6 @@ if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}]
     	
 }
 
-
-Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
 if('$self->{assembler}' eq 'velvet')
 {
