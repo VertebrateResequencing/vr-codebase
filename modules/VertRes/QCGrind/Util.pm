@@ -50,6 +50,8 @@ sub new {
         'sjl' => 'Sarah Lindsay',
         'dw2' => 'Danielle Walker',
         'vvi' => 'Vivek Iyer',
+        'rh20' => 'Reena Halai',
+        'ym3' => 'Yasin Memari'
 	};
 
     $self->{CSS} = <<CSS ;

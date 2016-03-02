@@ -51,7 +51,7 @@ sub displayDatabasesPage {
     }
     print qq[ </fieldset> ];
 
-    my @hipsci_dbs = qw (vrtrack_hipsci_chipseq_vrpipe vrtrack_hipsci_qc1_expression vrtrack_hipsci_qc1_expression_vrpipe vrtrack_hipsci_qc1_genotyping vrtrack_hipsci_qc1_genotyping_vrpipe vrtrack_hipsci_qc1_pilot vrtrack_hipsci_rnaseq_vrpipe);
+    my @hipsci_dbs = qw (vrtrack_hipsci_qc2_exomeseq_vrpipe vrtrack_hipsci_qc2_rnaseq_vrpipe vrtrack_hipsci_qc2_chipseq_vrpipe);
     print qq[
         <fieldset style="width: 500px">
         <legend>HipSci Databases</legend>
