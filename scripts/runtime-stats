@@ -6,9 +6,9 @@
 use strict;
 use warnings;
 use Carp;
-use VertRes::Parser::LSF;
 use IPC::Open3 'open3';
 use IO::Select;
+use DateTime;
 
 my $opts = parse_params();
 crawl($opts);
@@ -104,14 +104,66 @@ sub print_or_discard_line
     if ( $line=~/^No records in the LSF output file/ ) { return; }
     print $line;
 }
+sub parse_lsf_output
+{
+    my ($opts,$file) = @_;
+    my $job = {};
+    my $rec = {};
+    open(my $fh,'<',$file) or error("$file: $!");
+    while (my $line = <$fh>) 
+    {
+        if ( $line =~ /^Started\s+\S+\s+\S+\s+(.+)$/ )
+        {
+            $$job{njobs}++;
+            for my $key (keys %$rec) { push @{$$job{$key}},$$rec{$key}; }
+            $rec = {};
+            $$rec{start_time} = $1; 
+        }
+        elsif ( $line =~ /^Results reported\s+\S+\s+\S+\s+(.+)$/ ) { $$rec{end_time} = $1; }
+        elsif ( $line =~ /^\s+CPU time\s+:\s+(\S+)/ ) { $$rec{cpu_time} = $1; }
+        elsif ( $line =~ /^\s+Max Memory\s+:\s+(\S+)\s+(\S+)/ ) 
+        {
+            my $mem = $1;
+            if ($2 eq 'KB') { $mem /= 1024; }
+            elsif ($2 eq 'GB') { $mem *= 1024; }
+            $$rec{memory} = $mem;
+        }
+    }
+    for my $key (keys %$rec) { push @{$$job{$key}},$$rec{$key}; }
+    close($fh) or error("close failed: $file");
+
+    my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
+    for (my $i=0; $i<$$job{njobs}; $i++)
+    {
+        my $started  = $$job{start_time}[$i];
+        my $finished = $$job{end_time}[$i];
+        my $cpu      = $$job{cpu_time}[$i];
+
+        my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+) (\d+)/;
+        my ($smo, $sd, $sh, $sm, $ss,$sy) = $started =~ /$date_regex/;
+        my ($emo, $ed, $eh, $em, $es,$ey) = $finished =~ /$date_regex/;
+        my $dt = DateTime->new(year => $sy, month => $months{$smo}, day => $sd, hour => $sh, minute => $sm, second => $ss);
+        my $st = $dt->epoch;
+        $dt = DateTime->new(year => $ey, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
+        my $et = $dt->epoch;
+        my $wall = $et - $st;
+        my $idle = sprintf("%0.2f", ($cpu < 1 ? 1 : $cpu) / ($wall < 1 ? 1 : $wall));
+        
+        $$job{time}[$i] = $wall;
+        $$job{start_time}[$i] = $st;
+        $$job{end_time}[$i] = $et;
+        $$job{idle}[$i] = $idle;
+    }
+    
+    return $job;
+}
 
 sub get_stats
 {
     my ($opts,$file) = @_;
 
-    # TODO: include also running time of failed jobs as a separate stats?
-    my $parser = VertRes::Parser::LSF->new(file=>$file);
-    my $n = $parser->nrecords();
+    my $job = parse_lsf_output($opts,$file);
+    my $n = $$job{njobs};
     if ( !$n ) { return; }
 
     my @keys = qw(memory time cpu_time idle_factor start_time end_time);
@@ -128,7 +180,7 @@ sub get_stats
     push @{$$opts{stats}{attempts}},$n;
     for my $key (@keys)
     {
-        my $value = $parser->get($key,$n-1);
+        my $value = $$job{$key}[$n-1];
         if ( !defined $value ) { next; }
         push @{$$opts{stats}{$key}},$value;
         if ( $$opts{table} ) { print "\t$value"; }
