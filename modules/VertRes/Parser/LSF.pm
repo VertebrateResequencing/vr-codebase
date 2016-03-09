@@ -137,6 +137,7 @@ sub next_result {
         
         if ($found_report_start) {
             if (/^Started at \S+ (.+)$/) { $started = $1; }
+						elsif (/^Started on \S+ (.+)$/) { $started = $1; }
             elsif (/^Job was executed.+in queue \<([^>]+)\>/) { $queue = $1; }
             elsif (/^Results reported at \S+ (.+)$/) { $finished = $1; }
             elsif (/^# LSBATCH: User input/) { $next_is_cmd = 1; }
