@@ -140,6 +140,7 @@ sub next_result {
 						elsif (/^Started on \S+ (.+)$/) { $started = $1; }
             elsif (/^Job was executed.+in queue \<([^>]+)\>/) { $queue = $1; }
             elsif (/^Results reported at \S+ (.+)$/) { $finished = $1; }
+						elsif (/^Results reported on \S+ (.+)$/) { $finished = $1; }
             elsif (/^# LSBATCH: User input/) { $next_is_cmd = 1; }
             elsif ($next_is_cmd) {
                 if (/^-{60}$/) {
@@ -206,7 +207,7 @@ sub next_result {
                                    queue => $queue,
                                    start_time => $st,
                                    end_time => $et});
-    }
+    }	
     
     return 1;
 }
