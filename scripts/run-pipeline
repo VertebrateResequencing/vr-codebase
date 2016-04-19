@@ -1784,7 +1784,7 @@ sub get_snps_jobs_from_vrtrack {
         my $candidate_mapstats = $vrtrack->mapstats_id_for_lane_and_reference( $vrlane->id, $reference_db_name );
 
         for my $candidate_mapstat ( @{$candidate_mapstats} ) {
-            next if ( -e $lane_path."/".$candidate_mapstat . ".snp/.snps_done" && $vrlane->is_processed('snp_called') );
+            next if ( -e $lane_path."/".$candidate_mapstat . ".pe.markdup.snp/.snps_done" && $vrlane->is_processed('snp_called') );
 						
 						my @bam_files = glob("$lane_path/".$candidate_mapstat."*.bam");
 						next if ( !scalar @bam_files );
