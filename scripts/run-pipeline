@@ -1739,160 +1739,155 @@ sub get_hierarchy_update_jobs_from_vrtrack {
 }
 
 sub get_snps_jobs_from_vrtrack {
-    my ($jobs,$config,$mtime,$config_data) = @_;
+    my ( $jobs, $config, $mtime, $config_data ) = @_;
 
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
-    debug($config_data,"$config\tget_snps_jobs_from_vrtrack...");
+    debug( $config_data, "$config\tget_snps_jobs_from_vrtrack..." );
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
-    my %filter  = ('improved'=>1, 'snp_called' => 0);
-    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+    my $vrtrack = VRTrack::VRTrack->new( $$config_data{db} ) or croak("Could not connect to the database: $config\n");
+    my %filter = ( 'improved' => 1, 'snp_called' => 0 );
+    if ( exists( $$config_data{vrtrack_processed_flags} ) ) { %filter = %{ $$config_data{vrtrack_processed_flags} }; }
 
-    my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
+    my $hnames = $vrtrack->processed_lane_hnames_with_limits( -1, $config_data->{limits}, %filter );
 
-    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
+    my @lanes = filter_lanes( $$config_data{limits}, $hnames, $vrtrack, $config );
 
     # Ignore snp_called
     # Used when several bams for lane from differing assemblies/mappers
-    my $ignore_snp_called = defined($$config_data{data}{ignore_snp_called_status}) && $$config_data{data}{ignore_snp_called_status} ? 1:0;
+    my $ignore_snp_called =
+      defined( $$config_data{data}{ignore_snp_called_status} ) && $$config_data{data}{ignore_snp_called_status} ? 1 : 0;
 
-    unless( $ignore_snp_called )
-    {
-	debug($config_data, "found " . (scalar @lanes) . " lanes improved but not SNP called");
+    unless ($ignore_snp_called) {
+        debug( $config_data, "found " . ( scalar @lanes ) . " lanes improved but not SNP called" );
     }
-    else 
-    {
-	debug($config_data, "found " . (scalar @lanes) . " mapped lanes checking if SNP called ")
+    else {
+        debug( $config_data, "found " . ( scalar @lanes ) . " mapped lanes checking if SNP called " );
     }
 
     my $lanes_count = 0;
 
-    my $config_reference_file = basename($config_data->{data}{fa_ref});
-		my $reference_db_name = $config_reference_file;
-		$reference_db_name =~ s!\.fa!!;
-		
+    my $config_reference_file = basename( $config_data->{data}{fa_ref} );
+    my $reference_db_name     = $config_reference_file;
+    $reference_db_name =~ s!\.fa!!;
+
     # For big data sets, this loop takes suprisingly long.
-    foreach my $vrlane (@lanes)
-    {
-        my $path   = $vrtrack->hierarchy_path_of_lane($vrlane);
+    foreach my $vrlane (@lanes) {
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
         if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
         if ( $vrlane->is_withdrawn() ) { next; }
 
         my $bam;
-        my $lane_path = File::Spec->catfile($config_data->{root}, $path);
+        my $lane_path = File::Spec->catfile( $config_data->{root}, $path );
         my %mapstat_ids;
         my $mapstat;
-				
-        my $candidate_mapstats = $vrtrack->mapstats_id_for_lane_and_reference($vrlane->id, $reference_db_name);
 
-				for my $candidate_mapstat (@{$candidate_mapstats})
-				{
-          next if( -e $candidate_mapstat.".snp/.snps_done" && $vrlane->is_processed('snp_called') );
-				}
-				
+        my $candidate_mapstats = $vrtrack->mapstats_id_for_lane_and_reference( $vrlane->id, $reference_db_name );
+
+        for my $candidate_mapstat ( @{$candidate_mapstats} ) {
+            next if ( -e $candidate_mapstat . ".snp/.snps_done" && $vrlane->is_processed('snp_called') );
+        }
+
         # Get all the possible BAMs from the current lane.
         my @bam_files = glob("$lane_path/*.bam");
         if ( !scalar @bam_files ) {
-          print "No BAM files found in $lane_path\n";
-          next;
-          };
+            print "No BAM files found in $lane_path\n";
+            next;
+        }
         my $regex = $config_data->{data}{bam_suffix};
         $regex =~ s/\.bam/\\\.bam/;
         $regex = '^(\d+)\.[ps]e\..*' . $regex . '$';
 
         for my $file (@bam_files) {
-          next if(-l $file);
-          my ($basename, $path) = fileparse($file);
-          if ($basename =~ m/$regex/){
-            my $mapstats_id = $1;
+            next if ( -l $file );
+            my ( $basename, $path ) = fileparse($file);
+            if ( $basename =~ m/$regex/ ) {
+                my $mapstats_id = $1;
 
-            if ($file =~ m/^(.*)\.bam$/)
-            {
-          	  my $snp_done = "$1.snp/.snps_done";
-          	  next if -e $snp_done && $vrlane->is_processed('snp_called');
-            }
+                if ( $file =~ m/^(.*)\.bam$/ ) {
+                    my $snp_done = "$1.snp/.snps_done";
+                    next if -e $snp_done && $vrlane->is_processed('snp_called');
+                }
 
-            my $bam_reference = get_bam_reference($file);
-			my $bam_reference_file = basename($bam_reference);
-			
-            if(defined($bam_reference_file) && $config_reference_file eq $bam_reference_file)
-            {
-              push @{$mapstat_ids{$mapstats_id}}, $file;
+                my $bam_reference      = get_bam_reference($file);
+                my $bam_reference_file = basename($bam_reference);
+
+                if ( defined($bam_reference_file) && $config_reference_file eq $bam_reference_file ) {
+                    push @{ $mapstat_ids{$mapstats_id} }, $file;
+                }
             }
-          }
         }
 
-        next unless (scalar keys %mapstat_ids);
+        next unless ( scalar keys %mapstat_ids );
 
-	my $mapstat_id;
-	unless( $ignore_snp_called )
-	{
-	    # work out which is the latest bam to use for snp calling: the
-	    # one with the largest mapstats id.
-	    my @ids = sort {$b<=>$a} keys %mapstat_ids;
-	    $mapstat_id = $ids[0];
-	    if (1 < scalar @{$mapstat_ids{$ids[0]}}) {
-		# There can be only one...
-		debug($config_data, "Found more than one bam matching regex with mapstats id $ids[0], don't know which to use, in lane $lane_path\n");
-		next;
-	    }
-	}
-	else
-	{
-	    # Find all mapstats IDs and select lowest uncalled id
-	    my @ids = sort {$a<=>$b} keys %mapstat_ids;
+        my $mapstat_id;
+        unless ($ignore_snp_called) {
 
-	    foreach my $id (@ids)
-	    {
-		if(uncalled_mapstat($config_data, $vrtrack, $vrlane, $id, $mapstat_ids{$id}[0]))
-		{
-		    $mapstat_id = $id;
-		    last;
-		}
-	    }
-	    next unless $mapstat_id; # No uncalled mapstats
-	}
+            # work out which is the latest bam to use for snp calling: the
+            # one with the largest mapstats id.
+            my @ids = sort { $b <=> $a } keys %mapstat_ids;
+            $mapstat_id = $ids[0];
+            if ( 1 < scalar @{ $mapstat_ids{ $ids[0] } } ) {
+
+                # There can be only one...
+                debug( $config_data,
+                    "Found more than one bam matching regex with mapstats id $ids[0], don't know which to use, in lane $lane_path\n" );
+                next;
+            }
+        }
+        else {
+            # Find all mapstats IDs and select lowest uncalled id
+            my @ids = sort { $a <=> $b } keys %mapstat_ids;
+
+            foreach my $id (@ids) {
+                if ( uncalled_mapstat( $config_data, $vrtrack, $vrlane, $id, $mapstat_ids{$id}[0] ) ) {
+                    $mapstat_id = $id;
+                    last;
+                }
+            }
+            next unless $mapstat_id;    # No uncalled mapstats
+        }
 
         my $bam_for_calling = $mapstat_ids{$mapstat_id}[0];
-        my $snp_dir = $bam_for_calling;
-        if ($snp_dir =~ m/^(.*)\.bam$/){
+        my $snp_dir         = $bam_for_calling;
+        if ( $snp_dir =~ m/^(.*)\.bam$/ ) {
             $snp_dir = "$1.snp";
         }
         else {
             die "Fixme: couldn't work out snp dir name, bam $bam_for_calling doesn't end with .bam?\n";
         }
 
-        unless (-d $snp_dir) {
+        unless ( -d $snp_dir ) {
             mkdir $snp_dir or die "Could not mkdir $snp_dir\n";
         }
 
         # make the file list file for the pipeline
-        my $file_list = File::Spec->catfile($snp_dir, 'file.list');
-        unless (-e $file_list){
-            open my $fh, '>', $file_list or debug($config_data, "Error opening $file_list\n");
+        my $file_list = File::Spec->catfile( $snp_dir, 'file.list' );
+        unless ( -e $file_list ) {
+            open my $fh, '>', $file_list or debug( $config_data, "Error opening $file_list\n" );
             print $fh $bam_for_calling, "\n";
             close $fh;
         }
 
         my $lane_info = lane_info($path);
         $config_data->{data}{file_list} = $file_list;
-        $lane_info->{vrlane} = $vrlane;
-        $lane_info->{lane_path} = $path;
-        my $job = Job->new({lane_info=>$lane_info, %$config_data, path=>$snp_dir, config=>$config, mtime=>$mtime});
+        $lane_info->{vrlane}            = $vrlane;
+        $lane_info->{lane_path}         = $path;
+        my $job = Job->new( { lane_info => $lane_info, %$config_data, path => $snp_dir, config => $config, mtime => $mtime } );
         push @$jobs, $job;
 
         $lanes_count++;
-        if ($config_data->{max_lanes} and $lanes_count == $config_data->{max_lanes}){
-            debug($config_data, ".max lanes limit of " . $config_data->{max_lanes} . " reached...");
+        if ( $config_data->{max_lanes} and $lanes_count == $config_data->{max_lanes} ) {
+            debug( $config_data, ".max lanes limit of " . $config_data->{max_lanes} . " reached..." );
             last;
         }
 
-        debug($config_data,".");
+        debug( $config_data, "." );
     }
 
-    debug($config_data,"done\n");
+    debug( $config_data, "done\n" );
     return;
 }
+
 
 =head2 get_snps_jobs
 
