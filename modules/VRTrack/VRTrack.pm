@@ -572,6 +572,30 @@ sub processed_lane_hnames_with_lane_limit {
     return \@lane_names;
 }
 
+sub mapstats_id_for_lane_and_reference {
+	my ($self,$lane, $reference) = @_;
+	
+  my @map_stats;
+  my $sql =qq[select m.mapstats_id from latest_lane  as l
+	            join latest_mapstats as m on l.lane_id = m.lane_id
+	            join assembly as a on a.assembly_id = m.assembly_id
+	            where l.name = '$lane' AND a.name = '$reference' and m.is_qc = 0];
+	
+  my $sth = $self->{_dbh}->prepare($sql);
+
+  my $tmpname;
+  if ($sth->execute()){
+      $sth->bind_columns ( \$tmpname );
+      push @map_stats, $tmpname while $sth->fetchrow_arrayref;
+  }
+  else{
+      die(sprintf('Cannot retrieve mapstats: %s', $DBI::errstr));
+  }
+
+  return \@map_stats;
+}
+
+
 
 sub lanes_with_mapping_filtered_by_limits {
     my ($self,$max_lanes, $limits,$prefix, $mapper, $assembly_name, @filter) = @_;
