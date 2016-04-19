@@ -576,10 +576,9 @@ sub mapstats_id_for_lane_and_reference {
 	my ($self,$lane, $reference) = @_;
 	
   my @map_stats;
-  my $sql =qq[select m.mapstats_id from latest_lane  as l
-	            join latest_mapstats as m on l.lane_id = m.lane_id
+  my $sql =qq[select m.mapstats_id from latest_mapstats as m
 	            join assembly as a on a.assembly_id = m.assembly_id
-	            where l.name = '$lane' AND a.name = '$reference' and m.is_qc = 0];
+	            where m.lane_id = $lane AND a.name = '$reference' and m.is_qc = 0];
 	
   my $sth = $self->{_dbh}->prepare($sql);
 

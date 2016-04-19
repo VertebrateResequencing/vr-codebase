@@ -1783,7 +1783,7 @@ sub get_snps_jobs_from_vrtrack {
         my %mapstat_ids;
         my $mapstat;
 				
-        my $candidate_mapstats = $vrtrack->mapstats_id_for_lane_and_reference($vrlane->name, $reference_db_name);
+        my $candidate_mapstats = $vrtrack->mapstats_id_for_lane_and_reference($vrlane->id, $reference_db_name);
 
 				for my $candidate_mapstat (@{$candidate_mapstats})
 				{
