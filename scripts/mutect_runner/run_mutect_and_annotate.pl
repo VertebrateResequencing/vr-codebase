@@ -267,6 +267,12 @@ sub parse_args {
 	if ( ! -e "$$self{vep_cache}/$$self{species}" ) {
 		$self->throw("No directory $$self{species} in vep cache dir $$self{vep_cache}");
 	}
+	# add the required paths to ensembl vep modules
+	my $apidir = $$self{ensembl_api};
+	$$self{ensembl_api} .= " ";
+	foreach my $path ("/ensembl/modules/","/ensembl-compara/modules/","/ensembl-variation/modules/","/ensembl-funcgen/modules/") {
+		$$self{ensembl_api} .= "-I $apidir"."$path ";
+	}
 
 }
 
