@@ -83,8 +83,8 @@ sub new {
 			# OPTIONAL: dbSNP vcf and Cosmic VCF for MuTect
 			# Note: using these may affect whether a call is filtered or passed; they are not used simply
 			# for annotating SNV calls. See MuTect website for details. Update files as required.
-			#snpfile    =>  '/lustre/scratch105/vrpipe/refs/human/ncbi37/dbsnp/dbsnp_141.b37.vcf.gz',
-			#cosmic   => '/lustre/scratch105/vrpipe/refs/human/ncbi37/resources/Cosmic/20140805/CosmicCoding_and_NonCoding.vcf.gz',
+			snpfile    =>  '/lustre/scratch105/vrpipe/refs/human/ncbi37/dbsnp/dbsnp_141.b37.vcf.gz',
+			cosmic   => '/lustre/scratch105/vrpipe/refs/human/ncbi37/resources/Cosmic/20140805/CosmicCoding_and_NonCoding.vcf.gz',
 			# REQUIRED: VEP parameters
 			# Note that up to Ensembl 75 (Feb 2014) is GRCh37.p13; starting at Ensembl 76 is GRCh38
 			# The Ensemble vep_cache version must match the api version
@@ -96,6 +96,10 @@ sub new {
 			vep_fasta => undef,     # optional --fasta argument for variant_effect_predictor.pl
 			vep_stats => 'n',
 			add_hgvs => 'y',
+			# Other VEP options, eg --pick, --most_severe; USE WITH CAUTION, not all options
+			# are compatible with this mutect runner pipeline, eg: --tab
+			# The hard-coded options are: -t SO --format vcf --force_overwrite --buffer 20000 --offline --symbol --biotype --vcf --sift s 
+			#vep_opt => '--pick' 
 			chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ],
 			##--------------------------------------------------------------------##
 
@@ -113,6 +117,10 @@ sub new {
 			ensembl_api => '/software/vertres/installs/ensembl/78/',
 			vep_cache => '/lustre/scratch105/projects/g1k/ref/vep_cache',
 			vep_stats => 'n',
+			# Other VEP options, eg --pick, --most_severe; USE WITH CAUTION, not all options
+			# are compatible with this mutect runner pipeline, eg: --tab
+			# The hard-coded options are: -t SO --format vcf --force_overwrite --buffer 20000 --offline --symbol --biotype --vcf --sift s 
+			#vep_opt => '--pick' 
 			chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 X Y) ],
 			##--------------------------------------------------------------------##
 
@@ -212,7 +220,8 @@ sub parse_args {
 		'biotype_filter',
 		'cosmic',
 		'bedtools',
-		'assembly'
+		'assembly',
+		'vep_opt'
 	);
 
     while (defined(my $arg=shift(@ARGV))) {
@@ -252,7 +261,7 @@ sub parse_args {
 		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
-		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly') {
+		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly' && $o ne 'vep_opt') {
 			if ( ! -e $$self{$o} ) {
 				$self->throw("No such file $$self{$o}");
 			}
@@ -671,6 +680,7 @@ sub run_vep {
 	my $cmd = "perl -I $$self{ensembl_api} $$self{vep} -i $vcfin --db_version $$self{ens_version}  -t SO --format vcf -o $vcfout.tmp --force_overwrite --cache --dir $$self{vep_cache} --buffer 20000 --species $$self{species} --offline --symbol --biotype --vcf --sift s ";
 	$cmd .= "--no_stats " if $$self{vep_stats} eq 'no' || $$self{vep_stats} eq 'n' ;
 	$cmd .= "--assembly $$self{assembly} " if $$self{assembly};
+	$cmd .= " $$self{vep_opt} " if $$self{vep_opt};
 	$cmd .= "--hgvs --shift_hgvs 1 " if $$self{add_hgvs};
 	if ( $$self{vep_fasta} ) { $cmd .= " --fasta $$self{reference}"; }
 	$self->cmd($cmd);
