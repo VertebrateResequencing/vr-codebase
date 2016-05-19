@@ -107,7 +107,7 @@ sub print_or_discard_line
 sub parse_lsf_output
 {
     my ($opts,$file) = @_;
-    my $job = {};
+    my $job = { njobs=>0 };
     my $rec = {};
     open(my $fh,'<',$file) or error("$file: $!");
     while (my $line = <$fh>) 
