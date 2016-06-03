@@ -9,6 +9,7 @@ use Carp;
 use IPC::Open3 'open3';
 use IO::Select;
 use DateTime;
+use File::Temp 'tempdir';
 
 my $opts = parse_params();
 crawl($opts);
@@ -60,6 +61,11 @@ sub crawl
     for my $dir (@{$$opts{dir}})
     {
         my $cmd = qq[find $dir -name \\*$$opts{suffix}];
+        if ( !-d $dir && $dir=~/tgz$/ )
+        {
+            my $tmpdir = tempdir(CLEANUP=>1);
+            $cmd = qq[tar -C $tmpdir -xzf $dir && find $tmpdir -name \\*$$opts{suffix}];
+        }
         my @tmp = grep { chomp } `$cmd`;
         push @files,@tmp;
     }
