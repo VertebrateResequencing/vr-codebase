@@ -61,14 +61,27 @@ sub optimise_parameters
 {
   my ($self, $num_threads) = @_;
   
+	
   my $kmer_string = $self->_create_kmer_values_string();
+	if(defined($self->{spades_kmer_opts}) and ($self->{spades_kmer_opts}) )
+	{
+		$kmer_string = 'auto';
+	}
 
   my $spades_opts = '';
-  if (defined($self->{single_cell}) and ($self->{single_cell})){
-    $spades_opts = '--sc --careful';
-  }
-  else {
-    $spades_opts = '--only-assembler';
+	if(defined($self->{spades_opts}) and ($self->{spades_opts}) )
+	{
+		$spades_opts = $self->{spades_opts};
+	}
+	else
+	{
+    if (defined($self->{single_cell}) and ($self->{single_cell})){
+      $spades_opts = '--sc --careful';
+    }
+    else {
+	  	# Only of use with viruses, dont use with bacteria
+      $spades_opts = '--only-assembler';
+    }
   }
   
   `python $self->{optimiser_exec} --12 $self->{files_str} $spades_opts --threads $num_threads -k $kmer_string -o spades_assembly`;
