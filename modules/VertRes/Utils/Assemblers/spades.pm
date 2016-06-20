@@ -67,10 +67,6 @@ sub optimise_parameters
 	{
 		$kmer_string = $self->{spades_kmer_opts};
 	}
-	else
-	{
-		$kmer_string = 'auto';
-	}
 
   my $spades_opts = '';
 	if(defined($self->{spades_opts}) and ($self->{spades_opts}) )
