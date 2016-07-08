@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '29';
+use constant SCHEMA_VERSION => '30';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1651,18 +1651,6 @@ sub _list_names {
 
 __DATA__
 
-# Dump of table schema_version
-# ------------------------------------------------------------
-
-DROP TABLE IF EXISTS `schema_version`;
-
-CREATE TABLE `schema_version` (
-  `schema_version` mediumint(8) unsigned NOT NULL,
-  PRIMARY KEY (`schema_version`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
-
-
 # Dump of table allocation
 # ------------------------------------------------------------
 
@@ -1676,8 +1664,6 @@ CREATE TABLE `allocation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
-insert into schema_version(schema_version) values (28);
-
 
 # Dump of table assembly
 # ------------------------------------------------------------
@@ -1686,8 +1672,8 @@ DROP TABLE IF EXISTS `assembly`;
 
 CREATE TABLE `assembly` (
   `assembly_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL DEFAULT '',
-  `reference_size` int(11) DEFAULT NULL,
+  `name` varchar(255) NOT NULL,
+  `reference_size` bigint(20) DEFAULT NULL,
   `taxon_id` mediumint(8) unsigned DEFAULT NULL,
   `translation_table` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY (`assembly_id`)
@@ -1736,7 +1722,7 @@ DROP TABLE IF EXISTS `file`;
 CREATE TABLE `file` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `file_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `lane_id` int(10) unsigned NOT NULL,
+  `lane_id` int(10) NOT NULL DEFAULT '0',
   `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(255) DEFAULT NULL,
   `processed` int(10) DEFAULT '0',
@@ -1804,8 +1790,8 @@ DROP TABLE IF EXISTS `lane`;
 
 CREATE TABLE `lane` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `lane_id` int(10) unsigned NOT NULL,
-  `library_id` int(10) unsigned NOT NULL,
+  `lane_id` int(10) NOT NULL DEFAULT '0',
+  `library_id` int(10) NOT NULL DEFAULT '0',
   `seq_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
@@ -1837,6 +1823,232 @@ CREATE TABLE `lane` (
 
 
 
+# Dump of table latest_file
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_file`;
+
+CREATE TABLE `latest_file` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `file_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
+   `lane_id` INT(10) NOT NULL DEFAULT '0',
+   `name` VARCHAR(255) NOT NULL DEFAULT '',
+   `hierarchy_name` VARCHAR(255) NULL DEFAULT NULL,
+   `processed` INT(10) NULL DEFAULT '0',
+   `type` TINYINT(4) NULL DEFAULT NULL,
+   `readlen` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `raw_reads` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `raw_bases` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `mean_q` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `md5` CHAR(32) NULL DEFAULT NULL,
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `latest` TINYINT(1) NULL DEFAULT '0',
+   `reference` VARCHAR(255) NULL DEFAULT NULL
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_lane
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_lane`;
+
+CREATE TABLE `latest_lane` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `lane_id` INT(10) NOT NULL DEFAULT '0',
+   `library_id` INT(10) NOT NULL DEFAULT '0',
+   `seq_request_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
+   `name` VARCHAR(255) NOT NULL DEFAULT '',
+   `hierarchy_name` VARCHAR(255) NOT NULL DEFAULT '',
+   `acc` VARCHAR(40) NULL DEFAULT NULL,
+   `readlen` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `paired` TINYINT(1) NULL DEFAULT NULL,
+   `raw_reads` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `raw_bases` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `npg_qc_status` ENUM('pending','pass','fail','-') NULL DEFAULT 'pending',
+   `processed` INT(10) NULL DEFAULT '0',
+   `auto_qc_status` ENUM('no_qc','passed','failed') NULL DEFAULT 'no_qc',
+   `qc_status` ENUM('no_qc','pending','passed','failed','gt_pending','investigate') NULL DEFAULT 'no_qc',
+   `gt_status` ENUM('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') NULL DEFAULT 'unchecked',
+   `submission_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `withdrawn` TINYINT(1) NULL DEFAULT NULL,
+   `manually_withdrawn` TINYINT(1) NULL DEFAULT NULL,
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `run_date` DATETIME NULL DEFAULT NULL,
+   `storage_path` VARCHAR(255) NULL DEFAULT NULL,
+   `latest` TINYINT(1) NULL DEFAULT '0'
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_library
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_library`;
+
+CREATE TABLE `latest_library` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `library_id` INT(10) UNSIGNED NOT NULL,
+   `library_request_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
+   `sample_id` INT(10) NOT NULL DEFAULT '0',
+   `ssid` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `name` VARCHAR(255) NOT NULL DEFAULT '',
+   `hierarchy_name` VARCHAR(255) NOT NULL DEFAULT '',
+   `prep_status` ENUM('unknown','pending','started','passed','failed','cancelled','hold') NULL DEFAULT 'unknown',
+   `auto_qc_status` ENUM('no_qc','passed','failed') NULL DEFAULT 'no_qc',
+   `qc_status` ENUM('no_qc','pending','passed','failed') NULL DEFAULT 'no_qc',
+   `fragment_size_from` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `fragment_size_to` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `library_type_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `library_tag` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `library_tag_group` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `library_tag_sequence` VARCHAR(1024) NULL DEFAULT NULL,
+   `seq_centre_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `seq_tech_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `open` TINYINT(1) NULL DEFAULT '1',
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `latest` TINYINT(1) NULL DEFAULT '0'
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_library_request
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_library_request`;
+
+CREATE TABLE `latest_library_request` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `library_request_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
+   `sample_id` INT(10) NOT NULL DEFAULT '0',
+   `ssid` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `prep_status` ENUM('unknown','pending','started','passed','failed','cancelled','hold') NULL DEFAULT 'unknown',
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `latest` TINYINT(1) NULL DEFAULT '0'
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_mapstats
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_mapstats`;
+
+CREATE TABLE `latest_mapstats` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `mapstats_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
+   `lane_id` INT(10) NOT NULL DEFAULT '0',
+   `mapper_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `assembly_id` INT(10) UNSIGNED NULL DEFAULT NULL,
+   `raw_reads` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `raw_bases` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `clip_bases` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `reads_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `reads_paired` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `rmdup_reads_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `rmdup_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `adapter_reads` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `error_rate` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `mean_insert` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `sd_insert` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `gt_expected` VARCHAR(40) NULL DEFAULT NULL,
+   `gt_found` VARCHAR(40) NULL DEFAULT NULL,
+   `gt_ratio` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `latest` TINYINT(1) NULL DEFAULT '0',
+   `bait_near_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `target_near_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `bait_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `mean_bait_coverage` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `bait_coverage_sd` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `off_bait_bases` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `reads_on_bait` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `reads_on_bait_near` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `reads_on_target` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `reads_on_target_near` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `target_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+   `mean_target_coverage` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_coverage_sd` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_1X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_2X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_5X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_10X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_20X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_50X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `target_bases_100X` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `exome_design_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `percentage_reads_with_transposon` FLOAT UNSIGNED NULL DEFAULT NULL,
+   `is_qc` TINYINT(1) NULL DEFAULT '0',
+   `prefix` VARCHAR(40) NULL DEFAULT '_'
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_project
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_project`;
+
+CREATE TABLE `latest_project` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `project_id` SMALLINT(5) UNSIGNED NOT NULL DEFAULT '0',
+   `ssid` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `name` VARCHAR(255) NOT NULL DEFAULT '',
+   `hierarchy_name` VARCHAR(255) NOT NULL DEFAULT '',
+   `study_id` SMALLINT(5) NULL DEFAULT NULL,
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NULL DEFAULT NULL,
+   `latest` TINYINT(1) NULL DEFAULT '0',
+   `data_access_group` VARCHAR(255) NULL DEFAULT NULL
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_sample
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_sample`;
+
+CREATE TABLE `latest_sample` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `sample_id` INT(10) NOT NULL DEFAULT '0',
+   `project_id` SMALLINT(5) UNSIGNED NOT NULL DEFAULT '0',
+   `ssid` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `name` VARCHAR(255) NOT NULL DEFAULT '',
+   `hierarchy_name` VARCHAR(40) NOT NULL DEFAULT '',
+   `individual_id` INT(10) UNSIGNED NULL DEFAULT NULL,
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `latest` TINYINT(1) NULL DEFAULT '0'
+) ENGINE=MyISAM;
+
+
+
+# Dump of table latest_seq_request
+# ------------------------------------------------------------
+
+DROP VIEW IF EXISTS `latest_seq_request`;
+
+CREATE TABLE `latest_seq_request` (
+   `row_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+   `seq_request_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
+   `library_id` INT(10) NOT NULL DEFAULT '0',
+   `multiplex_pool_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
+   `ssid` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `seq_type` ENUM('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') NULL DEFAULT 'Single ended sequencing',
+   `seq_status` ENUM('unknown','pending','started','passed','failed','cancelled','hold') NULL DEFAULT 'unknown',
+   `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
+   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `latest` TINYINT(1) NULL DEFAULT '0'
+) ENGINE=MyISAM;
+
+
 
 # Dump of table library
 # ------------------------------------------------------------
@@ -1847,7 +2059,7 @@ CREATE TABLE `library` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `library_id` int(10) unsigned NOT NULL,
   `library_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `sample_id` int(10) unsigned NOT NULL,
+  `sample_id` int(10) NOT NULL DEFAULT '0',
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
@@ -1899,7 +2111,7 @@ DROP TABLE IF EXISTS `library_request`;
 CREATE TABLE `library_request` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `library_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `sample_id` int(10) unsigned NOT NULL,
+  `sample_id` int(10) NOT NULL DEFAULT '0',
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
@@ -1948,7 +2160,7 @@ DROP TABLE IF EXISTS `mapstats`;
 CREATE TABLE `mapstats` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `mapstats_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `lane_id` int(10) unsigned NOT NULL,
+  `lane_id` int(10) NOT NULL DEFAULT '0',
   `mapper_id` smallint(5) unsigned DEFAULT NULL,
   `assembly_id` int(10) unsigned DEFAULT NULL,
   `raw_reads` bigint(20) unsigned DEFAULT NULL,
@@ -2055,11 +2267,11 @@ CREATE TABLE `project` (
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
-  `data_access_group` varchar(255) DEFAULT NULL,
   `study_id` smallint(5) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
+  `data_access_group` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`row_id`),
   KEY `project_id` (`project_id`),
   KEY `ssid` (`ssid`),
@@ -2077,7 +2289,7 @@ DROP TABLE IF EXISTS `sample`;
 
 CREATE TABLE `sample` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `sample_id` int(10) unsigned NOT NULL,
+  `sample_id` int(10) NOT NULL DEFAULT '0',
   `project_id` smallint(5) unsigned NOT NULL DEFAULT '0',
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL DEFAULT '',
@@ -2092,6 +2304,18 @@ CREATE TABLE `sample` (
   KEY `latest` (`latest`),
   KEY `project_id` (`project_id`),
   KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+# Dump of table schema_version
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `schema_version`;
+
+CREATE TABLE `schema_version` (
+  `schema_version` mediumint(8) unsigned NOT NULL,
+  PRIMARY KEY (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
@@ -2117,7 +2341,7 @@ DROP TABLE IF EXISTS `seq_request`;
 CREATE TABLE `seq_request` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `seq_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `library_id` int(10) unsigned NOT NULL,
+  `library_id` int(10) NOT NULL DEFAULT '0',
   `multiplex_pool_id` smallint(5) unsigned DEFAULT NULL,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `seq_type` enum('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') DEFAULT 'Single ended sequencing',
@@ -2153,7 +2377,7 @@ DROP TABLE IF EXISTS `species`;
 CREATE TABLE `species` (
   `species_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
-  `taxon_id` mediumint(8) unsigned NOT NULL,
+  `taxon_id` mediumint(8) NOT NULL DEFAULT '0',
   PRIMARY KEY (`species_id`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
