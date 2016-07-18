@@ -476,13 +476,13 @@ exit;
               close $scriptfh;
 
       my $total_memory_mb = $num_threads*$memory_required_mb;
-      if($total_memory_mb < 2000)
+      if($total_memory_mb < 5000)
       {
-        $total_memory_mb = 2000;
+        $total_memory_mb = 5000;
       }
       if ($self->{assembler} eq 'iva')
       {
-        $total_memory_mb = 1500;
+        $total_memory_mb = 2000;
       }
 
       my $queue = $self->decide_appropriate_queue($memory_required_mb);
@@ -502,7 +502,7 @@ sub decide_appropriate_queue
   {
     $queue = 'hugemem';
   }
-  elsif($memory_required_mb < 8000 and $self->{assembler} ne 'iva')
+  elsif($memory_required_mb < 12000 and $self->{assembler} ne 'iva')
   {
     $queue = 'normal';
   }
@@ -694,7 +694,7 @@ sub lane_read_length
 sub number_of_threads
 {
   my ($self, $memory_required_mb) = @_;
-  my $normal_queue_mem_limit = 60000;
+  my $normal_queue_mem_limit = 100000;
   my $num_threads = 1;
 
   if($normal_queue_mem_limit/$memory_required_mb > 2)
