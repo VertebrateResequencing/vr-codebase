@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '30';
+use constant SCHEMA_VERSION => '31';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1733,7 +1733,7 @@ CREATE TABLE `file` (
   `mean_q` float unsigned DEFAULT NULL,
   `md5` char(32) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
   `reference` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`row_id`),
@@ -1809,7 +1809,7 @@ CREATE TABLE `lane` (
   `withdrawn` tinyint(1) DEFAULT NULL,
   `manually_withdrawn` tinyint(1) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `run_date` datetime DEFAULT NULL,
   `storage_path` varchar(255) DEFAULT NULL,
   `latest` tinyint(1) DEFAULT '0',
@@ -1842,7 +1842,7 @@ CREATE TABLE `latest_file` (
    `mean_q` FLOAT UNSIGNED NULL DEFAULT NULL,
    `md5` CHAR(32) NULL DEFAULT NULL,
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0',
    `reference` VARCHAR(255) NULL DEFAULT NULL
 ) ENGINE=MyISAM;
@@ -1875,7 +1875,7 @@ CREATE TABLE `latest_lane` (
    `withdrawn` TINYINT(1) NULL DEFAULT NULL,
    `manually_withdrawn` TINYINT(1) NULL DEFAULT NULL,
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `run_date` DATETIME NULL DEFAULT NULL,
    `storage_path` VARCHAR(255) NULL DEFAULT NULL,
    `latest` TINYINT(1) NULL DEFAULT '0'
@@ -1909,7 +1909,7 @@ CREATE TABLE `latest_library` (
    `seq_tech_id` SMALLINT(5) UNSIGNED NULL DEFAULT NULL,
    `open` TINYINT(1) NULL DEFAULT '1',
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0'
 ) ENGINE=MyISAM;
 
@@ -1927,7 +1927,7 @@ CREATE TABLE `latest_library_request` (
    `ssid` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
    `prep_status` ENUM('unknown','pending','started','passed','failed','cancelled','hold') NULL DEFAULT 'unknown',
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0'
 ) ENGINE=MyISAM;
 
@@ -1960,7 +1960,7 @@ CREATE TABLE `latest_mapstats` (
    `gt_found` VARCHAR(40) NULL DEFAULT NULL,
    `gt_ratio` FLOAT UNSIGNED NULL DEFAULT NULL,
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0',
    `bait_near_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
    `target_near_bases_mapped` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
@@ -2003,7 +2003,7 @@ CREATE TABLE `latest_project` (
    `hierarchy_name` VARCHAR(255) NOT NULL DEFAULT '',
    `study_id` SMALLINT(5) NULL DEFAULT NULL,
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NULL DEFAULT NULL,
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0',
    `data_access_group` VARCHAR(255) NULL DEFAULT NULL
 ) ENGINE=MyISAM;
@@ -2024,7 +2024,7 @@ CREATE TABLE `latest_sample` (
    `hierarchy_name` VARCHAR(40) NOT NULL DEFAULT '',
    `individual_id` INT(10) UNSIGNED NULL DEFAULT NULL,
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0'
 ) ENGINE=MyISAM;
 
@@ -2044,7 +2044,7 @@ CREATE TABLE `latest_seq_request` (
    `seq_type` ENUM('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') NULL DEFAULT 'Single ended sequencing',
    `seq_status` ENUM('unknown','pending','started','passed','failed','cancelled','hold') NULL DEFAULT 'unknown',
    `note_id` MEDIUMINT(8) UNSIGNED NULL DEFAULT NULL,
-   `changed` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+   `changed` datetime DEFAULT CURRENT_TIMESTAMP,
    `latest` TINYINT(1) NULL DEFAULT '0'
 ) ENGINE=MyISAM;
 
@@ -2076,7 +2076,7 @@ CREATE TABLE `library` (
   `seq_tech_id` smallint(5) unsigned DEFAULT NULL,
   `open` tinyint(1) DEFAULT '1',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`row_id`),
   KEY `ssid` (`ssid`),
@@ -2115,7 +2115,7 @@ CREATE TABLE `library_request` (
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`row_id`),
   KEY `library_request_id` (`library_request_id`),
@@ -2179,7 +2179,7 @@ CREATE TABLE `mapstats` (
   `gt_found` varchar(40) DEFAULT NULL,
   `gt_ratio` float unsigned DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
   `bait_near_bases_mapped` bigint(20) unsigned DEFAULT NULL,
   `target_near_bases_mapped` bigint(20) unsigned DEFAULT NULL,
@@ -2296,7 +2296,7 @@ CREATE TABLE `sample` (
   `hierarchy_name` varchar(40) NOT NULL DEFAULT '',
   `individual_id` int(10) unsigned DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`row_id`),
   KEY `sample_id` (`sample_id`),
@@ -2347,7 +2347,7 @@ CREATE TABLE `seq_request` (
   `seq_type` enum('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') DEFAULT 'Single ended sequencing',
   `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
-  `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `changed` datetime DEFAULT CURRENT_TIMESTAMP,
   `latest` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`row_id`),
   KEY `seq_request_id` (`seq_request_id`),
