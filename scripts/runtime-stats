@@ -28,7 +28,7 @@ sub error
         "   about total runtime and memory.\n",
         "Usage: runtime-stats [OPTIONS]\n",
         "Options:\n",
-        "   -d, --dir <dir>                 Where to look for output files.\n",
+        "   -d, --dir <dir>                 Where to look for output files or \"-\" for list of files from stdin.\n",
         "   -p, --plot <prefix>             Create plots\n",
         "   -s, --suffix <string>           How to recognise LSF output files [.o]\n",
         "   -t, --table                     Produce table-like output, one line per job\n",
@@ -60,6 +60,16 @@ sub crawl
     my @files;
     for my $dir (@{$$opts{dir}})
     {
+        if ( $dir eq '-' )
+        {
+            while (my $line=<STDIN>)
+            {
+                $line =~ s/^\s*//;
+                $line =~ s/\s*$//;
+                push @files,$line;
+            }
+            next;
+        }
         my $cmd = qq[find $dir -name \\*$$opts{suffix}];
         if ( !-d $dir && $dir=~/tgz$/ )
         {
