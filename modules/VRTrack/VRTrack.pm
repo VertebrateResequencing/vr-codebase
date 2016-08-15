@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '25';
+use constant SCHEMA_VERSION => '26';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1489,7 +1489,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (25);
+insert into schema_version(schema_version) values (26);
 
 --
 -- Table structure for table `assembly`
@@ -1500,7 +1500,7 @@ CREATE TABLE `assembly` (
   `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
   `name` varchar(255) NOT NULL DEFAULT '',
   `reference_size` integer DEFAULT NULL,
-  `taxon_id` mediumint(8) unsigned DEFAULT NULL,
+  `taxon_id` mediumint(8) unsigned DEFAULT 0,
   `translation_table` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY  (`assembly_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -1808,7 +1808,7 @@ DROP TABLE IF EXISTS `species`;
 CREATE TABLE `species` (
   `species_id` smallint(5) unsigned NOT NULL auto_increment,
   `name` varchar(255) NOT NULL,
-  `taxon_id` mediumint(8) unsigned NOT NULL,
+  `taxon_id` mediumint(8) unsigned DEFAULT 0,
   PRIMARY KEY  (`species_id`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -1875,9 +1875,9 @@ PRIMARY KEY  (`study_id`)
 
 DROP TABLE IF EXISTS `allocation`;
 CREATE TABLE `allocation` (
-`study_id` smallint(5) unsigned DEFAULT NULL,
-`individual_id` smallint(5) unsigned DEFAULT NULL,
-`seq_centre_id` smallint(5) unsigned DEFAULT NULL,
+`study_id` smallint(5) unsigned NOT NULL,
+`individual_id` smallint(5) unsigned NOT NULL,
+`seq_centre_id` smallint(5) unsigned NOT NULL,
 PRIMARY KEY  (`study_id`,`individual_id`,`seq_centre_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
