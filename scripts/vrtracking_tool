@@ -338,7 +338,7 @@ while (<>){
                  "^[0-9]+\.[ps]e\.markdup\.bam\$","^[0-9]+\.[ps]e\.markdup\.bam\.bai\$",
                  "^[0-9]+\.[ps]e\.raw\.sorted\.bam\$","^[0-9]+\.[ps]e\.raw\.sorted\.bam\.bai\$",
                  "^[0-9]+\.[ps]e\.raw\.sorted\.bam_graphs\$",
-                 "^[0-9]+\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat|tmp)\$",
+                 "^[0-9]+\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat|tmp|bad)\$",
                  "^\.[0-9]+\.[ps]e\.raw\.sorted\.bam\.checked\$",
                  "^\.mapping_complete_[ps]e_[0-9]+\$",
                  "^\.split_complete_[ps]e_[0-9]+\$",
