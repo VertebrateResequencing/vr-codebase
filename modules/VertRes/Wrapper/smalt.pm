@@ -146,9 +146,12 @@ sub setup_fastqs {
             unless (-s $fq_new) {
 		system("gunzip -c ".$fq." > ".$fq_new.".tmp");
                 
-                # check the decompressed fastq isn't truncated
-                $i = VertRes::IO->new(file => "$fq_new.tmp");
-                my $actual_lines = $i->num_lines;
+		# Check the number of lines in the files
+		my $lines = `gunzip -c $fq | wc -l `;
+		my $actual_lines = `cat $fq_new.tmp | wc -l`;
+                chomp($lines);
+                chomp($actual_lines);
+		
                 if ($actual_lines == $lines) {
                     move("$fq_new.tmp", $fq_new);
                 }
