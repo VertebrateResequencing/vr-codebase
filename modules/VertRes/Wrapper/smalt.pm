@@ -144,17 +144,7 @@ sub setup_fastqs {
             $fq_new =~ s/\.gz$//;
             
             unless (-s $fq_new) {
-                my $i = VertRes::IO->new(file => $fq);
-                my $o = VertRes::IO->new(file => ">$fq_new.tmp");
-                my $ifh = $i->fh;
-                my $ofh = $o->fh;
-                my $lines = 0;
-                while (<$ifh>) {
-                    $lines++;
-                    print $ofh $_;
-                }
-                $i->close;
-                $o->close;
+		system("gunzip -c ".$fq." > ".$fq_new.".tmp");
                 
                 # check the decompressed fastq isn't truncated
                 $i = VertRes::IO->new(file => "$fq_new.tmp");
