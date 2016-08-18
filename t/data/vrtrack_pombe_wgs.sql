@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 5.7.13, for linux-glibc2.5 (x86_64)
 --
--- Host: mcs15    Database: vrtrack_test
+-- Host: vrpp-db    Database: vrtrack_test
 -- ------------------------------------------------------
 -- Server version	5.7.13-log
 
@@ -513,7 +513,7 @@ CREATE TABLE `library` (
   `library_id` smallint(5) unsigned NOT NULL DEFAULT '0',
   `library_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `sample_id` smallint(5) unsigned NOT NULL DEFAULT '0',
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `ssid` int(8) unsigned DEFAULT NULL,
   `name` varchar(255) DEFAULT NULL,
   `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
   `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
@@ -586,7 +586,7 @@ CREATE TABLE `library_request` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `library_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `sample_id` smallint(5) unsigned NOT NULL DEFAULT '0',
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `ssid` int(8) unsigned DEFAULT NULL,
   `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
@@ -734,7 +734,7 @@ DROP TABLE IF EXISTS `multiplex_pool`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `multiplex_pool` (
   `multiplex_pool_id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `ssid` int(8) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL DEFAULT '',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   PRIMARY KEY (`multiplex_pool_id`),
@@ -810,7 +810,7 @@ DROP TABLE IF EXISTS `project`;
 CREATE TABLE `project` (
   `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `project_id` smallint(5) unsigned NOT NULL DEFAULT '0',
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `ssid` int(8) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(255) NOT NULL DEFAULT '',
   `study_id` smallint(5) DEFAULT NULL,
@@ -892,7 +892,7 @@ CREATE TABLE `schema_version` (
 
 LOCK TABLES `schema_version` WRITE;
 /*!40000 ALTER TABLE `schema_version` DISABLE KEYS */;
-INSERT INTO `schema_version` VALUES (26);
+INSERT INTO `schema_version` VALUES (27);
 /*!40000 ALTER TABLE `schema_version` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -932,7 +932,7 @@ CREATE TABLE `seq_request` (
   `seq_request_id` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `library_id` smallint(5) unsigned DEFAULT NULL,
   `multiplex_pool_id` smallint(5) unsigned DEFAULT NULL,
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `ssid` int(8) unsigned DEFAULT NULL,
   `seq_type` enum('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') NOT NULL,
   `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
@@ -1014,7 +1014,7 @@ CREATE TABLE `study` (
   `study_id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
   `acc` varchar(40) DEFAULT NULL,
-  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `ssid` int(8) unsigned DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   PRIMARY KEY (`study_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=latin1;
@@ -1209,4 +1209,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-08-15 13:26:22
+-- Dump completed on 2016-08-18 11:02:56
