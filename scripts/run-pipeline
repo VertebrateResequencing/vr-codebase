@@ -1556,7 +1556,7 @@ sub get_permissions_jobs_from_vrtrack
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
 
-    my $max_lanes = 300000;
+    my $max_lanes = 5000;
     if(defined($config_data->{max_lanes_to_search}))
     {
       $max_lanes = $config_data->{max_lanes_to_search};

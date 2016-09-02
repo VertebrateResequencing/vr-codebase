@@ -77,7 +77,7 @@ sub permissions_requires {
 
 sub permissions_provides {
     my ($self) = @_;
-    return [];
+    return ['file_which_will_never_exist'];
 }
 
 =head2 permissions
