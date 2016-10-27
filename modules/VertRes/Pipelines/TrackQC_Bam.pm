@@ -23,6 +23,7 @@ use VRTrack::Mapstats;
 use VertRes::Parser::bamcheck;
 use VertRes::Parser::bam;
 use VertRes::Parser::dict;
+use Scalar::Util qw(looks_like_number);
 use Utils;
 
 our @actions =
@@ -944,6 +945,11 @@ sub update_db
     my $error_rate     = $bc->get('error_rate');
     my $avg_isize      = $bc->get('avg_insert_size');
     my $sd_isize       = $bc->get('sd_insert_size');
+    
+    if( ! looks_like_number($error_rate) || $error_rate < 0  || $error_rate eq '-nan')
+    {
+    	$error_rate     = 0;
+    }
 
     $bc = VertRes::Parser::bamcheck->new(file=>"$sample_dir/$name.bam.rmdup.bc");
     my $rmdup_reads_total    = $bc->get('sequences');
