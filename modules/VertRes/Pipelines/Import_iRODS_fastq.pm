@@ -195,7 +195,7 @@ sub bam_to_fastq {
     ### if we know whats its going to be increased to we can set java to 90% of it.
     
     my $java_mem = int($memory * 0.95);
-    my $queue = $memory >= 30000 ? "hugemem" : "normal";
+    my $queue = $memory >= 200000 ? "hugemem" : "normal";
     my $samtools_sorting_memory = 300000000;
     
     my $fastqs_str ; 
@@ -337,7 +337,7 @@ sub compress_and_validate {
     if (! defined $memory || $memory < 70) {
         $memory = 70;
     }
-    my $queue = $memory >= 30000 ? "hugemem" : "normal";
+    my $queue = $memory >= 200000 ? "hugemem" : "normal";
     
     my $fastqs_str ; 
     if( $self->is_paired )

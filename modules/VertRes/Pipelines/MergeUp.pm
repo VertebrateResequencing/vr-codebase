@@ -531,7 +531,7 @@ sub lib_markdup {
         $java_mem = 5000;
     }
     $java_mem ||= int($memory * 0.9);
-    my $queue = $memory >= 16000 ? "hugemem" : "long";
+    my $queue = $memory >= 200000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
@@ -812,7 +812,7 @@ sub merge_up_one_level {
     }
     my $java_mem = int($memory * 0.9);
     $queue ||= 'normal';
-    $queue = $memory >= 16000 ? "hugemem" : $queue;
+    $queue = $memory >= 200000 ? "hugemem" : $queue;
     
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";

@@ -248,8 +248,8 @@ sub adjust_bsub_options
       # at some point an attempt to run this failed due to MEMLIMIT
         $mem = calculate_memory_limit($mem);
         
-        if ($mem>500000) {
-            Utils::error("FIXME: This job cannot be run on the farm, more than 500GB of memory is required.");
+        if ($mem>800000) {
+            Utils::error("FIXME: This job cannot be run on the farm, more than 800GB of memory is required.");
         }
         elsif($mem>200000)
         {
