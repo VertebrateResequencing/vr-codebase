@@ -485,7 +485,7 @@ sub realign {
         $java_mem = 3800;
     }
     $java_mem ||= int($memory * 0.9);
-    my $queue = $memory >= 16000 ? "hugemem" : "normal";
+    my $queue = $memory >= 200000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
@@ -647,7 +647,7 @@ sub sort {
         $java_mem = 5000;
     }
     $java_mem ||= int($memory * 0.9);
-    my $queue = $memory >= 16000 ? "hugemem" : "normal";
+    my $queue = $memory >= 200000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
@@ -798,7 +798,7 @@ sub recalibrate {
         $java_mem = 6000;
     }
     $java_mem ||= int($memory * 0.9);
-    my $queue = $memory >= 16000 ? "hugemem" : "long";
+    my $queue = $memory >= 200000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";

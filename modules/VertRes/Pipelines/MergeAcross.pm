@@ -234,7 +234,7 @@ sub merge {
     my $jobs_done = 0;
     my $memory = $self->{memory}; 
     my $java_mem = int($memory * 0.9);
-    my $queue = $memory >= 16000 ? "hugemem" : $self->{queue};
+    my $queue = $memory >= 200000 ? "hugemem" : $self->{queue};
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
 
