@@ -102,6 +102,7 @@ use Data::Dumper;
 use IO::File;
 use Sys::CpuLoadX;
 use Sys::CPU;
+use Bio::VertRes::Permissions::Groups;
 
 my $Error   = $VertRes::Pipeline::Error;
 my $No      = $VertRes::Pipeline::No;
@@ -1568,13 +1569,22 @@ sub get_permissions_jobs_from_vrtrack
           debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
     }
 
-    my $count =0;
+    my $count = 0;
+    my $unix_group = 0; # set once per config
     foreach my $vrlane (@lanes) {
         unless (ref($vrlane)) {
             $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
         }
         next if $vrlane->is_withdrawn;
         $count++;
+	
+	my %lane_objs = $vrtrack->lane_hierarchy_objects($vrlane);
+	if(!defined($unix_group) && defined($lane_objs{project}) && defined($lane_objs{project}->data_access_group) )
+	{
+	        my $obj = Bio::VertRes::Permissions::Groups->new();
+	        my $group = $obj->is_member_of_group($lane_objs{project}->data_access_group);
+	        $unix_group = $group if(defined($group));
+	}
 
         my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
         if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
@@ -1582,6 +1592,7 @@ sub get_permissions_jobs_from_vrtrack
 
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
+	$lane_info->{unix_group} = $unix_group;
         
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
