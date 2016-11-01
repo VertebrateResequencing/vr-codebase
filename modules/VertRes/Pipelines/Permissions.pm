@@ -43,9 +43,6 @@ sub new {
     my ( $class, @args ) = @_;
 
     my $self = $class->SUPER::new( %options, actions => $actions, @args );
-    if ( defined( $self->{db} ) ) {
-        $self->{vrtrack} = VRTrack::VRTrack->new( $self->{db} ) or $self->throw("Could not connect to the database\n");
-    }
     return $self;
 }
 
@@ -93,7 +90,18 @@ sub permissions_provides {
 
 sub permissions {
   my ($self, $lane_path, $action_lock) = @_;
-  $self->update_file_permissions($lane_path);
+  
+  return unless(defined($$self{octal_permissions}));
+
+  if(defined($$self{unix_group}) )
+  {
+    my $change_permissions_obj = Bio::VertRes::Permissions::ModifyPermissions->new(
+        input_directories => [$lane_path],
+        group             => $$self{unix_group},
+  	threads           => 0,
+        octal_permissions => $$self{octal_permissions});
+    $change_permissions_obj->update_permissions;
+  }	
   
   return $self->{Yes};
 }
