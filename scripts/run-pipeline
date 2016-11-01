@@ -1570,7 +1570,8 @@ sub get_permissions_jobs_from_vrtrack
     }
 
     my $count = 0;
-    my $unix_group = 0; # set once per config
+    my $unix_group; # set once per config
+    
     foreach my $vrlane (@lanes) {
         unless (ref($vrlane)) {
             $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
@@ -1583,7 +1584,17 @@ sub get_permissions_jobs_from_vrtrack
 	{
 	        my $obj = Bio::VertRes::Permissions::Groups->new();
 	        my $group = $obj->is_member_of_group($lane_objs{project}->data_access_group);
-	        $unix_group = $group if(defined($group));
+	        if(defined($group))
+		{
+			$unix_group = $group;
+		}
+		else{
+			$unix_group = $config_data->{unix_group};
+		}
+	}
+	else
+	{
+		$unix_group = $config_data->{unix_group};
 	}
 
         my $path = $vrtrack->hierarchy_path_of_lane($vrlane);

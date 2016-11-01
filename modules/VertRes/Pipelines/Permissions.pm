@@ -93,7 +93,7 @@ sub permissions {
   
   return unless(defined($$self{octal_permissions}));
 
-  if(defined($unix_group) )
+  if(defined($$self{unix_group}) )
   {
     my $change_permissions_obj = Bio::VertRes::Permissions::ModifyPermissions->new(
         input_directories => [$lane_path],
