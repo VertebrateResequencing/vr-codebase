@@ -112,8 +112,8 @@ sub _create_kmer_values_string
   my $max_kmer_value = $self->{max_kmer};
   
   # We make the kmers go from 21-127 effectively. Change once we learn the optimum kmer range for SPAdes
-  if($current_kmer_value > 21){
-  	$current_kmer_value = 21;
+  if($current_kmer_value > 41){
+  	$current_kmer_value = 41;
   }
   
   if($max_kmer_value > 127){
@@ -196,7 +196,7 @@ sub estimate_memory_required
 {
   my ($self, $input_params) = @_;
 
-  my $memory_required = 0.5 * $input_params->{total_number_of_reads} + 1500000;
+  my $memory_required = 0.4 * $input_params->{total_number_of_reads} + 1500000;
   $memory_required = $memory_required/2 if $input_params->{error_correct};
 
   if($memory_required < 1000000)
