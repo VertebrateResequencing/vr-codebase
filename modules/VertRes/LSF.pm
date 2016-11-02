@@ -346,8 +346,8 @@ sub past_limits
 sub calculate_memory_limit
 {
   my ($mem) = @_; 
-  my $minimum_memory_increase = 1000;
-  my $memory_increase_percentage = 0.3;
+  my $minimum_memory_increase = 8000;
+  my $memory_increase_percentage = 0.5;
 
   my $updated_memory_limit = $mem*(1+$memory_increase_percentage);
   if($updated_memory_limit < $mem + $minimum_memory_increase)
