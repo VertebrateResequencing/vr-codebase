@@ -115,8 +115,8 @@ sub pacbio_assembly_requires {
 sub pacbio_assembly {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $memory_in_mb = $self->{memory} || 100000;
-    my $threads = $self->{threads} || 16;
+    my $memory_in_mb = $self->{memory} || 64000;
+    my $threads = $self->{threads} || 12;
     my $genome_size_estimate = $self->{genome_size} || 4000000;
     my $files = join(' ', @{$self->pacbio_assembly_requires()});
     my $output_dir= $self->{lane_path}."/pacbio_assembly";
