@@ -378,7 +378,7 @@ sub assign_taxonomy {
     ( -e $$self{kraken_db} . '/database.kdb' )
       or $self->throw("Missing the kraken_db file.\n");
     my $memory_in_mb =
-      int( ( ( -s $$self{kraken_db} . '/database.kdb' ) / 1000000 ) + 4000 );
+      int( ( ( -s $$self{kraken_db} . '/database.kdb' ) / 1000000 ) + 2000 );
 
     my $script = "_assign_taxonomy.pl";
     open( my $fh, '>', "$lane_path/$script" );
@@ -393,7 +393,7 @@ my \$kraken = Bio::Metagenomics::External::Kraken->new(
     kraken_exec => "$$self{kraken_exec}",
     kraken_report_exec => "$$self{kraken_report_exec}",
     preload => 1,
-    threads => 4,
+    threads => 2,
     reads_1 => "$reads_1",
     reads_2 => $reads_2,
 );
@@ -407,7 +407,7 @@ system("touch _assign_taxonomy_done") and die "Error touch _assign_taxonomy_done
         "_assign_taxonomy",
         {
             bsub_opts =>
-"-q normal -M${memory_in_mb} -R 'select[mem>${memory_in_mb}] rusage[mem=${memory_in_mb}]' -n 4 -R 'span[hosts=1]'"
+"-q normal -M${memory_in_mb} -R 'select[mem>${memory_in_mb}] rusage[mem=${memory_in_mb}]' -n 2 -R 'span[hosts=1]'"
         },
         "perl -w $script"
     );
