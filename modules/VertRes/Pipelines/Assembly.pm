@@ -330,7 +330,6 @@ sub optimise_parameters
     my $lane_names = $self->get_all_lane_names($self->{pools});
     my $output_directory = $self->{lane_path};
     my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
-    #my $base_path = $self->{seq_pipeline_root};
     my $assembler_class = $self->{assembler_class};
     eval("use $assembler_class; ");
     my $assembler_util = $assembler_class->new();
@@ -339,19 +338,6 @@ sub optimise_parameters
     my $script_name = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
     my $lane_paths_str = $self->get_lane_paths_str();
     my $umask_str = $self->umask_str;
-    #my @lane_paths;
-    #for my $lane_name (@$lane_names)
-    #{
-    #  push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
-    #}
-    #my $lane_paths_str = '("'.join('","', @lane_paths).'")';
-
-    #We use 33% of the read length (read in from database) to estimate the memory required
-    #my $read_length = $self->lane_read_length();
-    #my $kmer_for_memory_calculation =  int($read_length*0.33);
-    #my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer_for_memory_calculation)/1000);
-
-    #my $num_threads = $self->number_of_threads($memory_required_mb);
     my ($memory_required_mb, $num_threads) = $self->get_memory_and_threads();
     my $insert_size = $self->get_insert_size();
     my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
@@ -643,8 +629,6 @@ sub iva_qc
             # fileanyway so pipeline can continue
             my \$done_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_iva_qc_done];
             touch(\$done_file) or die "Error touch \$done_file"; #The prefix in the config file is not always the name of assembler, so we append assembler name
-            #remove_tree(qq[$tmp_directory]);
-            #chdir(qq[$output_directory]);
         }) =~ s/^ {12}//mg;
 
         my $job_name = $self->{prefix}.$self->{assembler}.'_iva_qc';
@@ -656,8 +640,6 @@ sub iva_qc
         print $scriptfh $script_string;
         close $scriptfh;
     }
-    #remove_tree(qq[$pool_directory]);
-
 }
 
 
