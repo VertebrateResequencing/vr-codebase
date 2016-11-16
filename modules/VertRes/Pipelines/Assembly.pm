@@ -1214,12 +1214,18 @@ sub cleanup {
   my ($self, $lane_path, $action_lock) = @_;
 #  return $self->{Yes} unless $self->{do_cleanup};
 
-  #my $prefix = $self->{prefix};
   my $all_files_prefix = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler});
 
   # remove job files
   for my $action (@$actions) {
-    my $action_prefix = $all_files_prefix . '_' . $action->{name};
+    my $action_prefix;
+
+    if ($action->{name} eq 'pool_fastqs') {
+      $action_prefix = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}. "pool_fastqs");
+    }
+    else {
+      $action_prefix = $all_files_prefix . '_' . $action->{name};
+    }
 
     for my $suffix (qw/o e pl/) {
       my $filename = "$action_prefix.$suffix";
