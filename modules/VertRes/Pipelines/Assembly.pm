@@ -73,6 +73,7 @@ path-help@sanger.ac.uk
 
 =cut
 package VertRes::Pipelines::Assembly;
+print "\n\nHELLO TEST Assembly.pm\n\n";
 
 use strict;
 use warnings;
@@ -93,6 +94,8 @@ use Data::Dumper;
 use FileHandle;
 use Utils;
 use List::Util qw(min max);
+use File::Path qw(remove_tree);
+use File::Touch;
 use VertRes::Utils::Assembly;
 use VertRes::Utils::Sam;
 use VertRes::Wrapper::smalt;
@@ -216,7 +219,7 @@ sub new {
 sub map_back_requires
 {
   my ($self) = @_;
-  if (exists $self->{iva_qc} and $self->{iva_qc}) {
+  if (exists $self->{iva_qc} and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
     return $self->iva_qc_provides();
   }
   else {
@@ -564,8 +567,12 @@ sub assembly_improvement
 sub iva_qc_provides
 {
   my $self = shift;
-
-  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
+  if (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
+    return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
+  }
+  else {
+    return [];
+  }
 }
 
 
@@ -1207,29 +1214,55 @@ sub cleanup {
   my ($self, $lane_path, $action_lock) = @_;
 #  return $self->{Yes} unless $self->{do_cleanup};
 
-  my $prefix = $self->{prefix};
+  #my $prefix = $self->{prefix};
+  my $all_files_prefix = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler});
 
   # remove job files
-  foreach my $file (qw(pool_fastqs
-    $self{assembler}_optimise_parameters
-    $self{assembler}_map_back ))
-    {
-      foreach my $suffix (qw(o e pl))
-      {
-        unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
+  for my $action (@$actions) {
+    my $action_prefix = $all_files_prefix . '_' . $action->{name};
+
+    for my $suffix (qw/o e pl/) {
+      my $filename = "$action_prefix.$suffix";
+      if (-e $filename) {
+        unlink($filename) or $self->throw("Error unlink $filename");
       }
-  }
-
-  # remove files
-  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq))
-  {
-    unlink($self->{fsu}->catfile($lane_path, $file));
-    if(-e ($lane_path.'/'.$self->{assembler}.'_assembly/'. $file))
-    {
-      unlink($lane_path.'/'.$self->{assembler}.'_assembly/'. $file);
     }
-
   }
+
+  # remove the tmp directory that was storing the pooled reads etc
+  my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
+  if (-d $pool_directory) {
+      remove_tree($pool_directory) or $self->throw("Error remove_tree $pool_directory");
+  }
+
+  # remove all the other unwanted files
+  my @unwanted_files = qw/
+    before_rr.fasta
+    contigs.paths
+    input_dataset.yaml
+    split_input
+    tmp
+    contigs.fa.scaffolded.filtered
+    .RData
+    contigs.fa.png.Rout
+    scaffolded.summaryfile.txt
+  /;
+
+  my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
+
+  foreach my $file (@unwanted_files) {
+    my $to_remove = $self->{fsu}->catfile($assembly_dir, $file);
+
+    if (-e $to_remove) {
+      if (-d $to_remove) {
+        remove_tree($to_remove) or $self->throw("Error remove_tree $to_remove");
+      }
+      else {
+        unlink($to_remove) or $self->throw("Error unlink $to_remove");
+      }
+    }
+  }
+
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
   $self->update_file_permissions($lane_path);
   return $self->{Yes};
