@@ -73,7 +73,6 @@ path-help@sanger.ac.uk
 
 =cut
 package VertRes::Pipelines::Assembly;
-print "\n\nHELLO TEST Assembly.pm\n\n";
 
 use strict;
 use warnings;
