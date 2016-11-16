@@ -93,7 +93,7 @@ use Data::Dumper;
 use FileHandle;
 use Utils;
 use List::Util qw(min max);
-use File::Path qw(remove_tree);
+use File::Path qw(make_path remove_tree);
 use File::Touch;
 use VertRes::Utils::Assembly;
 use VertRes::Utils::Sam;
@@ -430,7 +430,9 @@ sub optimise_parameters
 
         die "Missing assembly directory - assembly didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
         system("mv $tmp_directory/$self->{assembler}_assembly $output_directory") and die "Error mv $tmp_directory/$self->{assembler}_assembly $output_directory";
-        unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
+        chdir(qq[$output_directory]);
+        remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
+        #unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
         touch(qq[$pipeline_version]) or die "Error touch $pipeline_version";
         my \$done_file = '$output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done';
         touch(\$done_file) or die "Error touch \$done_file";
@@ -499,6 +501,7 @@ sub assembly_improvement
     (my $script_string = qq{
         use strict;
         use File::Touch;
+        use File::Path qw(make_path remove_tree);
         use $assembler_class;
         use VertRes::Pipelines::Assembly;
         use File::Path qw(make_path);
@@ -506,6 +509,8 @@ sub assembly_improvement
         use Pathogens::Utils::FastqPooler;
         $umask_str;
 
+        remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
+        make_path(qq[$tmp_directory]) or die "Error mkdir $tmp_directory";
         chdir(qq[$tmp_directory]) or die "Error chdir $tmp_directory";
 
         if ($self->{improve_assembly}) {
@@ -529,6 +534,8 @@ sub assembly_improvement
         # Rename contigs
         Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => qw[$fasta_for_improvement],base_contig_name => qq[$contigs_base_name])->run();
 
+        chdir(qq[$output_directory]);
+        remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
         my \$done_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_assembly_improvement_done];
         touch(\$done_file) or die "Error touch \$done_file"; #The prefix in the config file is not always the name of assembler, so we append assembler name
     }) =~ s/^ {8}//mg;
@@ -592,9 +599,13 @@ sub iva_qc
         (my $script_string = qq{
             use strict;
             use File::Touch;
+            use File::Path qw(make_path remove_tree);
+            use File::Copy::Recursive qw(dircopy);
             use Pathogens::Utils::FastqPooler;
             use Bio::AssemblyImprovement::IvaQC::Main;
             $umask_str
+            remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
+            make_path(qq[$tmp_directory]) or die "Error mkdir $tmp_directory";
             chdir(qq[$tmp_directory]) or die "Error chdir $tmp_directory";
 
             # If improve assembly has already been run, the forward and reverse fastq files should already be here
@@ -612,20 +623,23 @@ sub iva_qc
                     'reverse_reads'       => qq[$split_reads_rev],
                     'assembly'			  => qq[$assembly_fasta],
                     'iva_qc_exec'         => qq[$self->{iva_qc_exec}],
-                    'working_directory'	  => qq[$tmp_directory/$self->{assembler}_assembly], #run iva_qc inside assembly directory. eventually all files will be in a directory like iva_assembly inside lane directory
+                    'working_directory'	  => qq[$tmp_directory],
             );
             \$iva_qc->run();
 
-            unlink(qq[$tmp_directory].'/forward.fastq');
-            unlink(qq[$tmp_directory].'/reverse.fastq');
+            chdir(qq[$output_directory]);
 
-            unless (-e qq[$tmp_directory/$self->{assembler}_assembly/iva_qc/iva_qc.stats.txt]) {
+            if (-e qq[$tmp_directory/iva_qc/iva_qc.stats.txt]) {
+                dircopy(qq[$tmp_directory/iva_qc/], qq[$assembly_directory/iva_qc]);
+            }
+            else {
                 my \$fail_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_iva_qc_failed];
                 touch(\$fail_file) or die "Error touch \$fail_file";
             }
 
             # whether or not iva qc actually worked, we want to write the done
             # fileanyway so pipeline can continue
+            remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
             my \$done_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_iva_qc_done];
             touch(\$done_file) or die "Error touch \$done_file"; #The prefix in the config file is not always the name of assembler, so we append assembler name
         }) =~ s/^ {12}//mg;
@@ -1219,6 +1233,14 @@ sub cleanup {
   my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
   if (-d $pool_directory) {
       remove_tree($pool_directory) or $self->throw("Error remove_tree $pool_directory");
+  }
+
+  # remove the tmp directory from lustre
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0];
+  print "\n\ntmp_dir: $tmp_directory\n\n\n";
+  if (-e $tmp_directory) {
+      remove_tree($tmp_directory) or $self->throw("Error remove_tree $tmp_directory");
   }
 
   # remove all the other unwanted files
