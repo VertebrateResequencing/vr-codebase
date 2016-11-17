@@ -1213,12 +1213,16 @@ sub cleanup {
   # remove job files
   for my $action (@$actions) {
     my $action_prefix;
-
     if ($action->{name} eq 'pool_fastqs') {
       $action_prefix = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}. "pool_fastqs");
     }
     else {
       $action_prefix = $all_files_prefix . '_' . $action->{name};
+    }
+
+    my $iva_qc_fail_file = $all_files_prefix . "_iva_qc_failed";
+    if ($action->{name} eq 'iva_qc' and -e $iva_qc_fail_file) {
+      next;
     }
 
     for my $suffix (qw/o e pl/) {
@@ -1238,7 +1242,7 @@ sub cleanup {
   # remove the tmp directory from lustre
   my $lane_names = $self->get_all_lane_names($self->{pools});
   my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0];
-  print "\n\ntmp_dir: $tmp_directory\n\n\n";
+
   if (-e $tmp_directory) {
       remove_tree($tmp_directory) or $self->throw("Error remove_tree $tmp_directory");
   }
