@@ -92,6 +92,9 @@ use VertRes::LSF;
 use Data::Dumper;
 use FileHandle;
 use Utils;
+use List::Util qw(min max);
+use File::Path qw(make_path remove_tree);
+use File::Touch;
 use VertRes::Utils::Assembly;
 use VertRes::Utils::Sam;
 use VertRes::Wrapper::smalt;
@@ -120,6 +123,14 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&optimise_parameters,
                    requires => \&optimise_parameters_requires,
                    provides => \&optimise_parameters_provides },
+                 { name     => 'assembly_improvement',
+                   action   => \&assembly_improvement,
+                   requires => \&assembly_improvement_requires,
+                   provides => \&assembly_improvement_provides },
+                 { name     => 'iva_qc',
+                   action   => \&iva_qc,
+                   requires => \&iva_qc_requires,
+                   provides => \&iva_qc_provides },
                  { name     => 'map_back',
                    action   => \&map_back,
                    requires => \&map_back_requires,
@@ -162,7 +173,7 @@ our %options = (
                 iva_ext_min_ratio      => 2,
                 iva_insert_size		   => 800,
                 iva_strand_bias        => 0,
- 
+
                );
 
 sub new {
@@ -207,7 +218,12 @@ sub new {
 sub map_back_requires
 {
   my ($self) = @_;
-  return $self->optimise_parameters_provides();
+  if (exists $self->{iva_qc} and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
+    return $self->iva_qc_provides();
+  }
+  else {
+    return $self->optimise_parameters_provides();
+  }
 }
 
 sub map_back_provides
@@ -309,190 +325,336 @@ sub optimise_parameters_requires
 
 sub optimise_parameters
 {
-      my ($self, $build_path,$action_lock) = @_;
+    my ($self, $build_path,$action_lock) = @_;
 
-      my $lane_names = $self->get_all_lane_names($self->{pools});
-      my $output_directory = $self->{lane_path};
-      my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
-      my $base_path = $self->{seq_pipeline_root};
-      my $umask    = $self->umask_str;
-      my $assembler_class = $self->{assembler_class};
-      my $optimiser_exec = $self->{optimiser_exec};
+    my $lane_names = $self->get_all_lane_names($self->{pools});
+    my $output_directory = $self->{lane_path};
+    my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
+    my $assembler_class = $self->{assembler_class};
+    eval("use $assembler_class; ");
+    my $assembler_util = $assembler_class->new();
+    my $files_str = $assembler_util->generate_files_str($self->{pools}, $pool_directory);
+    my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
+    my $script_name = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
+    my $lane_paths_str = $self->get_lane_paths_str();
+    my $umask_str = $self->umask_str;
+    my ($memory_required_mb, $num_threads) = $self->get_memory_and_threads();
+    my $insert_size = $self->get_insert_size();
+    my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
+    my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
+    my $contigs_base_name = $self->generate_contig_base_name();
 
-      eval("use $assembler_class; ");
-      my $assembler_util= $assembler_class->new();
-      my $files_str = $assembler_util->generate_files_str($self->{pools}, $pool_directory);
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
 
-      my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
-      my $script_name = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
+    (my $script_string = qq{
+        use strict;
+        use $assembler_class;
+        use VertRes::Pipelines::Assembly;
+        use File::Copy;
+        use Cwd;
+        use File::Path qw(make_path remove_tree);
+        use File::Touch;
+        use Bio::AssemblyImprovement::Util::FastqTools;
+        use Bio::AssemblyImprovement::IvaQC::Main;
+        $umask_str
 
-      my @lane_paths;
-      for my $lane_name (@$lane_names)
-      {
-        push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
-      }
-      my $lane_paths_str = '("'.join('","', @lane_paths).'")';
+        my \$assembly_pipeline = VertRes::Pipelines::Assembly->new(
+          assembler => "$self->{assembler}"
+        );
+        system("rm -rf $self->{assembler}_assembly_*");
 
-      #We use 33% of the read length (read in from database) to estimate the memory required
-      my $read_length = $self->lane_read_length();
-      my $kmer_for_memory_calculation =  int($read_length*0.33);
-      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer_for_memory_calculation)/1000);
+        remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
+        make_path(qq[$tmp_directory]) or die "Error mkdir $tmp_directory";
+        chdir(qq[$tmp_directory]) or die "Error chdir $tmp_directory";
 
-      my $num_threads = $self->number_of_threads($memory_required_mb);
-      my $insert_size = $self->get_insert_size();
-      my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
+        # Calculate 66-90% of the median read length as min and max kmer values
+        my \$fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
+            input_filename   => "$pool_directory/pool_1.fastq.gz",
+            single_cell => $self->{single_cell},
+        );
 
-      my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
+        my \%kmer;
+        if ('$self->{assembler}' eq 'iva')
+        {
+          \%kmer = (min => 0, max => 0);
+        }
+        else
+        {
+          \%kmer = \$fastq_tools->calculate_kmer_sizes();
+        }
 
-      my $contigs_base_name = $self->generate_contig_base_name();
-      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-      print $scriptfh qq{
-use strict;
-use $assembler_class;
-use VertRes::Pipelines::Assembly;
-use File::Copy;
-use Cwd;
-use File::Path qw(make_path remove_tree);
-use Bio::AssemblyImprovement::Util::FastqTools;
-use Bio::AssemblyImprovement::Util::OrderContigsByLength;
-use Bio::AssemblyImprovement::IvaQC::Main;
-$umask
+        my \$assembler = $assembler_class->new(
+          assembler => qq[$self->{assembler}],
+          optimiser_exec => qq[$self->{optimiser_exec}],
+          min_kmer => \$kmer{min},
+          max_kmer => \$kmer{max},
+          files_str => qq[$files_str],
+          output_directory => qq[$tmp_directory],
+          single_cell => $self->{single_cell},
+          spades_kmer_opts => qq[$self->{spades_kmer_opts}],
+          spades_opts => qq[$self->{spades_opts}],
+          trimmomatic_jar => qq[$self->{trimmomatic_jar}],
+          remove_primers => $self->{remove_primers},
+          primer_removal_tool => qq[$self->{primer_removal_tool}],
+          primers_file => qq[$self->{primers_file}],
+          remove_adapters => $self->{remove_adapters},
+          adapter_removal_tool => qq[$self->{adapter_removal_tool}],
+          adapters_file => qq[$self->{adapters_file}],
+          iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
+          iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
+          iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
+          iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
+          iva_insert_size	     => qq[$self->{iva_insert_size}],
+          iva_strand_bias		 => qq[$self->{iva_strand_bias}],
+        );
 
-my \$assembly_pipeline = VertRes::Pipelines::Assembly->new(
-  assembler => "$self->{assembler}"
-);
-system("rm -rf $self->{assembler}_assembly_*");
+        my \$ok = \$assembler->optimise_parameters($num_threads);
 
-remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
-make_path(qq[$tmp_directory]);
-chdir(qq[$tmp_directory]);
+        # this is to stop the map back stage crashing because smalt needs all
+        # contigs to be at least a kmer long
+        my \$fasta_processor = Bio::AssemblyImprovement::Util::FastaTools->new(input_filename => \$assembler->optimised_assembly_file_path());
+        \$fasta_processor->remove_small_contigs(50, 0);
 
-# Calculate 66-90% of the median read length as min and max kmer values
-my \$fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
-    	input_filename   => "$pool_directory/pool_1.fastq.gz",
-        single_cell => $self->{single_cell},
-);
+        Bio::AssemblyImprovement::Util::OrderContigsByLength->new(
+            input_filename => \$fasta_processor->output_filename,
+            output_filename => \$assembler->optimised_assembly_file_path()
+        )->run();
 
-my \%kmer;
-if ('$self->{assembler}' eq 'iva')
-{
-  \%kmer = (min => 0, max => 0);
-}
-else
-{
-  \%kmer = \$fastq_tools->calculate_kmer_sizes();
-}
+        copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 
-my \$assembler = $assembler_class->new(
-  assembler => qq[$self->{assembler}],
-  optimiser_exec => qq[$optimiser_exec],
-  min_kmer => \$kmer{min},
-  max_kmer => \$kmer{max},
-  files_str => qq[$files_str],
-  output_directory => qq[$tmp_directory],
-  single_cell => $self->{single_cell},
-	spades_kmer_opts => qq[$self->{spades_kmer_opts}],
-	spades_opts => qq[$self->{spades_opts}],
-  trimmomatic_jar => qq[$self->{trimmomatic_jar}],
-  remove_primers => $self->{remove_primers},
-  primer_removal_tool => qq[$self->{primer_removal_tool}],
-  primers_file => qq[$self->{primers_file}],
-  remove_adapters => $self->{remove_adapters},
-  adapter_removal_tool => qq[$self->{adapter_removal_tool}],
-  adapters_file => qq[$self->{adapters_file}],
-  iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
-  iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
-  iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
-  iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
-  iva_insert_size	     => qq[$self->{iva_insert_size}],
-  iva_strand_bias		 => qq[$self->{iva_strand_bias}],
-  );
+        if('$self->{assembler}' eq 'velvet')
+        {
+          die "Missing assembly logfile - velvet optimiser didnt complete"  unless(-e qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt');
+          move(qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt', qq[$output_directory].'/$self->{assembler}_assembly_logfile.txt');
+        }
 
-my \$ok = \$assembler->optimise_parameters($num_threads);
-my \@lane_paths = $lane_paths_str;
+        die "Missing assembly directory - assembly didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
+        system("mv $tmp_directory/$self->{assembler}_assembly $output_directory") and die "Error mv $tmp_directory/$self->{assembler}_assembly $output_directory";
+        chdir(qq[$output_directory]);
+        remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
+        #unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
+        touch(qq[$pipeline_version]) or die "Error touch $pipeline_version";
+        my \$done_file = '$output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done';
+        touch(\$done_file) or die "Error touch \$done_file";
+    }) =~ s/^ {8}//mg;
 
-Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename => \$assembler->optimised_assembly_file_path(), output_filename => \$assembler->optimised_assembly_file_path() )->run();
-copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
+    print $scriptfh $script_string;
+    close $scriptfh;
 
-if ($self->{improve_assembly})
-{
-  \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
-  \$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(\$assembler->optimised_assembly_file_path(), qq[$tmp_directory]);
-  \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
-}
-
-# Rename contigs
-Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
-
-
-# Run iva_qc if needed
-if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}])) 
-{
-	# If improve assembly has already been run, the forward and reverse fastq files should already be here
-	# If not, rerun the split reads method
-	if (! (-e qq[$tmp_directory].'/forward.fastq' && -e qq[$tmp_directory].'/reverse.fastq')){
-		\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
-	}
-  	my \$iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
-    			'db'      			  => qq[$self->{kraken_db}],
-    			'forward_reads'       => qq[$tmp_directory].'/forward.fastq',
-    			'reverse_reads'       => qq[$tmp_directory].'/reverse.fastq',
-    			'assembly'			  => \$assembler->optimised_assembly_file_path(),
-    			'iva_qc_exec'         => qq[$self->{iva_qc_exec}],
-    			'working_directory'	  => qq[$tmp_directory/$self->{assembler}_assembly], #run iva_qc inside assembly directory. eventually all files will be in a directory like iva_assembly inside lane directory
-    			);
-    \$iva_qc->run();
-    
-    if(-e qq[$tmp_directory/$self->{assembler}_assembly/iva_qc/iva_qc.stats.txt]) {
-    	system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_done'); #The prefix in the config file is not always the name of assembler, so we append assembler name
-    }else{
-    	system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_failed');
-    }
-    	
-}
-
-
-if('$self->{assembler}' eq 'velvet')
-{
-  die "Missing assembly logfile - velvet optimiser didnt complete"  unless(-e qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt');
-  move(qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt', qq[$output_directory].'/$self->{assembler}_assembly_logfile.txt');
-}
-
-die "Missing assembly directory - assembly didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
-system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
-
-unlink(qq[$tmp_directory].'/forward.fastq');
-unlink(qq[$tmp_directory].'/reverse.fastq');
-unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
-
-remove_tree(qq[$tmp_directory]);
-remove_tree(qq[$pool_directory]);
-chdir(qq[ $output_directory]);
-
-system('touch $pipeline_version');
-system('touch $output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done');
-exit;
-              };
-              close $scriptfh;
-
-      my $total_memory_mb = $num_threads*$memory_required_mb;
-      if($total_memory_mb < 5000)
-      {
-        $total_memory_mb = 5000;
-      }
-      if ($self->{assembler} eq 'iva')
-      {
+    my $total_memory_mb;
+    if ($self->{assembler} eq 'iva') {
         $total_memory_mb = 2000;
-      }
+    }
+    else {
+        $total_memory_mb = $num_threads*$memory_required_mb < 5000 ? 5000 : $num_threads*$memory_required_mb;
+    }
 
-      my $queue = $self->decide_appropriate_queue($memory_required_mb);
+    my $queue = $self->decide_appropriate_queue($memory_required_mb);
+    $num_threads = 1;
 
-      VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
-      # we've only submitted to LSF, so it won't have finished; we always return
-      # that we didn't complete
-      return $self->{No};
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
 }
+
+
+sub assembly_improvement_provides
+{
+  my $self = shift;
+
+  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_assembly_improvement_done"];
+}
+
+
+sub assembly_improvement_requires
+{
+  my $self = shift;
+  return $self->optimise_parameters_provides();
+}
+
+
+sub assembly_improvement
+{
+    my ($self, $build_path,$action_lock) = @_;
+
+    my $assembler_class = $self->{assembler_class};
+    eval("use $assembler_class; ");
+    my $insert_size = $self->get_insert_size();
+    my $output_directory = $self->{lane_path};
+    my $assembly_directory = $self->{fsu}->catfile($output_directory, "$self->{assembler}_assembly");
+    my $fasta_for_improvement = $self->{fsu}->catfile($assembly_directory, "contigs.fa");
+    my $lane_names = $self->get_all_lane_names($self->{pools});
+    my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
+    my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
+    my ($temp_reads_dir, $reads_to_filter_fwd, $reads_to_filter_rev) = $self->get_split_fastq_dir_and_filenames();
+    my $filtered_reads_fwd = $self->{fsu}->catfile($temp_reads_dir, 'forward.for_assembly_improvement.fastq');
+    my $filtered_reads_rev = $self->{fsu}->catfile($temp_reads_dir, 'reverse.for_assembly_improvement.fastq');
+    my ($memory_required_mb, $num_threads) = $self->get_memory_and_threads();
+    my $lane_paths_str = $self->get_lane_paths_str();
+    my $umask_str = $self->umask_str;
+    my $contigs_base_name = $self->generate_contig_base_name();
+    my $script_name = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler}."_assembly_improvement.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+
+    (my $script_string = qq{
+        use strict;
+        use File::Touch;
+        use File::Path qw(make_path remove_tree);
+        use $assembler_class;
+        use VertRes::Pipelines::Assembly;
+        use File::Path qw(make_path);
+        use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+        use Pathogens::Utils::FastqPooler;
+        $umask_str;
+
+        remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
+        make_path(qq[$tmp_directory]) or die "Error mkdir $tmp_directory";
+        chdir(qq[$tmp_directory]) or die "Error chdir $tmp_directory";
+
+        if ($self->{improve_assembly}) {
+            unless (-e qq[$reads_to_filter_fwd] && -e qq[$reads_to_filter_rev]) {
+              my \@lane_paths = $lane_paths_str;
+              Pathogens::Utils::FastqPooler->new(
+                  output_directory => qq[$temp_reads_dir],
+                  lane_paths => \\\@lane_paths
+              )->run();
+            }
+            my \$assembly_pipeline = VertRes::Pipelines::Assembly->new(
+              assembler => "$self->{assembler}"
+            );
+            my \$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(qq[$fasta_for_improvement], qq[$pool_directory]);
+
+            \$ok = \$assembly_pipeline->improve_assembly(qq[$fasta_for_improvement],[qq[$filtered_reads_fwd],qq[$filtered_reads_rev]],$insert_size,$num_threads);
+            unlink(qq[$filtered_reads_fwd]) or die "Error unlink $filtered_reads_fwd";
+            unlink(qq[$filtered_reads_rev]) or die "Error unlink $filtered_reads_rev";
+        }
+
+        # Rename contigs
+        Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => qw[$fasta_for_improvement],base_contig_name => qq[$contigs_base_name])->run();
+
+        chdir(qq[$output_directory]);
+        remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
+        my \$done_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_assembly_improvement_done];
+        touch(\$done_file) or die "Error touch \$done_file"; #The prefix in the config file is not always the name of assembler, so we append assembler name
+    }) =~ s/^ {8}//mg;
+
+    print $scriptfh $script_string;
+    close $scriptfh;
+
+    my $job_name = $self->{prefix}.$self->{assembler}.'_assembly_improvement';
+
+    my $total_memory_mb = 3000;
+    my $queue = 'normal';
+
+    VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
+}
+
+sub iva_qc_provides
+{
+  my $self = shift;
+  if (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
+    return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
+  }
+  else {
+    return [];
+  }
+}
+
+
+sub iva_qc_requires
+{
+  my $self = shift;
+  return $self->assembly_improvement_provides();
+}
+
+
+sub iva_qc
+{
+    my ($self, $build_path,$action_lock) = @_;
+
+    unless (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
+        return $self->{Yes};
+    }
+
+    my $output_directory = $self->{lane_path};
+    my $lane_names = $self->get_all_lane_names($self->{pools});
+    my $assembly_directory = $self->{fsu}->catfile($output_directory, "$self->{assembler}_assembly");
+    my $assembly_fasta = $self->{fsu}->catfile($assembly_directory, "contigs.fa");
+    my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
+    my ($split_reads_dir, $split_reads_fwd, $split_reads_rev) = $self->get_split_fastq_dir_and_filenames();
+    my $lane_paths_str = $self->get_lane_paths_str();
+    my $umask_str = $self->umask_str;
+
+    # Run iva_qc if needed
+    if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}])) {
+        my $script_name = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler}."_iva_qc.pl");
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+
+        (my $script_string = qq{
+            use strict;
+            use File::Touch;
+            use File::Path qw(make_path remove_tree);
+            use File::Copy::Recursive qw(dircopy);
+            use Pathogens::Utils::FastqPooler;
+            use Bio::AssemblyImprovement::IvaQC::Main;
+            $umask_str
+            remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
+            make_path(qq[$tmp_directory]) or die "Error mkdir $tmp_directory";
+            chdir(qq[$tmp_directory]) or die "Error chdir $tmp_directory";
+
+            # If improve assembly has already been run, the forward and reverse fastq files should already be here
+            # If not, rerun the split reads method
+            unless (-e qq[$split_reads_fwd] && -e qq[$split_reads_rev]){
+                my \@lane_paths = $lane_paths_str;
+                Pathogens::Utils::FastqPooler->new(
+                    output_directory => qq[$split_reads_dir],
+                    lane_paths => \\\@lane_paths
+                )->run();
+            }
+            my \$iva_qc = Bio::AssemblyImprovement::IvaQC::Main->new(
+                    'db'      			  => qq[$self->{kraken_db}],
+                    'forward_reads'       => qq[$split_reads_fwd],
+                    'reverse_reads'       => qq[$split_reads_rev],
+                    'assembly'			  => qq[$assembly_fasta],
+                    'iva_qc_exec'         => qq[$self->{iva_qc_exec}],
+                    'working_directory'	  => qq[$tmp_directory],
+            );
+            \$iva_qc->run();
+
+            chdir(qq[$output_directory]);
+
+            if (-e qq[$tmp_directory/iva_qc/iva_qc.stats.txt]) {
+                dircopy(qq[$tmp_directory/iva_qc/], qq[$assembly_directory/iva_qc]);
+            }
+            else {
+                my \$fail_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_iva_qc_failed];
+                touch(\$fail_file) or die "Error touch \$fail_file";
+            }
+
+            # whether or not iva qc actually worked, we want to write the done
+            # fileanyway so pipeline can continue
+            remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
+            my \$done_file = qq[$self->{lane_path}/$self->{prefix}$self->{assembler}_iva_qc_done];
+            touch(\$done_file) or die "Error touch \$done_file"; #The prefix in the config file is not always the name of assembler, so we append assembler name
+        }) =~ s/^ {12}//mg;
+
+        my $job_name = $self->{prefix}.$self->{assembler}.'_iva_qc';
+        my $num_threads = 1;
+        my $queue = 'normal';
+        my $total_memory_mb = 2000;
+        VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+
+        print $scriptfh $script_string;
+        close $scriptfh;
+    }
+}
+
 
 sub decide_appropriate_queue
 {
@@ -541,8 +703,8 @@ sub map_and_filter_perfect_pairs
   unlink("$reference.small.sma");
   unlink("$reference.small.smi");
   unlink("$reference.fai");
-  `mv $working_directory/subset_1.fastq $working_directory/forward.fastq`;
-  `mv $working_directory/subset_2.fastq $working_directory/reverse.fastq`;
+  `mv $working_directory/subset_1.fastq $working_directory/forward.for_assembly_improvement.fastq`;
+  `mv $working_directory/subset_2.fastq $working_directory/reverse.for_assembly_improvement.fastq`;
 }
 
 
@@ -618,10 +780,10 @@ sub improve_assembly
   my $order_contigs = Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename  => $assembly_file );
   $order_contigs->run();
   move($order_contigs->output_filename,$assembly_file);
-  
- 
-  
-  
+
+
+
+
 }
 
 
@@ -1046,29 +1208,73 @@ sub cleanup {
   my ($self, $lane_path, $action_lock) = @_;
 #  return $self->{Yes} unless $self->{do_cleanup};
 
-  my $prefix = $self->{prefix};
+  my $all_files_prefix = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler});
 
   # remove job files
-  foreach my $file (qw(pool_fastqs
-    $self{assembler}_optimise_parameters
-    $self{assembler}_map_back ))
-    {
-      foreach my $suffix (qw(o e pl))
-      {
-        unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
+  for my $action (@$actions) {
+    my $action_prefix;
+    if ($action->{name} eq 'pool_fastqs') {
+      $action_prefix = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}. "pool_fastqs");
+    }
+    else {
+      $action_prefix = $all_files_prefix . '_' . $action->{name};
+    }
+
+    my $iva_qc_fail_file = $all_files_prefix . "_iva_qc_failed";
+    if ($action->{name} eq 'iva_qc' and -e $iva_qc_fail_file) {
+      next;
+    }
+
+    for my $suffix (qw/o e pl/) {
+      my $filename = "$action_prefix.$suffix";
+      if (-e $filename) {
+        unlink($filename) or $self->throw("Error unlink $filename");
       }
+    }
   }
 
-  # remove files
-  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq))
-  {
-    unlink($self->{fsu}->catfile($lane_path, $file));
-    if(-e ($lane_path.'/'.$self->{assembler}.'_assembly/'. $file))
-    {
-      unlink($lane_path.'/'.$self->{assembler}.'_assembly/'. $file);
-    }
-    
+  # remove the tmp directory that was storing the pooled reads etc
+  my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
+  if (-d $pool_directory) {
+      remove_tree($pool_directory) or $self->throw("Error remove_tree $pool_directory");
   }
+
+  # remove the tmp directory from lustre
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0];
+
+  if (-e $tmp_directory) {
+      remove_tree($tmp_directory) or $self->throw("Error remove_tree $tmp_directory");
+  }
+
+  # remove all the other unwanted files
+  my @unwanted_files = qw/
+    before_rr.fasta
+    contigs.paths
+    input_dataset.yaml
+    split_input
+    tmp
+    contigs.fa.scaffolded.filtered
+    .RData
+    contigs.fa.png.Rout
+    scaffolded.summaryfile.txt
+  /;
+
+  my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
+
+  foreach my $file (@unwanted_files) {
+    my $to_remove = $self->{fsu}->catfile($assembly_dir, $file);
+
+    if (-e $to_remove) {
+      if (-d $to_remove) {
+        remove_tree($to_remove) or $self->throw("Error remove_tree $to_remove");
+      }
+      else {
+        unlink($to_remove) or $self->throw("Error unlink $to_remove");
+      }
+    }
+  }
+
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
   $self->update_file_permissions($lane_path);
   return $self->{Yes};
@@ -1141,3 +1347,65 @@ sub update_db {
 }
 
 
+
+=head2 get_split_fastq_dir_and_filenames
+
+ Title   : get_split_fastq_dir_and_filenames
+ Usage   : $obj->get_split_fastq_dir_and_filenames();
+ Function: Determines directory name where forward.fastq and reverse.fastq split reads files live
+ Returns : directory name, forward reads filename, reverse reads filename
+ Args    : None
+
+=cut
+sub get_split_fastq_dir_and_filenames {
+    my ($self) = @_;
+    my $dir = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
+    unless (-d qq[$dir]) {
+        make_path(qq[$dir]) or $self->throw("Error make_path $dir: $!");
+    }
+    return ($dir, "$dir/forward.fastq", "$dir/reverse.fastq");
+}
+
+
+
+=head2 get_lane_paths_str
+
+ Title   : get_lane_paths_str
+ Usage   : $obj->get_lane_paths_str();
+ Function: Determines lane paths from path to lane
+ Returns : lane paths string
+ Args    : None
+
+=cut
+sub get_lane_paths_str {
+    my ($self) = @_;
+    my $lane_names = $self->get_all_lane_names($self->{pools});
+    my @lane_paths;
+    my $base_path = $self->{seq_pipeline_root};
+    for my $lane_name (@$lane_names) {
+      push(@lane_paths, $base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
+    }
+    my $lane_paths_str = '("' . join('","', @lane_paths) . '")';
+    return \@lane_paths, $lane_paths_str;
+}
+
+
+
+
+=head2 get_memory_and_threads
+
+ Title   : get_memory_and_threads
+ Usage   : $obj->get_memory_and_threads();
+ Function: Determines assembly memory and threads
+ Returns : memory, threads
+ Args    : None
+
+=cut
+sub get_memory_and_threads {
+    my ($self) = @_;
+    my $read_length = $self->lane_read_length();
+    my $kmer_for_memory_calculation =  int($read_length*0.33);
+    my $memory_required_mb = int($self->estimate_memory_required($self->{lane_path}, $kmer_for_memory_calculation)/1000);
+    my $num_threads = $self->number_of_threads($memory_required_mb);
+    return ($memory_required_mb, $num_threads);
+}
