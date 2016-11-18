@@ -450,7 +450,6 @@ sub optimise_parameters
     }
 
     my $queue = $self->decide_appropriate_queue($memory_required_mb);
-    $num_threads = 1;
 
     VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
