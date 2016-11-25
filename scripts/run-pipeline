@@ -108,6 +108,7 @@ my $Error   = $VertRes::Pipeline::Error;
 my $No      = $VertRes::Pipeline::No;
 my $Yes     = $VertRes::Pipeline::Yes;
 my $Running = $VertRes::Pipeline::Running;
+my $global_vrtrack;
 
 my $opts = read_cmd_line_args();
 
@@ -130,6 +131,7 @@ sub read_cmd_line_args
     $$opts{'once'}       = 0;
     $$opts{'status_filter'} = '.*';
     $$opts{'dont_check_load'}=0;
+    $$opts{'same_database_for_all'}    = 0;
 
     my $module;
     if ( !scalar @ARGV) { usage(); }
@@ -144,6 +146,7 @@ sub read_cmd_line_args
         if ( $arg eq '-L' || $arg eq '--lockfile' ) { $$opts{'lockfile'}=shift(@ARGV); next; }
         if ( $arg eq '-m' || $arg eq '--max-lsf-jobs' ) { $$opts{'lsf_limit'}=shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--once' ) { $$opts{'once'}=1; next; }
+	if ( $arg eq '-b' || $arg eq '--same_database_for_all' ) { $$opts{'same_database_for_all'}=1; next; }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{'verbose'}++; next; }
         if ( $arg eq '-a' || $arg eq '--dont_check_load' ) { $$opts{'dont_check_load'}=1; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { usage(); }
@@ -197,6 +200,7 @@ sub usage
         "   -s, --sleep-time <int>          Check the projects every N minutes.\n",
         "   -t, --todo                      List jobs which should be run (i.e. jobs with the status 0,1,2).\n",
         "   -a, --dont_check_load           Dont halt script if the load is higher than the number of CPUs.\n",
+	"   -b, --same_database_for_all     All config files refer to the same DB so reuse connection.\n",
         "   -v, --verbose                   Be verbose. (Given twice increases the verbosity level.)\n",
         "\n";
 
@@ -1551,7 +1555,8 @@ sub get_permissions_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_import_cram_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
+    #my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
 
     my %filter  = ( import => 1);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -2632,6 +2637,25 @@ sub get_bam_reference
   }
   return undef;
 }
+
+sub setup_or_reuse_db_connection
+{
+	my($config_data, $config) = @_;
+	if($$config_data{same_database_for_all} )
+	{
+		if(! defined($global_vrtrack))
+		{
+			$global_vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+		}
+		return $global_vrtrack;
+	}
+	else
+	{
+		return VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+	}
+}
+
+
 
 #---------- Job ------------------------
 package Job;
