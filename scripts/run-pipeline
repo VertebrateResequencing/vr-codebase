@@ -108,6 +108,7 @@ my $Error   = $VertRes::Pipeline::Error;
 my $No      = $VertRes::Pipeline::No;
 my $Yes     = $VertRes::Pipeline::Yes;
 my $Running = $VertRes::Pipeline::Running;
+my $global_vrtrack;
 
 my $opts = read_cmd_line_args();
 
@@ -130,6 +131,7 @@ sub read_cmd_line_args
     $$opts{'once'}       = 0;
     $$opts{'status_filter'} = '.*';
     $$opts{'dont_check_load'}=0;
+    $$opts{'same_database_for_all'}    = 0;
 
     my $module;
     if ( !scalar @ARGV) { usage(); }
@@ -144,6 +146,7 @@ sub read_cmd_line_args
         if ( $arg eq '-L' || $arg eq '--lockfile' ) { $$opts{'lockfile'}=shift(@ARGV); next; }
         if ( $arg eq '-m' || $arg eq '--max-lsf-jobs' ) { $$opts{'lsf_limit'}=shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--once' ) { $$opts{'once'}=1; next; }
+	if ( $arg eq '-b' || $arg eq '--same_database_for_all' ) { $$opts{'same_database_for_all'}=1; next; }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{'verbose'}++; next; }
         if ( $arg eq '-a' || $arg eq '--dont_check_load' ) { $$opts{'dont_check_load'}=1; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { usage(); }
@@ -197,6 +200,7 @@ sub usage
         "   -s, --sleep-time <int>          Check the projects every N minutes.\n",
         "   -t, --todo                      List jobs which should be run (i.e. jobs with the status 0,1,2).\n",
         "   -a, --dont_check_load           Dont halt script if the load is higher than the number of CPUs.\n",
+	"   -b, --same_database_for_all     All config files refer to the same DB so reuse connection.\n",
         "   -v, --verbose                   Be verbose. (Given twice increases the verbosity level.)\n",
         "\n";
 
@@ -367,6 +371,7 @@ sub get_jobs
             my $config_data  = $$opts{config_data}->get_data($config_fname);
             my $config_mtime = $$opts{config_data}->get_mtime($config_fname);
             $config_data = {%default_opts, %$config_data};
+	    $$config_data{same_database_for_all} = $$opts{same_database_for_all};
             
             if ($action =~ /^__VRTrack_Storing__$/) {
                 get_storage_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -641,7 +646,7 @@ sub get_storage_jobs_from_vrtrack {
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_storage_jobs_from_vrtrack...");
     
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
     my %filter  = (qc => 1, mapped => 1, stored => 0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     my $laneref = $vrtrack->processed_lane_hnames(%filter);
@@ -835,7 +840,7 @@ sub get_qc_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_qc_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
     my %filter  = ('qc'=>0,'import'=>1);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
@@ -927,7 +932,7 @@ sub get_mapping_jobs_from_vrtrack_with_get_lanes {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_mapping_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     # a limit on lane is not valid for VertRes::Utils::Hierarchy->get_lanes, but
     # for consistency allow it
@@ -1042,7 +1047,7 @@ sub get_mapping_jobs_from_vrtrack_without_get_lanes {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_mapping_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     # Ignore mapped flag.
     # Used for mapping with different assemblies/mappers for lane
@@ -1173,7 +1178,7 @@ sub get_improvement_jobs_from_vrtrack {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_improvement_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ( mapped => 1, improved => 0, swapped => 0 );
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1235,7 +1240,7 @@ sub get_rna_seq_jobs_from_vrtrack {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_rna_seq_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ( mapped => 1, rna_seq_expression => 0 );
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1288,7 +1293,7 @@ sub get_annotate_assembly_jobs_from_vrtrack {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_annotate_assembly_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     # If large numbers of lane objects are returned it takes forever
     my $max_lanes = 3000;
@@ -1349,7 +1354,7 @@ sub get_assembly_jobs_from_vrtrack {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_assembly_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     # If large numbers of lane objects are returned it takes forever
     my $max_lanes = 3000;
@@ -1419,7 +1424,7 @@ sub get_import_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ('import'=>0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1485,7 +1490,7 @@ sub get_import_pacbio_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ('import'=>0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1551,7 +1556,7 @@ sub get_permissions_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_import_cram_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ( import => 1);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1634,7 +1639,7 @@ sub get_import_cram_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_import_cram_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ( import => 0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1702,7 +1707,7 @@ sub get_pacbio_assembly_jobs_from_vrtrack
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_pacbio_assembly_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
 
     my %filter  = ('import'=>1, 'stored' => 1);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
@@ -1792,7 +1797,7 @@ sub get_hierarchy_update_jobs_from_vrtrack {
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_hierarchy_update_jobs_from_vrtrack...");
 
-    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
     my @lnames = @{$vrtrack->processed_lane_hnames(import => 0) || []};
     push(@lnames, @{$vrtrack->processed_lane_hnames(deleted => 1) || []});
     push(@lnames, @{$vrtrack->processed_lane_hnames(swapped => 1) || []});
@@ -1835,7 +1840,7 @@ sub get_snps_jobs_from_vrtrack {
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug( $config_data, "$config\tget_snps_jobs_from_vrtrack..." );
 
-    my $vrtrack = VRTrack::VRTrack->new( $$config_data{db} ) or croak("Could not connect to the database: $config\n");
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
     my %filter = ( 'improved' => 1, 'snp_called' => 0 );
     if ( exists( $$config_data{vrtrack_processed_flags} ) ) { %filter = %{ $$config_data{vrtrack_processed_flags} }; }
 
@@ -2632,6 +2637,25 @@ sub get_bam_reference
   }
   return undef;
 }
+
+sub setup_or_reuse_db_connection
+{
+	my($config_data, $config) = @_;
+	if($$config_data{same_database_for_all} )
+	{
+		if(! defined($global_vrtrack))
+		{
+			$global_vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+		}
+		return $global_vrtrack;
+	}
+	else
+	{
+		return VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+	}
+}
+
+
 
 #---------- Job ------------------------
 package Job;
