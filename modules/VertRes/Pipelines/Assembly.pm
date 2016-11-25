@@ -1257,6 +1257,8 @@ sub cleanup {
     .RData
     contigs.fa.png.Rout
     scaffolded.summaryfile.txt
+    forward.fastq
+    reverse.fastq
   /;
 
   my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
