@@ -156,7 +156,7 @@ is( $values[3], '0.819672131147541',
     '% Het SNPs (Total No. of SNPs)' );
 
 if ( -e $hsc->het_report_path ) {
-    #unlink( $hsc->het_report_path );
+    unlink( $hsc->het_report_path );
 }
 
 
