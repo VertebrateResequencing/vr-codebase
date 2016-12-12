@@ -159,6 +159,9 @@ if ( -e $hsc->het_report_path ) {
     #unlink( $hsc->het_report_path );
 }
 
+is($hsc->_list_sum_and_max([2, 3, 1]), (6, 3), 'test _list_sum_and_max');
+
+
 ok( $hsc->remove_temp_vcfs_and_csvs, 'Removing files created' );
 
 done_testing();

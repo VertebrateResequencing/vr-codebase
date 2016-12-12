@@ -378,6 +378,22 @@ sub _count_file_rows {
     return $number_of_rows;
 }
 
+
+
+sub _list_sum_and_max {
+    my $self = shift;
+    my $list = shift;
+    my $sum = 0;
+    my $max = 0;
+    for my $num (@$list) {
+        $sum += $num;
+        $max = $num > $max ? $num : $max;
+    }
+    return ($sum, $max);
+}
+
+
+
 no Moose;
 __PACKAGE__->meta->make_immutable;
 1;
