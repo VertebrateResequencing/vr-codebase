@@ -393,6 +393,49 @@ sub _list_sum_and_max {
 }
 
 
+sub _parse_vcf_line {
+    my $self = shift;
+    my $line = shift;
+    my $min_total_depth = 4;
+    my $min_second_depth = 2;
+    my $max_allele_freq = 0.9;
+
+    my ($chrom, $pos, $id, $ref, $alt, $qual, $filter, $info, $format) = split(/\t/, $$line);
+    return ($chrom, 0, 0) unless $alt =~/,/;
+
+    if ($info =~ /ADF=([0-9,]+);.*ADR=([0-9,]+);/) {
+        my @adf = split(/,/, $1);
+        my @adr = split(/,/, $2);
+        ($#adf == $#adr) or Pathogens::Exception::VcfParse->throw(error => "Mismatch in ADF and ADR lengths for this VCF line: $$line\n");
+
+        my ($adf_sum, $adf_max) = $self->_list_sum_and_max(\@adf);
+        return ($chrom, 0, 0) if $adf_sum < $min_total_depth;
+
+        my ($adr_sum, $adr_max) = $self->_list_sum_and_max(\@adr);
+        return ($chrom, 0, 0) if $adr_sum < $min_total_depth;
+
+        my $good_indexes = 0;
+        for my $i (0 .. $#adf) {
+            $good_indexes++ if ($adf[$i] >= $min_second_depth
+                                && $adf[$i] / $adf_sum <= $max_allele_freq
+                                && $adr[$i] >= $min_second_depth
+                                && $adr[$i] / $adr_sum <= $max_allele_freq);
+
+            return ($chrom, 1, 1) if $good_indexes > 1;
+        }
+
+        if ($adf[0] < $adf_max && $adr[0] < $adr_max) {
+            return ($chrom, 1, 0);
+        }
+        else {
+            return ($chrom, 0, 0);
+        }
+    }
+    else {
+        Pathogens::Exception::VcfParse->throw(error => "Error getting ADF and ADR info from this line: $$line\n");
+    }
+}
+
 
 no Moose;
 __PACKAGE__->meta->make_immutable;

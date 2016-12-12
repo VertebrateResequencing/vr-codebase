@@ -7,6 +7,8 @@ use Exception::Class (
       { description => 'Problems running the shell command' },
     Pathogens::Exception::SystemCall =>
       { description => 'Problems running a system call' },
+    Pathogens::Exception::VcfParse =>
+      { description => 'Problems parsing a VCF file' },
 );
 
 1;
