@@ -312,30 +312,6 @@ sub build_number_of_het_snps {
     }
 }
 
-sub write_het_report {
-
-    my ($self) = @_;
-
-    my $het_snps_genome_percentage =
-      _calculate_percentage( $self, $self->number_of_het_snps,
-        $self->reference_size );
-    my $het_snps_total_genome_covered_percentage =
-      _calculate_percentage( $self, $self->number_of_het_snps,
-        $self->total_genome_covered );
-    my $het_snps_total_number_of_snps_percentage =
-      _calculate_percentage( $self, $self->number_of_het_snps,
-        $self->total_number_of_snps );
-
-    open( my $fh, '>', $self->het_report_path )
-      or Utils::error( $self->het_report_path . ": $!" );
-    print $fh
-"No. Het SNPs\t\% Het SNPs (Total Genome)\t\% Het SNPs (Genome Covered)\t\% Het SNPs (Total No. of SNPs)\n";
-    print $fh (
-        $self->number_of_het_snps,
-        "\t$het_snps_genome_percentage\t$het_snps_total_genome_covered_percentage\t$het_snps_total_number_of_snps_percentage\n"
-    );
-    close($fh);
-}
 
 sub remove_temp_vcfs_and_csvs {
 

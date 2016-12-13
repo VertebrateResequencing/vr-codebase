@@ -1,2 +1,0 @@
-No. Het SNPs	% Het SNPs (Total Genome)	% Het SNPs (Genome Covered)	% Het SNPs (Total No. of SNPs)
-1	4.55588960350548e-05	0.00591961167347422	0.819672131147541

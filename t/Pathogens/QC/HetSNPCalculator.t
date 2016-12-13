@@ -130,15 +130,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #    'Total number of snps (Het and Hom)'
 #);
 #
-#ok( $hsc->write_het_report, 'Writing heterozygosity report' );
-#is(
-#    $hsc->het_report_path,
-#    't/data/15360_1#1_heterozygous_snps_report.txt',
-#    'Het report path'
-#);
-#is( compare( $hsc->het_report_path, $het_report_master_file ),
-#    0, 'Heterozygosity report file' );
-#
 #open( my $fh2, '<', $hsc->het_report_path )
 #  or die "Couldn't open the het report file for reading";
 #my @lines = <$fh2>;
