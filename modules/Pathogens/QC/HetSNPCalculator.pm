@@ -45,10 +45,6 @@ has 'filtered_snp_called_csv' => (
 has 'het_report_path' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_het_report_path' );
 
-#Command string builders
-has 'bcf_query_command' =>
-  ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bcf_query_command' );
-
 
 sub build_full_path {
 
