@@ -152,49 +152,49 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #
 #
 #
-#my @got_sum_max = $hsc->_list_sum_and_max([2, 3, 1]);
-#my @expect = (6, 3);
-#is_deeply(\@got_sum_max, \@expect, 'test _list_sum_and_max');
-#
-#
-#my $vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,7,0;ADR=17,8,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#@expect = ('chrom1', 1, 1);
-#my @got = $hsc->_parse_vcf_line(\$vcf_line);
-#is_deeply(\@got, \@expect, '_parse_vcf_line het line chrom1');
-#
-#$vcf_line = "chrom2\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,7,0;ADR=17,8,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#@expect = ('chrom2', 1, 1);
-#@got = $hsc->_parse_vcf_line(\$vcf_line);
-#is_deeply(\@got, \@expect, '_parse_vcf_line het line chrom2');
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,1,0;ADR=17,10,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#@expect = ('chrom1', 0, 0);
-#@got = $hsc->_parse_vcf_line(\$vcf_line);
-#is_deeply(\@got, \@expect, '_parse_vcf_line not het line because ADF fail');
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,10,0;ADR=17,1,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#@expect = ('chrom1', 0, 0);
-#@got = $hsc->_parse_vcf_line(\$vcf_line);
-#is_deeply(\@got, \@expect, '_parse_vcf_line not het line because ADR fail');
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,1,0;ADR=17,1,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#@expect = ('chrom1', 0, 0);
-#@got = $hsc->_parse_vcf_line(\$vcf_line);
-#is_deeply(\@got, \@expect, '_parse_vcf_line not het line because ADF and ADR fail');
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,22,0;ADR=1,17,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#@expect = ('chrom1', 1, 0);
-#@got = $hsc->_parse_vcf_line(\$vcf_line);
-#is_deeply(\@got, \@expect, '_parse_vcf_line snp but not het');
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,22,0;ADR=1,17,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADF/ADR legnths do not match';
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADR=1,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADF missing';
-#
-#$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
-#throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADR missing';
+my @got_sum_max = $hsc->_list_sum_and_max([2, 3, 1]);
+my @expect = (6, 3);
+is_deeply(\@got_sum_max, \@expect, 'test _list_sum_and_max');
+
+
+my $vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,7,0;ADR=17,8,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+@expect = ('chrom1', 1, 1);
+my @got = $hsc->_parse_vcf_line(\$vcf_line);
+is_deeply(\@got, \@expect, '_parse_vcf_line het line chrom1');
+
+$vcf_line = "chrom2\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,7,0;ADR=17,8,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+@expect = ('chrom2', 1, 1);
+@got = $hsc->_parse_vcf_line(\$vcf_line);
+is_deeply(\@got, \@expect, '_parse_vcf_line het line chrom2');
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,1,0;ADR=17,10,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+@expect = ('chrom1', 0, 0);
+@got = $hsc->_parse_vcf_line(\$vcf_line);
+is_deeply(\@got, \@expect, '_parse_vcf_line not het line because ADF fail');
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,10,0;ADR=17,1,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+@expect = ('chrom1', 0, 0);
+@got = $hsc->_parse_vcf_line(\$vcf_line);
+is_deeply(\@got, \@expect, '_parse_vcf_line not het line because ADR fail');
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=22,1,0;ADR=17,1,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+@expect = ('chrom1', 0, 0);
+@got = $hsc->_parse_vcf_line(\$vcf_line);
+is_deeply(\@got, \@expect, '_parse_vcf_line not het line because ADF and ADR fail');
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,22,0;ADR=1,17,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+@expect = ('chrom1', 1, 0);
+@got = $hsc->_parse_vcf_line(\$vcf_line);
+is_deeply(\@got, \@expect, '_parse_vcf_line snp but not het');
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,22,0;ADR=1,17,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADF/ADR legnths do not match';
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADR=1,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADF missing';
+
+$vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
+throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADR missing';
 
 
 my $vcf_in = 't/data/het_snp_cal_filter_vcf_and_count_snps.in.vcf';
