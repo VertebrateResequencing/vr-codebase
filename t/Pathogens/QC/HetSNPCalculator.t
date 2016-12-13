@@ -94,10 +94,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #  or die "$csv_file_with_empty_lines: $!";
 #is( $hsc->_count_file_rows($fh), 4, 'total number of SNPs' );
 #
-#is( $hsc->_calculate_percentage( 1, 400 ), 0.25, 'percentage calculation' );
-#
-#is($hsc->_calculate_percentage( 1, 0 ), 0 ,'zero percent');
-#
 ##throws_ok { $hsc->total_genome_covered } qr/Backtrace:/,
 ##  'Total number of SNPs file doesnt exist yet';
 #

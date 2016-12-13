@@ -313,17 +313,6 @@ sub build_number_of_het_snps {
 }
 
 
-sub _calculate_percentage {
-
-    my ( $self, $count, $total ) = @_;
-    return ( ( $count * 100 ) / $total ) if ( $total > 0 );
-	return 0;
-    Pathogens::Exception::NullDenominator->throw( error =>
-"The value used as total is null (0). No percentage can be calculated\n"
-    );
-
-}
-
 sub _count_file_rows {
 
     my ( $self, $fh ) = @_;
