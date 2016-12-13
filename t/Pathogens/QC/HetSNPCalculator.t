@@ -11,97 +11,27 @@ BEGIN {
     use_ok('Pathogens::QC::HetSNPCalculator');
 }
 
-my $samtools_exe   = 'samtools-1.3';
-my $bcftools_exe   = 'bcftools-1.3';
-my $fa_ref         = 't/data/15360_1#1_het_test_staph_aureus_subsample_2000.fa';
-my $reference_size = 2194961;
-my $lane_path      = 't/data';
-my $lane           = '15360_1#1';
-my $sample_dir     = '15360_1#1_qc-sample';
-my $het_report     = 'heterozygous_snps_report.txt';
-my $min_rawReadDepth                 = 10;
-my $min_hqNonRefBases                = 5;
-my $rawReadDepth_hqNonRefBases_ratio = 0.3;
-my $min_qual                         = 20;
-my $hqRefReads_hqAltReads_ratio      = 0.3;
-
 ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
-    samtools                         => $samtools_exe,
-    bcftools                         => $bcftools_exe,
-    fa_ref                           => $fa_ref,
-    reference_size                   => $reference_size,
-    lane_path                        => $lane_path,
-    lane                             => $lane,
-    sample_dir                       => $sample_dir,
-    het_report                       => $het_report,
-    min_rawReadDepth                 => 10,
-    min_hqNonRefBases                => 5,
-    rawReadDepth_hqNonRefBases_ratio => 0.3,
-    min_qual                         => 20,
-    hqRefReads_hqAltReads_ratio      => 0.3,
+    samtools         => 'samtools-1.3',
+    bcftools         => 'bcftools-1.3',
+    fa_ref           => 't/data/het_snp_cal_run.ref.fa',
+    bam              => 't/data/het_snp_cal_run.mapped_reads.bam',
+    outprefix        => 'tmp.test_het_snp_calculator',
+    min_total_depth  => 4,
+    min_second_depth => 2,
+    max_allele_freq  => 0.9,
   ),
   'create instance of object';
 
-#is( $hsc->samtools,          $samtools_exe,      'Samtools exe' );
-#is( $hsc->bcftools,          $bcftools_exe,      'Bcftools exe' );
-#is( $hsc->fa_ref,            $fa_ref,            'Fasta ref' );
-#is( $hsc->reference_size,    $reference_size,    'Reference size' );
-#is( $hsc->lane_path,         $lane_path,         'Lane path' );
-#is( $hsc->lane,              $lane,              'Lane' );
-#is( $hsc->sample_dir,        $sample_dir,        'Sample dir' );
-#is( $hsc->het_report,        $het_report,        'Het report file name' );
-#is( $hsc->min_rawReadDepth,  $min_rawReadDepth,  'DP threshold' );
-#is( $hsc->min_hqNonRefBases, $min_hqNonRefBases, 'DV threshold' );
-#is(
-#    $hsc->rawReadDepth_hqNonRefBases_ratio,
-#    $rawReadDepth_hqNonRefBases_ratio,
-#    'DP/DV threshold'
-#);
-#is( $hsc->min_qual, $min_qual, 'Min QUAL threshold' );
-#is( $hsc->hqRefReads_hqAltReads_ratio,
-#    $hqRefReads_hqAltReads_ratio, 'DP4 Ref/Alt threshold' );
-#
-#is( $hsc->full_path, 't/data/15360_1#1_qc-sample', 'Full path' );
-#
-##Expected files
-#my $temp_master_file =
-#  File::Spec->catfile( 't/data', '15360_1#1_temp_vcf_master.vcf' );
-#my $snp_called_master_file =
-#  File::Spec->catfile( 't/data', '15360_1#1_snp_called_master.vcf.gz' );
-#my $filtered_master_file = File::Spec->catfile( 't/data',
-#    '15360_1#1_filtered_snp_called_list_master.csv' );
-#
-#is( compare( $hsc->temp_vcf, $temp_master_file ), 0, 'Temp vcf file' );
-#is( compare( $hsc->snp_called_vcf, $snp_called_master_file ),
-#    0, 'Snp called vcf file' );
-#is( compare( $hsc->filtered_snp_called_csv, $filtered_master_file ),
-#    0, 'Filtered csv file' );
-#
-#open( my $fh2, '<', $hsc->het_report_path )
-#  or die "Couldn't open the het report file for reading";
-#my @lines = <$fh2>;
-#close($fh2);
-#my @values = split( /\t/, $lines[1] );
-#
-#$values[2] =~ s/\n//;
-#is( $values[0], '1', 'No. Het SNPs' );
-#is( $values[1], '4.55588960350548e-05',
-#    '% Het SNPs (Total Genome)' );
-#is( $values[2], '0.00591961167347422',
-#    '% Het SNPs (Genome Covered)' );
-#chomp($values[3]);
-#is( $values[3], '0.819672131147541',
-#    '% Het SNPs (Total No. of SNPs)' );
-#
-#if ( -e $hsc->het_report_path ) {
-#    unlink( $hsc->het_report_path );
-#}
-#
-#
-#
 
 
-# FIXME test run mpileup
+my $tmp_vcf = 'tmp.get_snp_calc_test.mpileup.vcf';
+unlink $tmp_vcf if -e $tmp_vcf;
+$hsc->_run_mpileup($tmp_vcf);
+# The vcf file could vary in many ways depending on program version etc, so
+# just check the vcf is there and non-empty
+is((-e $tmp_vcf and -s $tmp_vcf > 0), 1, '_run_mpileup made a vcf');
+unlink $tmp_vcf;
 
 
 my @got_sum_max = $hsc->_list_sum_and_max([2, 3, 1]);
@@ -223,5 +153,16 @@ is(compare($tmp_tsv_totals, $expected_totals), 0, 'write_reports totals file ok'
 unlink $tmp_tsv_per_contig;
 unlink $tmp_tsv_totals;
 
+
+$hsc->run();
+$tmp_vcf = $hsc->outprefix . '.vcf';
+is((-e $tmp_vcf and -s $tmp_vcf > 0), 1, 'run() made a non-empty vcf');
+unlink $tmp_vcf;
+my $seq_breakdown = $hsc->outprefix . '_ref_seq_breakdown.tsv';
+is(compare($seq_breakdown, 't/data/het_snp_cal_run_ref_seq_breakdown.tsv'), 0, 'run() ref_seq_breakdown.tsv ok');
+unlink $seq_breakdown;
+my $summary_file = $hsc->outprefix . '_report.txt';
+is(compare($summary_file, 't/data/het_snp_cal_run_report.txt'), 0, 'run() ref_seq_breakdown.tsv ok');
+unlink $summary_file;
 
 done_testing();
