@@ -75,12 +75,6 @@ has 'total_genome_covered' => (
     lazy    => 1,
     builder => 'build_total_genome_covered'
 );
-has 'total_number_of_snps' => (
-    is      => 'rw',
-    isa     => 'Str',
-    lazy    => 1,
-    builder => 'build_total_number_of_snps'
-);
 
 sub build_full_path {
 
@@ -235,27 +229,6 @@ sub build_total_genome_covered {
               . $self->total_genome_covered_command
               . "'\nThe file '"
               . $self->total_genome_covered_csv
-              . "' was not created" );
-    }
-}
-
-sub build_total_number_of_snps {
-
-    my ($self) = @_;
-
-    Utils::CMD( $self->all_snps_command );
-
-    if ( -e $self->all_snps_csv ) {
-        open( my $fh, '<', $self->all_snps_csv )
-          or Utils::error( $self->all_snps_csv . ": $!" );
-        return ( _count_file_rows( $self, $fh ) );
-    }
-    else {
-        Pathogens::Exception::HetSNPStepCommand->throw( error =>
-                "A problem occured running the total number of snps command '"
-              . $self->total_genome_covered_command
-              . "'\nThe file '"
-              . $self->all_snps_csv
               . "' was not created" );
     }
 }

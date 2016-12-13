@@ -101,23 +101,12 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #  File::Spec->catfile( 't/data', '15360_1#1_snp_called_master.vcf.gz' );
 #my $filtered_master_file = File::Spec->catfile( 't/data',
 #    '15360_1#1_filtered_snp_called_list_master.csv' );
-#my $total_number_of_snps_master_file =
-#  File::Spec->catfile( 't/data', '15360_1#1_total_genome_covered_master.csv' );
-#my $het_report_master_file = File::Spec->catfile( 't/data',
-#    '15360_1#1_heterozygous_snps_report_master.txt' );
 #
 #is( compare( $hsc->temp_vcf, $temp_master_file ), 0, 'Temp vcf file' );
 #is( compare( $hsc->snp_called_vcf, $snp_called_master_file ),
 #    0, 'Snp called vcf file' );
 #is( compare( $hsc->filtered_snp_called_csv, $filtered_master_file ),
 #    0, 'Filtered csv file' );
-#is(
-#    compare(
-#        $hsc->total_genome_covered_csv, $total_number_of_snps_master_file
-#    ),
-#    0,
-#    'Total number of snps (Het and Hom)'
-#);
 #
 #open( my $fh2, '<', $hsc->het_report_path )
 #  or die "Couldn't open the het report file for reading";
