@@ -446,8 +446,8 @@ sub _filter_vcf_and_count_snps {
     my $snp_count = 0;
     my %results;
 
-    open FIN, $infile or die $!;
-    open FOUT, ">$outfile" or die $!;
+    open FIN, $infile or Pathogens::Exception::FileIO->throw(error => "Error opening file $infile\n");
+    open FOUT, ">$outfile" or Pathogens::Exception::FileIO->throw(error => "Error opening file $outfile\n");
 
     while (my $line = <FIN>) {
         if ($line =~/^#/) {
@@ -467,8 +467,8 @@ sub _filter_vcf_and_count_snps {
         }
     }
 
-    close FIN or die $!;
-    close FOUT or die $!;
+    close FIN or Pathogens::Exception::FileIO->throw(error => "Error closing file $infile\n");
+    close FOUT or Pathogens::Exception::FileIO->throw(error => "Error closing file $outfile\n");
     return \%results;
 }
 
