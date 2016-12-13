@@ -9,7 +9,7 @@ use Exception::Class (
       { description => 'Problems running a system call' },
     Pathogens::Exception::VcfParse =>
       { description => 'Problems parsing a VCF file' },
-    Pathogens::Exepction::FileIO =>
+    Pathogens::Exception::FileIO =>
       { description => 'Problems opening or closing a file' },
 );
 
