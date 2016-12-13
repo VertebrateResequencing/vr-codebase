@@ -88,11 +88,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #    'bcf query filter command'
 #);
 #
-#my $csv_file_with_empty_lines =
-#  't/data/15360_1#1_total_number_of_snps_empty_lines.csv';
-#open( my $fh, '<', $csv_file_with_empty_lines )
-#  or die "$csv_file_with_empty_lines: $!";
-#is( $hsc->_count_file_rows($fh), 4, 'total number of SNPs' );
 #
 ##throws_ok { $hsc->total_genome_covered } qr/Backtrace:/,
 ##  'Total number of SNPs file doesnt exist yet';

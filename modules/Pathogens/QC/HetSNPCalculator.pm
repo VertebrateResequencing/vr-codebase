@@ -313,22 +313,6 @@ sub build_number_of_het_snps {
 }
 
 
-sub _count_file_rows {
-
-    my ( $self, $fh ) = @_;
-    my $number_of_rows = 0;
-    while ( my $row = <$fh> ) {
-        chomp($row);
-        if ( $row && $row ne q() ) {
-            $number_of_rows++;
-        }
-    }
-    close($fh);
-    return $number_of_rows;
-}
-
-
-
 sub _list_sum_and_max {
     my $self = shift;
     my $list = shift;
