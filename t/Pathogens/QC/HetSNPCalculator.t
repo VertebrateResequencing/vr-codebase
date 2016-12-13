@@ -68,11 +68,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #    'mpileup command'
 #);
 #is(
-#    $hsc->total_genome_covered_command,
-#q(bcftools-1.2 query -f "%CHROM\n" -i "DP > 0" t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf > t/data/15360_1#1_qc-sample/15360_1#1_total_genome_covered.csv),
-#    'total number of snps command'
-#);
-#is(
 #    $hsc->snp_call_command,
 #q(bcftools-1.2 call -vm -O z t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf > t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz),
 #    'snp call command'
@@ -88,11 +83,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #    'bcf query filter command'
 #);
 #
-#
-##throws_ok { $hsc->total_genome_covered } qr/Backtrace:/,
-##  'Total number of SNPs file doesnt exist yet';
-#
-#is( $hsc->total_genome_covered, 16893, 'Total number of SNPs (Het and Hom)' );
 #
 ##Expected files
 #my $temp_master_file =

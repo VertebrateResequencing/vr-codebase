@@ -43,24 +43,12 @@ has 'filtered_snp_called_csv' => (
     lazy    => 1,
     builder => 'build_filtered_snp_called_csv'
 );
-has 'total_genome_covered_csv' => (
-    is      => 'rw',
-    isa     => 'Str',
-    lazy    => 1,
-    builder => 'build_total_genome_covered_csv'
-);
 has 'het_report_path' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_het_report_path' );
 
 #Command string builders
 has 'mpileup_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_mpileup_command' );
-has 'total_genome_covered_command' => (
-    is      => 'rw',
-    isa     => 'Str',
-    lazy    => 1,
-    builder => 'build_total_genome_covered_command'
-);
 has 'snp_call_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_snp_call_command' );
 has 'all_snps_command' =>
@@ -68,13 +56,6 @@ has 'all_snps_command' =>
 has 'bcf_query_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bcf_query_command' );
 
-#Calculations builders
-has 'total_genome_covered' => (
-    is      => 'rw',
-    isa     => 'Str',
-    lazy    => 1,
-    builder => 'build_total_genome_covered'
-);
 
 sub build_full_path {
 
@@ -122,13 +103,6 @@ sub build_filtered_snp_called_csv {
     return ($path);
 }
 
-sub build_total_genome_covered_csv {
-
-    my ($self) = @_;
-    my $path = File::Spec->catfile( $self->full_path,
-        $self->{lane} . q(_total_genome_covered.csv) );
-    return ($path);
-}
 
 sub build_het_report_path {
 
@@ -149,19 +123,6 @@ sub build_mpileup_command {
        . ' > ' . $self->temp_vcf;
 }
 
-sub build_total_genome_covered_command {
-
-    my ($self) = @_;
-
-    my $cmd = $self->{bcftools};
-    $cmd .= q( query -f "%CHROM\n");
-    $cmd .= q( -i "DP > 0" );
-    $cmd .= $self->temp_vcf;
-    $cmd .= q( > );
-    $cmd .= $self->total_genome_covered_csv;
-
-    return ($cmd);
-}
 
 sub build_snp_call_command {
 
@@ -210,27 +171,6 @@ sub build_bcf_query_command {
     $cmd .= q{ > } . $self->filtered_snp_called_csv;
 
     return ($cmd);
-}
-
-sub build_total_genome_covered {
-
-    my ($self) = @_;
-
-    Utils::CMD( $self->total_genome_covered_command );
-
-    if ( -e $self->total_genome_covered_csv ) {
-        open( my $fh, '<', $self->total_genome_covered_csv )
-          or Utils::error( $self->total_genome_covered_csv . ": $!" );
-        return ( _count_file_rows( $self, $fh ) );
-    }
-    else {
-        Pathogens::Exception::HetSNPStepCommand->throw( error =>
-                "A problem occured running the total genome covered command '"
-              . $self->total_genome_covered_command
-              . "'\nThe file '"
-              . $self->total_genome_covered_csv
-              . "' was not created" );
-    }
 }
 
 
