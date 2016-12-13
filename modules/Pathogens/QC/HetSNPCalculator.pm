@@ -437,6 +437,42 @@ sub _parse_vcf_line {
 }
 
 
+sub _filter_vcf_and_count_snps {
+    my $self = shift;
+    my $infile = shift;
+    my $outfile = shift;
+    my $position_count = 0;
+    my $het_count = 0;
+    my $snp_count = 0;
+    my %results;
+
+    open FIN, $infile or die $!;
+    open FOUT, ">$outfile" or die $!;
+
+    while (my $line = <FIN>) {
+        if ($line =~/^#/) {
+            print FOUT $line;
+        }
+        else {
+            my ($chrom, $is_snp, $is_het) = $self->_parse_vcf_line(\$line);
+            unless (exists $results{$chrom}) {
+                $results{$chrom} = {};
+            }
+            $results{$chrom}{'positions'}++;
+            $results{$chrom}{'snps'}++ if $is_snp;
+            if ($is_het) {
+                $results{$chrom}{'hets'}++;
+                print FOUT $line;
+            }
+        }
+    }
+
+    close FIN or die $!;
+    close FOUT or die $!;
+    return \%results;
+}
+
+
 no Moose;
 __PACKAGE__->meta->make_immutable;
 1;

@@ -206,4 +206,20 @@ throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse'
 $vcf_line = "chrom1\t42\t.\tT\tC,<*>\t0\t.\tDP=54;ADF=1,2,0;AD=39,15,0;I16=22,17,7,8,1421,51911,551,20255,1928,95376,675,30457,730,16036,289,6283;\tPL\t214,0,255,255,255,255\n";
 throws_ok { $hsc->_parse_vcf_line(\$vcf_line) } 'Pathogens::Exception::VcfParse' , 'Throws when ADR missing';
 
+
+my $vcf_in = 't/data/het_snp_cal_filter_vcf_and_count_snps.in.vcf';
+my $expected_vcf = 't/data/het_snp_cal_filter_vcf_and_count_snps.expected.vcf';
+my $tmp_vcf_out = 'tmp.test.HetSNPCalculator.filter_vcf_and_count_snps.out.vcf';
+my $got_vcf_stats = $hsc->_filter_vcf_and_count_snps($vcf_in, $tmp_vcf_out);
+my %expected_vcf_stats = (
+    chrom1 => {positions => 5, hets => 1, snps => 2},
+    chrom2 => {positions => 1, hets => 1, snps => 1},
+);
+is_deeply($got_vcf_stats, \%expected_vcf_stats, '_filter_vcf_and_count_snps');
+is(compare($tmp_vcf_out, $expected_vcf), 0, 'vcf made by _filter_vcf_and_count_snps is ok');
+unlink $tmp_vcf_out;
+
+
+
+
 done_testing();
