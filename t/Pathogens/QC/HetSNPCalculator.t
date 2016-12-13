@@ -151,7 +151,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #}
 #
 #
-#ok( $hsc->remove_temp_vcfs_and_csvs, 'Removing files created' );
 #
 #my @got_sum_max = $hsc->_list_sum_and_max([2, 3, 1]);
 #my @expect = (6, 3);

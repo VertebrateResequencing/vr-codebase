@@ -313,18 +313,6 @@ sub build_number_of_het_snps {
 }
 
 
-sub remove_temp_vcfs_and_csvs {
-
-    my ($self) = @_;
-
-    unlink( $self->temp_vcf );
-    unlink( $self->snp_called_vcf );
-    unlink( $self->filtered_snp_called_csv );
-    unlink( $self->total_genome_covered_csv );
-    unlink( $self->all_snps_csv );
-
-}
-
 sub _calculate_percentage {
 
     my ( $self, $count, $total ) = @_;
