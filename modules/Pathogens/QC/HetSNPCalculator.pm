@@ -46,8 +46,6 @@ has 'het_report_path' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_het_report_path' );
 
 #Command string builders
-has 'mpileup_command' =>
-  ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_mpileup_command' );
 has 'bcf_query_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bcf_query_command' );
 

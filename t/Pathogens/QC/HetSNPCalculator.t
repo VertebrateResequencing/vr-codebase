@@ -63,11 +63,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #
 #is( $hsc->full_path, 't/data/15360_1#1_qc-sample', 'Full path' );
 #is(
-#    $hsc->mpileup_command,
-#q(samtools-1.1.30 mpileup --skip-indels -d 500 -t INFO/AD,INFO/ADF,INFO/ADR -C50 -u -f t/data/15360_1#1_het_test_staph_aureus_subsample_2000.fa t/data/15360_1#1_qc-sample/15360_1#1.bam > t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf),
-#    'mpileup command'
-#);
-#is(
 #    $hsc->bcf_query_command,
 #q(bcftools-1.2 query -f "%CHROM %POS\n" -i "MIN(DP) >= 10 & MIN(DV) >= 5 & MIN(DV/DP)>= 0.3 & QUAL >= 20 & (GT='0/1' | GT='1/2') & ((DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3)" t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_filtered_snp_called_list.csv),
 #    'bcf query filter command'
