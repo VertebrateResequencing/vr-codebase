@@ -69,12 +69,6 @@ has 'bcf_query_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_bcf_query_command' );
 
 #Calculations builders
-has 'number_of_het_snps' => (
-    is      => 'rw',
-    isa     => 'Str',
-    lazy    => 1,
-    builder => 'build_number_of_het_snps'
-);
 has 'total_genome_covered' => (
     is      => 'rw',
     isa     => 'Str',
@@ -262,52 +256,6 @@ sub build_total_number_of_snps {
               . $self->total_genome_covered_command
               . "'\nThe file '"
               . $self->all_snps_csv
-              . "' was not created" );
-    }
-}
-
-sub build_number_of_het_snps {
-
-    my ($self) = @_;
-
-    Utils::CMD( $self->mpileup_command );
-
-    if ( -e $self->temp_vcf ) {
-
-        Utils::CMD( $self->snp_call_command );
-
-        if ( -e $self->snp_called_vcf ) {
-            Utils::CMD( $self->bcf_query_command );
-
-            if ( -e $self->filtered_snp_called_csv ) {
-                open( my $fh, '<', $self->filtered_snp_called_csv )
-                  or Utils::error( $self->filtered_snp_called_csv . ": $!" );
-                return ( _count_file_rows( $self, $fh ) );
-            }
-            else {
-                Pathogens::Exception::HetSNPStepCommand->throw(
-                    error => "A problem occured running the bcf query command '"
-                      . $self->bcf_query_command
-                      . "'\nThe file '"
-                      . $self->filtered_snp_called_csv
-                      . "' was not created" );
-            }
-        }
-        else {
-            Pathogens::Exception::HetSNPStepCommand->throw(
-                error => "A problem occured running the SNP calling command '"
-                  . $self->snp_call_command
-                  . "'\nThe file '"
-                  . $self->snp_called_vcf
-                  . "' was not created" );
-        }
-    }
-    else {
-        Pathogens::Exception::HetSNPStepCommand->throw(
-                error => "A problem occured running the Mpileup command '"
-              . $self->mpileup_command
-              . "'\nThe file '"
-              . $self->temp_vcf
               . "' was not created" );
     }
 }

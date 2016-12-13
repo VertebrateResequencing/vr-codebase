@@ -92,8 +92,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 ##throws_ok { $hsc->total_genome_covered } qr/Backtrace:/,
 ##  'Total number of SNPs file doesnt exist yet';
 #
-#is( $hsc->number_of_het_snps, 1, 'Number of heterozigous SNPs' );
-#
 #is( $hsc->total_genome_covered, 16893, 'Total number of SNPs (Het and Hom)' );
 #
 ##Expected files
