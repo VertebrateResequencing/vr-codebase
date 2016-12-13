@@ -223,7 +223,63 @@ unlink $tmp_vcf_out;
 my $fai = 't/data/het_snp_cal_length_from_fai.fai';
 my %expected_lengths = (contig1 => 3900, contig2 => 4620, contig3 => 3540);
 my $got_lengths = $hsc->_lengths_from_fai($fai);
-is_deeply(\%expected_lengths, $got_lengths);
+is_deeply(\%expected_lengths, $got_lengths, '_lengths_from_fai');
+
+
+my %summary_stats = (
+    length => 0,
+    positions => 0,
+    snps => 0,
+    hets => 0
+);
+my $expected_tsv = 't/data/het_snp_cal_summary_stats_all_zero';
+my $tmp_tsv = 'tmp.test.HetSNPCalculator.summary_report.tsv';
+$hsc->_write_summary_report($tmp_tsv, \%summary_stats);
+is(compare($tmp_tsv, $expected_tsv), 0, 'Summary tsv ok when all zeros');
+unlink $tmp_tsv;
+
+$summary_stats{length} = 100;
+$expected_tsv = 't/data/het_snp_cal_summary_stats_positions_zero';
+$tmp_tsv = 'tmp.test.HetSNPCalculator.summary_report.tsv';
+$hsc->_write_summary_report($tmp_tsv, \%summary_stats);
+is(compare($tmp_tsv, $expected_tsv), 0, 'Summary tsv ok when no reads mapped');
+unlink $tmp_tsv;
+
+$summary_stats{positions} = 50;
+$summary_stats{snps} = 10;
+$expected_tsv = 't/data/het_snp_cal_summary_stats_no_hets';
+$tmp_tsv = 'tmp.test.HetSNPCalculator.summary_report.tsv';
+$hsc->_write_summary_report($tmp_tsv, \%summary_stats);
+is(compare($tmp_tsv, $expected_tsv), 0, 'Summary tsv ok when no het snps');
+unlink $tmp_tsv;
+
+$summary_stats{hets} = 2;
+$expected_tsv = 't/data/het_snp_cal_summary_stats_has_hets';
+$tmp_tsv = 'tmp.test.HetSNPCalculator.summary_report.tsv';
+$hsc->_write_summary_report($tmp_tsv, \%summary_stats);
+is(compare($tmp_tsv, $expected_tsv), 0, 'Summary tsv ok when has het snps');
+unlink $tmp_tsv;
+
+
+my %ctg_lengths = (
+    ctg1 => 100,
+    ctg2 => 200,
+    ctg3 => 300,
+);
+my %snp_stats = (
+    'ctg1' => {positions => 50, snps => 2, hets => 1},
+    'ctg2' => {positions => 100, snps => 0, hets => 0},
+);
+
+my $tmp_tsv_per_contig = 'tmp.test.HetSNPCalculator.write_report.per_contig.tsv';
+my $tmp_tsv_totals = 'tmp.test.HetSNPCalculator.write_report.totals.tsv';
+$hsc->_write_reports($tmp_tsv_per_contig, $tmp_tsv_totals, \%snp_stats, \%ctg_lengths);
+my $expected_per_contig = 't/data/het_snp_cal_write_report.per_contig.tsv';
+my $expected_totals = 't/data/het_snp_cal_write_report.totals.tsv';
+is(compare($tmp_tsv_per_contig, $expected_per_contig), 0, 'write_reports per contig file ok');
+is(compare($tmp_tsv_totals, $expected_totals), 0, 'write_reports totals file ok');
+unlink $tmp_tsv_per_contig;
+unlink $tmp_tsv_totals;
 
 
 done_testing();

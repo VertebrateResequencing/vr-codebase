@@ -487,6 +487,58 @@ sub _lengths_from_fai {
 }
 
 
+sub _write_summary_report {
+    my $self = shift;
+    my $outfile = shift;
+    my $totals = shift;
+
+    open F, ">$outfile" or Pathogens::Exception::FileIO->throw(error => "Error opening file $outfile\n");
+    print F "No. Het SNPs\t\% Het SNPs (Total Genome)\t\% Het SNPs (Genome Covered)\t\% Het SNPs (Total No. of SNPs)\n";
+    my $het_total_genome = sprintf("%.2f", $totals->{length} == 0 ? 0 : 100 * $totals->{hets} / $totals->{length});
+    my $het_genome_cov = sprintf("%.2f", $totals->{positions} == 0 ? 0 : 100 * $totals->{hets} / $totals->{positions});
+    my $het_total_snp = sprintf("%.2f", $totals->{snps} == 0 ? 0 : 100 * $totals->{hets} / $totals->{snps});
+    print F "$totals->{hets}\t$het_total_genome\t$het_genome_cov\t$het_total_snp\n";
+    close F or Pathogens::Exception::FileIO->throw(error => "Error closing file $outfile\n");
+}
+
+
+sub _write_reports {
+    my $self = shift;
+    my $outfile_per_contig = shift;
+    my $outfile_summary = shift;
+    my $stats = shift;
+    my $ctg_lengths = shift;
+    my %totals = (length => 0, positions => 0, snps => 0, hets => 0);
+
+    open F, ">$outfile_per_contig" or Pathogens::Exception::FileIO->throw(error => "Error opening file $outfile_per_contig\n");
+    print F "Contig\tLength\tPositions_mapped\tSNPs\tHet_SNPs\t\% Het SNPs (Total Contig)\t\% Het SNPs (Contig Covered)\t\% Het SNPs (Total No. of SNPs)\n";
+
+    for my $contig (sort keys %{$ctg_lengths}) {
+        $totals{length} += $ctg_lengths->{$contig};
+
+        if (exists $stats->{$contig}) {
+            my $ctg_stats = $stats->{$contig};
+
+            my @keys = qw/positions snps hets/;
+            for (@keys) {
+                $totals{$_} += $ctg_stats->{$_};
+            }
+
+            my $het_snp_total_ctg = sprintf("%.2f", 100 * $ctg_stats->{hets} / $ctg_lengths->{$contig});
+            my $het_snp_ctg_cov = sprintf("%.2f", $ctg_stats->{positions} == 0 ? 0 : 100 * $ctg_stats->{hets} / $ctg_stats->{positions});
+            my $het_snp_total_snp = sprintf("%.2f", $ctg_stats->{snps} == 0 ? 0 : 100 * $ctg_stats->{hets} / $ctg_stats->{snps});
+            print F "$contig\t$ctg_lengths->{$contig}\t$ctg_stats->{positions}\t$ctg_stats->{snps}\t$ctg_stats->{hets}\t$het_snp_total_ctg\t$het_snp_ctg_cov\t$het_snp_total_snp\n";
+        }
+        else {
+            print F "$contig\t$ctg_lengths->{$contig}\t0\t0\t0\t0.00\t0.00\t0.00\n";
+        }
+    }
+
+    close F or Pathogens::Exception::FileIO->throw(error => "Error closing file $outfile_per_contig\n");
+    $self->_write_summary_report($outfile_summary, \%totals);
+}
+
+
 no Moose;
 __PACKAGE__->meta->make_immutable;
 1;
