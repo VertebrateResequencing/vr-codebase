@@ -64,17 +64,17 @@ is( $hsc->hqRefReads_hqAltReads_ratio,
 is( $hsc->full_path, 't/data/15360_1#1_qc-sample', 'Full path' );
 is(
     $hsc->mpileup_command,
-q(samtools-1.1.30 mpileup -d 500 -t INFO/DPR,DV -C50 -ugf t/data/15360_1#1_het_test_staph_aureus_subsample_2000.fa t/data/15360_1#1_qc-sample/15360_1#1.bam | bgzip > t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf.gz),
+q(samtools-1.1.30 mpileup --skip-indels -d 500 -t INFO/AD,INFO/ADF,INFO/ADR -C50 -u -f t/data/15360_1#1_het_test_staph_aureus_subsample_2000.fa t/data/15360_1#1_qc-sample/15360_1#1.bam > t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf),
     'mpileup command'
 );
 is(
     $hsc->total_genome_covered_command,
-q(bcftools-1.2 query -f "%CHROM\n" -i "DP > 0" t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_total_genome_covered.csv),
+q(bcftools-1.2 query -f "%CHROM\n" -i "DP > 0" t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf > t/data/15360_1#1_qc-sample/15360_1#1_total_genome_covered.csv),
     'total number of snps command'
 );
 is(
     $hsc->snp_call_command,
-q(bcftools-1.2 call -vm -O z t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz),
+q(bcftools-1.2 call -vm -O z t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf > t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz),
     'snp call command'
 );
 is(
@@ -107,7 +107,7 @@ is( $hsc->total_genome_covered, 16893, 'Total number of SNPs (Het and Hom)' );
 
 #Expected files
 my $temp_master_file =
-  File::Spec->catfile( 't/data', '15360_1#1_temp_vcf_master.vcf.gz' );
+  File::Spec->catfile( 't/data', '15360_1#1_temp_vcf_master.vcf' );
 my $snp_called_master_file =
   File::Spec->catfile( 't/data', '15360_1#1_snp_called_master.vcf.gz' );
 my $filtered_master_file = File::Spec->catfile( 't/data',

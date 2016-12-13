@@ -106,7 +106,7 @@ sub build_temp_vcf {
 
     my ($self) = @_;
     my $path = File::Spec->catfile( $self->full_path,
-        $self->{lane} . q(_temp_vcf.vcf.gz) );
+        $self->{lane} . q(_temp_vcf.vcf) );
     return ($path);
 }
 
@@ -154,15 +154,11 @@ sub build_mpileup_command {
 
     my ($self) = @_;
 
-    my $cmd = $self->samtools;
-    $cmd .= q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
-    $cmd .= $self->fa_ref;
-    $cmd .= q( );
-    $cmd .= $self->bam_file;
-    $cmd .= q( | bgzip > );
-    $cmd .= $self->temp_vcf;
-
-    return ($cmd);
+    return $self->samtools
+       . ' mpileup --skip-indels -d 500 -t INFO/AD,INFO/ADF,INFO/ADR -C50 -u'
+       . " -f " . $self->fa_ref
+       . ' ' . $self->bam_file
+       . ' > ' . $self->temp_vcf;
 }
 
 sub build_total_genome_covered_command {
