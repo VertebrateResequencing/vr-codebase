@@ -198,6 +198,12 @@ sub run {
     my $out_summary = $self->outprefix . '_report.txt';
     my $out_per_ref_seq = $self->outprefix . '_ref_seq_breakdown.tsv';
     $self->_write_reports($out_per_ref_seq, $out_summary, $snp_counts, $contig_lengths);
+    my $vcf =  $self->outprefix . '.vcf';
+    my $bcftools_command = $self->bcftools . ' convert -o ' . $self->outprefix . ".bcf -O b $vcf";
+    if (system("$bcftools_command")) {
+        Pathogens::Exception::SystemCall->throw(error => "Error running bcftools convert: $bcftools_command\n");
+    }
+    unlink $vcf;
 }
 
 

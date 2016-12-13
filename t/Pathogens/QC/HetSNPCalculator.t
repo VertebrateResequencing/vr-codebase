@@ -155,14 +155,14 @@ unlink $tmp_tsv_totals;
 
 
 $hsc->run();
-$tmp_vcf = $hsc->outprefix . '.vcf';
-is((-e $tmp_vcf and -s $tmp_vcf > 0), 1, 'run() made a non-empty vcf');
-unlink $tmp_vcf;
+my $tmp_bcf = $hsc->outprefix . '.bcf';
+is((-e $tmp_bcf and -s $tmp_bcf > 0), 1, 'run() made a non-empty bcf');
+unlink $tmp_bcf;
 my $seq_breakdown = $hsc->outprefix . '_ref_seq_breakdown.tsv';
 is(compare($seq_breakdown, 't/data/het_snp_cal_run_ref_seq_breakdown.tsv'), 0, 'run() ref_seq_breakdown.tsv ok');
 unlink $seq_breakdown;
 my $summary_file = $hsc->outprefix . '_report.txt';
-is(compare($summary_file, 't/data/het_snp_cal_run_report.txt'), 0, 'run() ref_seq_breakdown.tsv ok');
+is(compare($summary_file, 't/data/het_snp_cal_run_report.txt'), 0, 'run() report.txt ok');
 unlink $summary_file;
 
 done_testing();
