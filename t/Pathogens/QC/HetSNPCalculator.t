@@ -220,6 +220,10 @@ is(compare($tmp_vcf_out, $expected_vcf), 0, 'vcf made by _filter_vcf_and_count_s
 unlink $tmp_vcf_out;
 
 
+my $fai = 't/data/het_snp_cal_length_from_fai.fai';
+my %expected_lengths = (contig1 => 3900, contig2 => 4620, contig3 => 3540);
+my $got_lengths = $hsc->_lengths_from_fai($fai);
+is_deeply(\%expected_lengths, $got_lengths);
 
 
 done_testing();

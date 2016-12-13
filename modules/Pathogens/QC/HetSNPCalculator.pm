@@ -473,6 +473,20 @@ sub _filter_vcf_and_count_snps {
 }
 
 
+sub _lengths_from_fai {
+    my $self = shift;
+    my $fai = shift;
+    my %lengths;
+    open F, $fai or Pathogens::Exception::FileIO->throw(error => "Error opening file $fai\n");
+    while (<F>) {
+        chomp;
+        my ($contig, $length, undef, undef, undef) = split /\t/;
+        $lengths{$contig} = $length;
+    }
+    return \%lengths;
+}
+
+
 no Moose;
 __PACKAGE__->meta->make_immutable;
 1;
