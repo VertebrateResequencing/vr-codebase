@@ -68,11 +68,6 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #    'mpileup command'
 #);
 #is(
-#    $hsc->snp_call_command,
-#q(bcftools-1.2 call -vm -O z t/data/15360_1#1_qc-sample/15360_1#1_temp_vcf.vcf > t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz),
-#    'snp call command'
-#);
-#is(
 #   $hsc->all_snps_command,
 #   q(bcftools-1.2 query -f "%CHROM %POS\n" -i "MIN(DP) >= 10 & MIN(DV) >= 5 & MIN(DV/DP)>= 0.3 & QUAL >= 20 & (GT='0/0' | GT='1/1' | GT='0/1' | GT='1/2')" t/data/15360_1#1_qc-sample/15360_1#1_snp_called.vcf.gz > t/data/15360_1#1_qc-sample/15360_1#1_all_snps_list.csv),
 #   'all snps command'
@@ -120,6 +115,11 @@ ok my $hsc = Pathogens::QC::HetSNPCalculator->new(
 #
 #
 #
+
+
+# FIXME test run mpileup
+
+
 my @got_sum_max = $hsc->_list_sum_and_max([2, 3, 1]);
 my @expect = (6, 3);
 is_deeply(\@got_sum_max, \@expect, 'test _list_sum_and_max');

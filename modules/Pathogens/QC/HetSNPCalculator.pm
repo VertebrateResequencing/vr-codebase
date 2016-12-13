@@ -20,7 +20,6 @@ has 'hqRefReads_hqAltReads_ratio' =>
 
 #Misc required info
 has 'fa_ref'         => ( is => 'ro', isa => 'Str', required => 1 );
-has 'reference_size' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'lane_path'      => ( is => 'ro', isa => 'Str', required => 1 );
 has 'lane'           => ( is => 'ro', isa => 'Str', required => 1 );
 has 'sample_dir'     => ( is => 'ro', isa => 'Str', required => 1 );
@@ -49,8 +48,6 @@ has 'het_report_path' =>
 #Command string builders
 has 'mpileup_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_mpileup_command' );
-has 'snp_call_command' =>
-  ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_snp_call_command' );
 has 'all_snps_command' =>
   ( is => 'rw', isa => 'Str', lazy => 1, builder => 'build_all_snps_command' );
 has 'bcf_query_command' =>
@@ -171,6 +168,22 @@ sub build_bcf_query_command {
     $cmd .= q{ > } . $self->filtered_snp_called_csv;
 
     return ($cmd);
+}
+
+
+sub _run_mpileup {
+    my $self = shift;
+    my $vcf_out = shift;
+
+    my $mpileup_cmd = $self->samtools
+       . ' mpileup --skip-indels -d 500 -t INFO/AD,INFO/ADF,INFO/ADR -C50 -u'
+       . " -f " . $self->fa_ref
+       . ' ' . $self->bam_file
+       . ' > ' . $vcf_out;
+
+    if (system($mpileup_cmd)) {
+        Pathogens::Exception::SystemCall->throw(error => "Error running mpileup: $mpileup_cmd\n");
+    }
 }
 
 
@@ -330,6 +343,17 @@ sub _write_reports {
 
     close F or Pathogens::Exception::FileIO->throw(error => "Error closing file $outfile_per_contig\n");
     $self->_write_summary_report($outfile_summary, \%totals);
+}
+
+
+sub run {
+    my $self = shift;
+    my $tmp_vcf = 'fixme';
+    $self->_run_mpileup($tmp_vcf);
+    my $snp_counts = $self->_filter_vcf_and_count_snps(infile, outfile);
+    unlink $tmp_vcf;
+    my $contig_lengths = $self->_lengths_from_fai($self->{fa_ref} . 'fai');
+    $self->_write_reports(out_per_contig, out_summary, $snp_counts, $contig_lengths);
 }
 
 
