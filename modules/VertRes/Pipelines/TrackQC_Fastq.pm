@@ -824,8 +824,7 @@ sub heterozygous_snps_requires {
 
 sub heterozygous_snps_provides {
     my ($self)     = @_;
-    my $sample_dir = $$self{'sample_dir'};
-    my $het_prefix = $self->{lane} . '_' . $self->{het_reports_prefix};
+    my $het_prefix = "$$self{sample_dir}/$$self{lane}_$$self{het_reports_prefix}";
     my $het_report = $het_prefix . '_report.txt';
     my $het_per_seq = $het_prefix . '_ref_seq_breakdown.tsv';
     my $het_bcf = $het_prefix . '.bcf';
@@ -839,7 +838,7 @@ sub heterozygous_snps {
     my $sample_dir = $$self{'sample_dir'};
 	my $umask    = $self->umask_str;
     my $bam = "$lane_path/$sample_dir/$$self{lane}.bam";
-    my $outprefix = "$lane_path/$$self{lane}_$$self{het_reports_prefix}";
+    my $outprefix = "$lane_path/$sample_dir/$$self{lane}_$$self{het_reports_prefix}";
 
     # Dynamic script to be run by LSF.
     open( my $fh, '>', "$lane_path/$sample_dir/_heterozygous_snps.pl" )
@@ -895,7 +894,7 @@ sub get_reference_size {
 sub stats_and_graphs_requires {
     my ($self)     = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my $het_report = $self->{lane} . '_heterozygous_snps_report.txt';
+    my $het_report = "$$self{sample_dir}/$$self{lane}_$$self{het_reports_prefix}_report.txt";
     my @requires = ( "$sample_dir/$$self{lane}.bam", "$het_report" );
     return \@requires;
 }
