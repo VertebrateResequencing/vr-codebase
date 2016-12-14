@@ -722,6 +722,18 @@ rename("${paired_name}.bam.part", "$paired_name.bam") or Utils::error("rename ${
     }
 
     # Now merge the files if necessary
+    #
+    # NOTE: This if () seems to be true even when there is only one BAM file!
+    # Here's what happens:
+    # - the samtools merge command gets written to the _map.pl script.
+    # - samtools merge throws an error and prints the usage, because it was
+    #   only given one input file.
+    # - the script dies. But it has made correct BAM file. This is because
+    #   all that would have happened is that one BAM would have got 'merged',
+    #   then renamed back to its original name
+    # - next time run-pipeline is run, it finds the BAM file that is specified
+    #   by map_sample_provides, everything looks good and it carries on to
+    #   the next pipeline stages.
     if ( scalar @single_bams + scalar @paired > 1 ) {
         my $bams = join( ' ', @single_bams );
         if ($paired_name) { $bams .= " $paired_name.bam"; }
