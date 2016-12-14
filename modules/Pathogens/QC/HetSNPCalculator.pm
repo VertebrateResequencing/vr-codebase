@@ -1,3 +1,46 @@
+=head1 NAME
+
+HetSNPCalculator.pm - Report heterozygous SNPs from a BAM file
+
+=head1 SYNOPSIS
+
+use HetSNPCalculator;
+
+my $het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
+    samtools => '/path/to/samtools',  # tested on v1.3
+    bcftools => '/path/to/bcftools',  # tested on v1.3
+    min_total_depth => 4,
+    min_second_depth => 2,
+    max_allele_freq => 0.9,
+    fa_ref => '/path/to/reference.fasta', # fai file must also exist
+    bam => '/path/to/bam_file.bam'
+    outprefix => 'prefix_of_output_files',
+);
+
+$het_snp_calc->run();
+
+=head1 DESCRIPTION
+
+Reports heterozygous SNPs from a BAM file. Outputs three files:
+outprefix.bcf: a BCF file of the heterozygious SNPs
+outprefix_report.txt: a summary of the number of heterozygious SNPs
+outprefix_ref_seq_breakdown.tsv: per-ref seq counts of SNPs
+
+Whether or not a position in the reference is counted as heterozygous
+is decided as follows.
+
+The depth on each strand is considered independently. First, the
+total read depth on each strand must be >= min_total_depth.
+Then, on each strand we require:
+  number of reads supporting variant >= min_second_depth;
+  (number of reads supporting variant) / (total depth) <= max_allele_freq;
+If a variant satisfies these requirements on both strands, then it is
+counted. If a given position in the genome has at least 2 such variants,
+it is counted as heterozygous.
+
+=cut
+
+
 package Pathogens::QC::HetSNPCalculator;
 
 use Moose;
