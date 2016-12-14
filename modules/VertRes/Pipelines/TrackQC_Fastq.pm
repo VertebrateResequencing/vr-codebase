@@ -849,15 +849,15 @@ use Pathogens::QC::HetSNPCalculator;
 $umask
 
 my \$het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
-						  samtools => q[$self->{samtools_het_snps}],
-						  bcftools => q[$self->{bcftools_het_snps}],
-                          min_total_depth => $self->{het_snp_min_total_depth},
-                          min_second_depth => $self->{het_snp_min_second_depth},
-                          max_allele_freq => $self->{het_snp_max_allele_freq},
-						  fa_ref => q[$self->{fa_ref}],
-                          bam => q[$bam],
-                          outprefix => q[$outprefix],
-						 );
+    samtools => q[$self->{samtools_het_snps}],
+    bcftools => q[$self->{bcftools_het_snps}],
+    min_total_depth => $self->{het_snp_min_total_depth},
+    min_second_depth => $self->{het_snp_min_second_depth},
+    max_allele_freq => $self->{het_snp_max_allele_freq},
+    fa_ref => q[$self->{fa_ref}],
+    bam => q[$bam],
+    outprefix => q[$outprefix],
+);
 
 \$het_snp_calc->run();
 
