@@ -133,7 +133,8 @@ our $options = {
     'kraken_report_exec' => 'kraken-report',
     'mapviewdepth'       => 'mapviewdepth_sam',
     'samtools'           => 'samtools',
-    'samtools_het_snps'  => 'samtools-1.1.30',
+    'samtools_het_snps'  => 'samtools-1.3',
+    'bcftools_het_snps'  => 'bcftools-1.3',
     'bcftools'           => 'bcftools-1.2',
 
     'adapters' =>
@@ -158,12 +159,10 @@ our $options = {
     'kraken_report'                    => 'kraken.report',
     'sample_dir'                       => 'qc-sample',
     'sample_size'                      => 50e6,
-    'min_rawReadDepth'                 => 10,
-    'min_hqNonRefBases'                => 5,
-    'rawReadDepth_hqNonRefBases_ratio' => 0.3,
-    'min_qual'                         => 20,
-    'hqRefReads_hqAltReads_ratio'      => 0.3,
-    'het_report'                       => 'heterozygous_snps_report.txt',
+    'het_snp_min_total_depth'          => 4,
+    'het_snp_min_second_depth'         => 2,
+    'het_snp_max_allele_freq'          => 0.9,
+    'het_reports_prefix'               => 'heterozygous_snps',
     'stats'                            => '_stats',
     'stats_detailed'                   => '_detailed-stats.txt',
     'stats_dump'                       => '_stats.dump',
@@ -723,6 +722,18 @@ rename("${paired_name}.bam.part", "$paired_name.bam") or Utils::error("rename ${
     }
 
     # Now merge the files if necessary
+    #
+    # NOTE: This if () seems to be true even when there is only one BAM file!
+    # Here's what happens:
+    # - the samtools merge command gets written to the _map.pl script.
+    # - samtools merge throws an error and prints the usage, because it was
+    #   only given one input file.
+    # - the script dies. But it has made correct BAM file. This is because
+    #   all that would have happened is that one BAM would have got 'merged',
+    #   then renamed back to its original name
+    # - next time run-pipeline is run, it finds the BAM file that is specified
+    #   by map_sample_provides, everything looks good and it carries on to
+    #   the next pipeline stages.
     if ( scalar @single_bams + scalar @paired > 1 ) {
         my $bams = join( ' ', @single_bams );
         if ($paired_name) { $bams .= " $paired_name.bam"; }
@@ -825,9 +836,11 @@ sub heterozygous_snps_requires {
 
 sub heterozygous_snps_provides {
     my ($self)     = @_;
-    my $sample_dir = $$self{'sample_dir'};
-    my $het_report = $self->{lane} . '_heterozygous_snps_report.txt';
-    my @provides = ( "_heterozygous_snps_done", $het_report );
+    my $het_prefix = "$$self{sample_dir}/$$self{lane}_$$self{het_reports_prefix}";
+    my $het_report = $het_prefix . '_report.txt';
+    my $het_per_seq = $het_prefix . '_ref_seq_breakdown.tsv';
+    my $het_bcf = $het_prefix . '.bcf';
+    my @provides = ("_heterozygous_snps_done", $het_report, $het_per_seq, $het_bcf);
     return \@provides;
 }
 
@@ -835,8 +848,9 @@ sub heterozygous_snps {
     my ( $self, $lane_path, $lock_file ) = @_;
 
     my $sample_dir = $$self{'sample_dir'};
-    my $reference_size = get_reference_size( $self, $lane_path );
 	my $umask    = $self->umask_str;
+    my $bam = "$lane_path/$sample_dir/$$self{lane}.bam";
+    my $outprefix = "$lane_path/$sample_dir/$$self{lane}_$$self{het_reports_prefix}";
 
     # Dynamic script to be run by LSF.
     open( my $fh, '>', "$lane_path/$sample_dir/_heterozygous_snps.pl" )
@@ -846,23 +860,17 @@ use Pathogens::QC::HetSNPCalculator;
 $umask
 
 my \$het_snp_calc = Pathogens::QC::HetSNPCalculator->new(
-						  samtools => q[$self->{samtools_het_snps}],
-						  bcftools => q[$self->{bcftools}],
-						  fa_ref => q[$self->{fa_ref}],
-						  reference_size => q[$reference_size],
-						  lane_path => q[$self->{lane_path}],
-						  lane => q[$self->{lane}],
-						  sample_dir => q[$self->{sample_dir}],
-						  het_report => q[$self->{het_report}],
-						  min_rawReadDepth => q[$self->{min_rawReadDepth}],
-						  min_hqNonRefBases => q[$self->{min_hqNonRefBases}],
-						  rawReadDepth_hqNonRefBases_ratio => q[$self->{rawReadDepth_hqNonRefBases_ratio}],
-						  min_qual => q[$self->{min_qual}],
-						  hqRefReads_hqAltReads_ratio => q[$self->{hqRefReads_hqAltReads_ratio}],
-						 );
+    samtools => q[$self->{samtools_het_snps}],
+    bcftools => q[$self->{bcftools_het_snps}],
+    min_total_depth => $self->{het_snp_min_total_depth},
+    min_second_depth => $self->{het_snp_min_second_depth},
+    max_allele_freq => $self->{het_snp_max_allele_freq},
+    fa_ref => q[$self->{fa_ref}],
+    bam => q[$bam],
+    outprefix => q[$outprefix],
+);
 
-\$het_snp_calc->write_het_report;
-\$het_snp_calc->remove_temp_vcfs_and_csvs;
+\$het_snp_calc->run();
 
 system("touch $lane_path/_heterozygous_snps_done") and die "Error touch $lane_path/_heterozygous_snps";
 ];
@@ -898,7 +906,7 @@ sub get_reference_size {
 sub stats_and_graphs_requires {
     my ($self)     = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my $het_report = $self->{lane} . '_heterozygous_snps_report.txt';
+    my $het_report = "$$self{sample_dir}/$$self{lane}_$$self{het_reports_prefix}_report.txt";
     my @requires = ( "$sample_dir/$$self{lane}.bam", "$het_report" );
     return \@requires;
 }
