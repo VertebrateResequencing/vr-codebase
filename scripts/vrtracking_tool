@@ -305,6 +305,7 @@ while (<>){
                 "[\\w]*pool_fastqs_done", 
                 "[\\w]*pool_fastqs\.(e|o|pl)",
                 "^pool_1\.fastq\.gz\$",
+		"[\\w]*pool_fastq_tmp_files",
                 #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
                 "[\\w]*optimise_parameters\.(e|o|pl)", 
                 "[\\w]*optimise_parameters_done",
@@ -320,6 +321,7 @@ while (<>){
                 "[\\w]*cleanup_done\$",    
                 "[\\w]*update_db_done\$",
                  "^_assembly_job_status\$",
+		"_(spades|velvet|pacbio|iva)_job_status\$",
                 # Done/failed files from circularisation & pacbio assembly
                 "[\\w]*circlator_failed\$",
                 "[\\w]*quiver_failed\$",
