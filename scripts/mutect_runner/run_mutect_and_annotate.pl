@@ -344,7 +344,8 @@ sub main {
 
 
 	# optional: parse out DP4 info from mutect text output and add to vcf; remove reject calls, optional
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    # $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef ); # queue now obsolete
+    $self->set_limits( memory=>1_000, runtime=>25 );
 	if ($$self{add_DP4T} eq 'y') {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample/$sample";
@@ -401,7 +402,8 @@ sub main {
 		}
 	}
 	$self->wait;
-    $self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+    #$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef ); # queue obsolete
+    $self->set_limits( memory=>3_000, runtime=>450 );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
         for my $chr (@{$$self{chroms}}) {
@@ -411,7 +413,8 @@ sub main {
 	$self->wait;
 	# check for missing chrom files (eg: if no chrY snps, vep does not output a file!
 	# make bgzip and tabix
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    #$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    $self->set_limits( memory=>1_000, runtime=>15 );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
         for my $chr (@{$$self{chroms}}) {
@@ -420,7 +423,8 @@ sub main {
 	}
 	$self->wait;
 	# merge annotated VCFs (unfiltered)
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    #$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    $self->set_limits( memory=>1_000, runtime=>30 );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
 		$self->spawn('concat_vcfs',"$out/all.cons.merged.vcf.gz",$out);
@@ -464,10 +468,12 @@ sub main {
 		#close L;
 		$self->spawn('mutectlist',$list,@mutect_list);
 		$self->wait;
-		$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+		#$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+		$self->set_limits( memory=>3_000, runtime=>60 );
 		$self->spawn('summary_table_sites',"$$self{outdir}/all_sites.annot",$$self{add_DP4T},$list);
 		$self->wait;
-		$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+		#$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+		$self->set_limits( memory=>1_000, runtime=>25 );
         for my $chr (@{$$self{chroms}}) {
 			$self->spawn('summary_table',"$$self{outdir}/mutect_summary.$chr.txt",$chr,"$$self{outdir}/all_sites.annot",$list);
 		}
