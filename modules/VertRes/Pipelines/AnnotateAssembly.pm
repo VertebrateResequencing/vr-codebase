@@ -25,7 +25,7 @@ db  => {
 data => {
     assembler => 'velvet',
     annotation_tool   => 'Prokka',
-    dbdir => '/lustre/scratch108/pathogen/pathpipe/prokka',
+    dbdir => '/lustre/scratch118/pathogen/pathpipe/prokka',
     tmp_directory => '/tmp',
     pipeline_version => 1
 }
