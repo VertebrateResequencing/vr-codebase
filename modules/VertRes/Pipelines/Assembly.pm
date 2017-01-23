@@ -6,7 +6,7 @@ VertRes::Pipelines::Assembly - Assemble genomes
 
 echo '__Assembly__ assembly.conf' > pipeline.config
 # where assembly.conf contains:
-root    => '/lustre/scratch118/pathogen/pathpipe/prokaryotes/seq-pipelines',
+root    => '/lustre/scratch118/infgen/pathogen/pathpipe/prokaryotes/seq-pipelines',
 module  => 'VertRes::Pipelines::Assembly',
 prefix  => '_',
 limit   => 30,
@@ -35,7 +35,7 @@ data => {
     # rough estimate so we know how much RAM to request
     genome_size => 10000000,
 
-    seq_pipeline_root    => '/lustre/scratch118/pathogen/pathpipe/prokaryotes/seq-pipelines',
+    seq_pipeline_root    => '/lustre/scratch118/infgen/pathogen/pathpipe/prokaryotes/seq-pipelines',
     no_scaffolding => 0,
     improve_assembly => 1, # To run abacas (if reference given), scaffolding and gap filling
     annotation     => 1,
@@ -53,7 +53,7 @@ data => {
     QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
     trimmomatic_jar => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
     remove_adapters => 1, # should we remove adapters?
-    adapters_file   => '/lustre/scratch118/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
+    adapters_file   => '/lustre/scratch118/infgen/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
     adapter_removal_tool => 'trimmomatic' # trimmomatic is the only option for now
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
@@ -156,8 +156,8 @@ our %options = (
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
                 iva_qc_exec		 => '/software/pathogen/external/bin/iva_qc',
                 iva_qc	=> 0,
-                kraken_db => '/lustre/scratch118/pathogen/pathpipe/kraken/assemblyqc_fluhiv_20150728',
-                adapters_file    => '/lustre/scratch118/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
+                kraken_db => '/lustre/scratch118/infgen/pathogen/pathpipe/kraken/assemblyqc_fluhiv_20150728',
+                adapters_file    => '/lustre/scratch118/infgen/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
                 primers_file     => '',
                 remove_primers   => 0,
                 remove_adapters  => 0,
