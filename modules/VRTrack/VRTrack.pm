@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '32';
+use constant SCHEMA_VERSION => '33';
 
 our $DEFAULT_PORT = 3306;
 
@@ -2435,3 +2435,6 @@ DROP VIEW if EXISTS `latest_file`;
 create view latest_file as select * from file where latest=true;
 DROP VIEW if EXISTS `latest_mapstats`;
 create view latest_mapstats as select * from mapstats where latest=true;
+DROP VIEW if EXISTS `lane_summary`;
+CREATE VIEW lane_summary AS SELECT lane.name AS lane_name, lane.acc AS lane_accession, library.name AS library_name, sample.name AS sample_name, individual.acc AS sample_accession, species.name AS species_name, project.name AS project_name, project.ssid AS project_ssid, study.acc AS project_accession FROM latest_lane AS lane JOIN latest_library AS library ON library.library_id = lane.library_id JOIN latest_sample AS sample ON sample.sample_id = library.sample_id JOIN latest_project AS project ON project.project_id = sample.project_id JOIN individual ON individual.individual_id = sample.individual_id JOIN species ON species.species_id = individual.species_id JOIN study ON study.study_id = project.study_id;
+
