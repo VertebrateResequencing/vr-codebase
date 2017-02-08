@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '33';
+use constant SCHEMA_VERSION => '34';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1777,6 +1777,7 @@ CREATE TABLE `individual` (
   `species_id` mediumint(8) unsigned DEFAULT NULL,
   `population_id` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY (`individual_id`),
+  KEY `acc` (`acc`),
   UNIQUE KEY `name` (`name`),
   UNIQUE KEY `hierarchy_name` (`hierarchy_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
