@@ -173,6 +173,7 @@ our %options = (
                 iva_ext_min_ratio      => 2,
                 iva_insert_size		   => 800,
                 iva_strand_bias        => 0,
+		max_contigs_for_scaffolding => 1000,
 
                );
 
@@ -716,6 +717,10 @@ sub improve_assembly
       input_assembly => $assembly_file,
       reference      => $self->{reference},
   );
+  if($preprocess_input_files->number_of_sequences() > $self->{max_contigs_for_scaffolding})
+  {
+    return;
+  }
   my $process_input_files_tmp_dir_obj = $preprocess_input_files->_temp_directory_obj();
 
   # scaffold and extend contigs
