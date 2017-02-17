@@ -318,8 +318,8 @@ while (<>){
                 "[\\w]*map_back\.(e|o|pl|jids)", 
                 "[\\w]*map_back_done",    
                 #Files from update db and clean up stages                                    
-                "[\\w]*cleanup_done\$",    
-                "[\\w]*update_db_done\$",
+                "[\\w]*assembly_cleanup_done\$",    
+                "[\\w]*assembly_update_db_done\$",
                  "^_assembly_job_status\$",
 		"_(spades|velvet|pacbio|iva)_job_status\$",
                 # Done/failed files from circularisation & pacbio assembly
