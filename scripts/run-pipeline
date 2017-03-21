@@ -132,6 +132,7 @@ sub read_cmd_line_args
     $$opts{'status_filter'} = '.*';
     $$opts{'dont_check_load'}=0;
     $$opts{'same_database_for_all'}    = 0;
+    $$opts{'max_check_jobs'} = 1;
 
     my $module;
     if ( !scalar @ARGV) { usage(); }
@@ -149,6 +150,8 @@ sub read_cmd_line_args
 	if ( $arg eq '-b' || $arg eq '--same_database_for_all' ) { $$opts{'same_database_for_all'}=1; next; }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{'verbose'}++; next; }
         if ( $arg eq '-a' || $arg eq '--dont_check_load' ) { $$opts{'dont_check_load'}=1; next; }
+	if ( $arg eq '-x' || $arg eq '--max-check-jobs' ) { $$opts{'max_check_jobs'}=shift(@ARGV); next; }
+	
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { usage(); }
         if ( -d $arg ) { $$opts{'dir'} = $arg; next; }
         usage("Unknown parameter \"$arg\". Run -h for help.\n");
@@ -201,6 +204,7 @@ sub usage
         "   -t, --todo                      List jobs which should be run (i.e. jobs with the status 0,1,2).\n",
         "   -a, --dont_check_load           Dont halt script if the load is higher than the number of CPUs.\n",
 	"   -b, --same_database_for_all     All config files refer to the same DB so reuse connection.\n",
+	"   -x, --max-check-jobs            Loop over a lane this many times to check for new work (default 1).\n",
         "   -v, --verbose                   Be verbose. (Given twice increases the verbosity level.)\n",
         "\n";
 
@@ -235,21 +239,25 @@ sub run_pipelines
 
         my $jobs = get_jobs($opts);
 
-        for my $job (@$jobs)
-        {
-            if ( $$opts{list} )
+        my $check_jobs_counter = 0;
+	for(my $check_jobs_counter = 0; $check_jobs_counter < $$opts{max_check_jobs}; $check_jobs_counter++)
+	{
+            for my $job (@$jobs)
             {
-                my $info   = $job->get_info();
-                my $status = $job->state();
-
-                if ( !($status=~/$$opts{status_filter}/) ) { next; }
-
-                print "$status\t$info\n";
-                next;
+                if ( $$opts{list} )
+                {
+                    my $info   = $job->get_info();
+                    my $status = $job->state();
+            
+                    if ( !($status=~/$$opts{status_filter}/) ) { next; }
+            
+                    print "$status\t$info\n";
+                    next;
+                }
+            
+                if ( $$opts{lsf_limit} && n_lsf_jobs($opts) > $$opts{lsf_limit} ) { last; }
+                $job->run();
             }
-
-            if ( $$opts{lsf_limit} && n_lsf_jobs($opts) > $$opts{lsf_limit} ) { last; }
-            $job->run();
         }
     }
 }
