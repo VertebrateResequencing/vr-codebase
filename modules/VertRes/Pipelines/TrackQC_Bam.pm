@@ -932,6 +932,7 @@ sub update_db
     my $vrlane    = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
 
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
+    if ( $vrlane->is_processed('qc') ) { return $$self{Yes}; }
 
     # Get the stats
     my $bc = VertRes::Parser::bamcheck->new(file=>"$sample_dir/$name.bam.bc");
@@ -1072,9 +1073,14 @@ sub update_db
     $vrtrack->transaction_commit();
 
     # Clean the big files
-    for my $file ('gc-depth.bindepth',"$$self{lane}.bam.bai","$$self{lane}*.sai","$$self{lane}*.fastq.gz","$$self{lane}.bam","$$self{lane}.glf")
+    for my $file ('gc-depth.bindepth', "$$self{lane}.bam.bai", "$$self{lane}_1.sai","$$self{lane}_2.sai",  "$$self{lane}_1.fastq.gz","$$self{lane}_2.fastq.gz", "$$self{lane}.bam", "$$self{lane}.glf")
     {
-        Utils::CMD("rm -f $sample_dir/$file");
+        if(-e "$sample_dir/$file")
+	{
+		Utils::CMD("rm -f $sample_dir/$file");
+		# Leave a placeholder empty file so that when you run multiple bjobs in one run-pipeline it doesnt keep looping over.
+		Utils::CMD("touch $sample_dir/$file");
+	}
     }
 
     if ( $$self{clean_fastqs} )
