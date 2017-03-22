@@ -435,7 +435,7 @@ sub subsample_provides {
         push @provides, "$sample_dir/${name}_$i.fastq.gz";
     }
     
-    if(-e "/_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
     return \@provides;
 }
 
