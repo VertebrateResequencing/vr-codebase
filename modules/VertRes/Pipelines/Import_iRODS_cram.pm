@@ -367,7 +367,7 @@ sub update_db_requires {
 sub update_db_provides {
     my ($self) = @_;
     if ( exists( $$self{db} ) ) { return 0; }
-    my @provides = ();
+    my @provides = ('_import_done');
     return \@provides;
 }
 
@@ -396,8 +396,6 @@ sub update_db {
   	# Remove crams
     	Utils::CMD(qq[rm $lane_path/$$self{lane}.$suffix]) if(-e qq[$lane_path/$$self{lane}.$suffix]);
       }
-    
-
    
     my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
 
@@ -418,7 +416,8 @@ sub update_db {
     $vrlane->raw_bases($rawbases);
     $vrlane->update();
     $vrtrack->transaction_commit();
-	$self->update_file_permissions($lane_path);
+    system("touch _import_done");
+    $self->update_file_permissions($lane_path);    
     return $$self{Yes};
 }
 
