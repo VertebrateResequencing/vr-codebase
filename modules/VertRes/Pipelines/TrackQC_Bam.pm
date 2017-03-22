@@ -910,10 +910,8 @@ sub update_db_requires
 sub update_db_provides
 {
     my ($self) = @_;
-
-    if ( exists($$self{db}) ) { return 0; }
-
-    my @provides = ();
+    
+    my @provides = ("$$self{sample_dir}/_qc_complete");
     return \@provides;
 }
 
@@ -1102,6 +1100,7 @@ sub update_db
             rename($sample_dir,"$sample_dir.$mapstats_id");
         }
     }
+    system("touch $sample_dir/_qc_complete");
     $self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
