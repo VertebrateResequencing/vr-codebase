@@ -366,7 +366,6 @@ sub update_db_requires {
 #
 sub update_db_provides {
     my ($self) = @_;
-    if ( exists( $$self{db} ) ) { return 0; }
     my @provides = ('_import_done');
     return \@provides;
 }
