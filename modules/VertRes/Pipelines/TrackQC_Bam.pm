@@ -913,7 +913,7 @@ sub update_db_provides
 {
     my ($self) = @_;
     
-    my @provides = ("$$self{sample_dir}/_qc_complete");
+    my @provides = ();
     return \@provides;
 }
 
