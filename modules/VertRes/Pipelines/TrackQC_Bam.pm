@@ -430,6 +430,7 @@ sub check_genotype_provides
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
     my @provides = ("$sample_dir/$$self{lane}.gtype");
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
@@ -658,6 +659,7 @@ sub auto_qc_provides
     if ( exists($$self{db}) ) { return 0; }
 
     my @provides = ();
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
@@ -910,10 +912,8 @@ sub update_db_requires
 sub update_db_provides
 {
     my ($self) = @_;
-
-    if ( exists($$self{db}) ) { return 0; }
-
-    my @provides = ();
+    
+    my @provides = ("$$self{sample_dir}/_qc_complete");
     return \@provides;
 }
 
@@ -932,6 +932,7 @@ sub update_db
     my $vrlane    = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
 
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
+    if ( $vrlane->is_processed('qc') ) { return $$self{Yes}; }
 
     # Get the stats
     my $bc = VertRes::Parser::bamcheck->new(file=>"$sample_dir/$name.bam.bc");
@@ -1102,6 +1103,7 @@ sub update_db
             rename($sample_dir,"$sample_dir.$mapstats_id");
         }
     }
+    system("touch $sample_dir/_qc_complete");
     $self->update_file_permissions($lane_path);
     return $$self{'Yes'};
 }
