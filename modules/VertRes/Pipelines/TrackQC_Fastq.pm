@@ -514,7 +514,7 @@ sub process_fastqs_provides {
         push @provides, "$sample_dir/${name}_$i.nadapters";
     }
     
-    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
@@ -628,7 +628,7 @@ sub map_sample_provides {
     my $sample_dir = $$self{'sample_dir'};
     my @provides   = ("$sample_dir/$$self{lane}.bam");
     
-    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
@@ -775,7 +775,7 @@ sub heterozygous_snps_provides {
     my $het_per_seq = $het_prefix . '_ref_seq_breakdown.tsv';
     my $het_bcf = $het_prefix . '.bcf';
     my @provides = ("_heterozygous_snps_done", $het_report, $het_per_seq, $het_bcf);
-    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
@@ -851,7 +851,7 @@ sub stats_and_graphs_provides {
     my $sample_dir = $$self{'sample_dir'};
     my @provides =
       ( "$sample_dir/_graphs.done", "$sample_dir/$$self{lane}.cover" );
-    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 

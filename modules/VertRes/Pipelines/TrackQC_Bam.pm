@@ -430,7 +430,7 @@ sub check_genotype_provides
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
     my @provides = ("$sample_dir/$$self{lane}.gtype");
-    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
@@ -659,7 +659,7 @@ sub auto_qc_provides
     if ( exists($$self{db}) ) { return 0; }
 
     my @provides = ();
-    if(-e "_qc_complete"){@provides = ( $sample_dir."/_qc_complete");}
+    if(-e "_qc_complete"){@provides = ( $$self{'sample_dir'}."/_qc_complete");}
     return \@provides;
 }
 
