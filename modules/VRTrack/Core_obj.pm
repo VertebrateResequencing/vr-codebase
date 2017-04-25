@@ -58,15 +58,15 @@ sub new {
 
 sub _initialize {
     my ($self, $id, $date) = @_;
-    
+
     my $table = $self->_class_to_table;
-    
+
     my $fields = $self->fields_dispatch;
     my $sql = qq[select row_id,].(join ", ", keys %$fields).qq[ from $table where ${table}_id = ?];
     $sql .= $self->_history_sql($date);
-    
+
     my $sth = $self->{_dbh}->prepare($sql);
-    
+
     if ($sth->execute($id)){
 	my $data = $sth->fetchall_arrayref({}); # return array of hashes
         unless (@$data) {
@@ -74,16 +74,16 @@ sub _initialize {
         }
         # use the most recent row
 	my $row = $data->[-1];
-	
+
         foreach (keys %$fields) {
             $fields->{$_}->($row->{$_});
         }
-	
+
         # handle row_id as a special case outside fields_dispatch, as otherwise
         # we'd need to remove it from fields_dispatch before update.
         # Note also it is hard-coded in the select statement above
         $self->row_id($row->{'row_id'});
-	
+
 	$self->dirty(0); # unset the dirty flag
     }
     else {
@@ -93,9 +93,9 @@ sub _initialize {
 
 sub _history_sql {
     my ($self, $thing) = @_;
-    
+
     my $date_stamp = $thing || $self->global_history_date();
-    
+
     my $sql = '';
     if ("$date_stamp" eq 'latest') {
 	$sql = qq[ and latest = true];
@@ -111,14 +111,14 @@ sub _history_sql {
     }
     elsif ("$date_stamp" eq 'most_recent') {
 	# get the most recent row.  This may have had latest unset, which is
-        # why you'd use this rather than 'latest' (which should really be 
+        # why you'd use this rather than 'latest' (which should really be
         # called 'current').
 	$sql = qq[ order by changed,row_id ASC];
     }
     else {
 	confess "bad datetime/row_id supplied ('$date_stamp')";
     }
-    
+
     return $sql;
 }
 
@@ -142,14 +142,14 @@ sub _history_sql {
 
 sub global_history_date {
     my ($self, $date) = @_;
-    
+
     if ($date) {
 	unless ($date =~ /^(latest|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})$/) {
 	    confess "invalid date format set ('$date')";
 	}
 	$HISTORY_DATE = $date;
     }
-    
+
     return $HISTORY_DATE;
 }
 
@@ -169,11 +169,11 @@ sub global_history_date {
 
 sub fields_dispatch {
     my $self = shift;
-    
+
     my %fields = (note_id => sub { $self->note_id(@_)},
                   changed => sub { $self->changed(@_)},
                   latest  => sub { $self->is_latest(@_)});
-    
+
     return \%fields;
 }
 
@@ -205,10 +205,10 @@ sub new_by_field_value {
 
 sub _get_id_by_field_value {
     my ($self, $dbh, $table, $field, $value, $date) = @_;
-    
+
     my $sql = qq[select ${table}_id from $table where $field = ?];
     $sql .= $self->_history_sql($date);
-    
+
     my $sth = $dbh->prepare($sql);
     my $id;
     if ($sth->execute($value)) {
@@ -235,7 +235,7 @@ sub _get_id_by_field_value {
     else {
         confess "Cannot retrieve $table by $field = $value: ".$DBI::errstr;
     }
-    
+
     return $id;
 }
 
@@ -254,7 +254,7 @@ sub create {
     my ($class, $vrtrack, $id) = @_;
     confess "Need to call with a vrtrack handle" unless $vrtrack;
     confess "The interface has changed, expected vrtrack reference." if $vrtrack->isa('DBI::db');
-    
+
     my $dbh = $vrtrack->{_dbh};
     my $table = $class->_class_to_table;
 
@@ -278,38 +278,38 @@ sub create {
     else {
         # id gets ignored
     }
-    
+
     # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
     if ($name && $class->is_name_in_database($vrtrack, $name, $name)){
         confess "Already a $table entry with value $name";
     }
-    
+
     my $next_id;
     my $success = $vrtrack->transaction(sub {
 	# insert a fake record to obtain a unique id (row_id)
 	my $query = qq[INSERT INTO $table SET ${table}_id=0];
 	my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
 	my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
-	
+
 	# now update the inserted record
 	$next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
-	
+
 	if ($name) {
 	    my $hierarchy_name;
-	    
+
 	    my $fieldsref = $class->fields_dispatch();
 	    if ( exists($fieldsref->{hierarchy_name}) )
 	    {
 		$hierarchy_name = $name;
 		$hierarchy_name =~ s/\W+/_/g;
 	    }
-	    
+
 	    $name = qq[name='$name' ];
 	    if ($hierarchy_name) {
 		$name .= qq[, hierarchy_name='$hierarchy_name' ];
 	    }
 	}
-	
+
 	$query = qq[UPDATE $table SET ${table}_id=$next_id];
 	if ($name){
 	    $query .= qq[, $name ];     # add name, hierarchy_name clause
@@ -317,16 +317,16 @@ sub create {
 	elsif ($ssid){
 	    $query .= qq[, ssid=$ssid ]; # add ssid clause
 	}
-	
+
 	$query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
 	$sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
 	$sth->execute or confess qq[The query "$query" failed: $!];
     });
-    
+
     unless ($success) {
 	confess $vrtrack->{transaction_error};
     }
-    
+
     return $class->new($vrtrack, $next_id);
 }
 
@@ -336,7 +336,7 @@ sub create {
   Arg[2]     : column to order by (optional, default is row_id)
   Arg[3]     : where clause (optional, default is 'latest=true')
   Example    ; VRTrack::Core_obj->_all_values_by_field($vrtrack, 'changed')
-  Description: Class method. Probably best used internally by inheritors of Core_obj. 
+  Description: Class method. Probably best used internally by inheritors of Core_obj.
                Gives an array reference to all values in a column of the database table.
   Returntype : ArrayRef
 
@@ -367,13 +367,13 @@ sub is_name_in_database {
     if ($vrtrack->isa('DBI::db')) {
 	confess "The interface has changed, expected vrtrack reference.\n";
     }
-    
+
     my $table = $class->_class_to_table;
-    
+
     my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select ${table}_id from $table where latest=true and (name = ? or hierarchy_name = ?)];
     my $sth = $dbh->prepare($sql);
-    
+
     my $already_used = 0;
     if ($sth->execute($name, $hname)) {
         my $data = $sth->fetchrow_hashref;
@@ -384,7 +384,7 @@ sub is_name_in_database {
     else {
         confess "Cannot retrieve $table by $name: ".$DBI::errstr;
     }
-    
+
     return $already_used;
 }
 
@@ -394,7 +394,7 @@ sub is_name_in_database {
   Arg [1]    : None
   Example    : $obj->update();
   Description: Update a object whose properties you have changed.  If properties
-               haven't changed (i.e. dirty flag is unset) do nothing.  
+               haven't changed (i.e. dirty flag is unset) do nothing.
 	       Changes the changed datestamp to now() on the mysql server (i.e.
 	       you don't have to set changed yourself, and indeed if you do,
 	       it will be overridden).
@@ -407,11 +407,11 @@ sub is_name_in_database {
 sub update {
     my $self = shift;
     $self->is_latest || return 0;
-    
+
     my $table = $self->_class_to_table;
-    
+
     my $success = 0;
-    
+
     if ($self->dirty) {
 	my $dbh = $self->{_dbh};
         my $latestval = $self->{'unset_latest'} ? 'false' : 'true';
@@ -419,11 +419,11 @@ sub update {
         $success = $self->{vrtrack}->transaction(sub {
 	    my $fieldsref = $self->fields_dispatch;
 	    my @fields = grep {!/^changed$/ && !/^latest$/} keys %$fieldsref;
-	    
+
 	    # Need to unset 'latest' flag on current latest obj and add
 	    # the new obj details with the latest flag set
 	    my $updsql = qq[UPDATE $table SET latest=false WHERE ${table}_id = ? and latest=true];
-	    
+
 	    # build insert statement from update fields
 	    my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
 	    $addsql .= qq[, changed, latest ) ];
@@ -432,17 +432,17 @@ sub update {
 	    $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
 	    $row_id = $dbh->{'mysql_insertid'};
 	});
-	
+
 	# Remember to update the row_id to the _new_ row_id, as this is an autoinc field
 	$self->row_id($row_id) if $success;
-        
+
         # reinitialize so that changed() will return the correct value. Could
         # probably shortcut and only grab the changed value, but calling
         # _initialize is safer, incase some subclass needs to do something
         # strange in its _initialize. _initialize also unsets dirty flag.
         $self->_initialize($self->id);
     }
-    
+
     return $success;
 }
 
@@ -467,7 +467,7 @@ sub delete {
         my $table = $class->_class_to_table;
         push @{$rows_from_table{$table}}, $_->id;
     }
-    
+
     # now delete them all, one table at a time
     my $dbh = $self->{_dbh};
     $success = $self->{vrtrack}->transaction(sub {
@@ -477,7 +477,7 @@ sub delete {
             $dbh->do ($delsql);
         }
     });
-    
+
     return $success;
 }
 
@@ -563,7 +563,7 @@ sub note_id {
                 Note that this sub will return a value of 1 if used to unset
                 is_latest because is_latest has to be 1 for it to be set
                 to 0 in update.
-  
+
   Returntype : boolean
 
 =cut
@@ -616,12 +616,12 @@ sub row_id {
 
 sub row_ids {
     my $self = shift;
-    
+
     my $table = $self->_class_to_table;
     my $sql = qq[select row_id from $table where ${table}_id = ?];
-    
+
     my $sth = $self->{_dbh}->prepare($sql);
-    
+
     if ($sth->execute($self->id)){
 	my $data = $sth->fetchall_arrayref({}); # return array of hashes
         my %row_ids;
@@ -664,12 +664,12 @@ sub list_enum_vals {
 
 sub _check_status_value {
     my ($self, $type, $value) = @_;
-    
+
     if (defined $value) {
 	my $class = ref($self);
 	confess "Could not determine the class name [$class]." unless $class=~/([^:]+)$/;
 	my $table = lc($1);
-	
+
         my $allowed = $allowed_status{$table}->{$type};
         unless ($allowed) {
             my %allowed = map {$_ => 1} @{$self->list_enum_vals($table, $type)};
@@ -724,6 +724,7 @@ sub allowed_processed_flags {
      rna_seq_expression => 512,
      assembled  => 1024,
      annotated  => 2048,
+     methylation => 4096,
      );
 
     return %flags;
