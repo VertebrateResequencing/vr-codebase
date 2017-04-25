@@ -12,7 +12,7 @@ pipeline
 
     The global config file may look like this:
         # Comment lines and lines containing only white space characters are ignored.
-        # To edit the config file safely while pipeline script is running, lock the 
+        # To edit the config file safely while pipeline script is running, lock the
         # file by creating empty lock file, e.g. `touch config.lock`.
 
         # Read list of lanes from a file, use qc.conf configuration file.
@@ -24,7 +24,7 @@ pipeline
         # Run the same as above but for a single lane
         lane/path       qc2.conf
 
-        # Get the list of jobs from the VRTrack database. For these jobs, the db option 
+        # Get the list of jobs from the VRTrack database. For these jobs, the db option
         #   is required below.
         __VRTrack_QC__  qc-g1k.conf
         __VRTrack_QC__  qc-mouse.conf
@@ -34,7 +34,7 @@ pipeline
 
         __VRTrack_Mapping__     mapping.conf
         __VRTrack_DCCImport__   dccimport.conf
-        
+
         # If the script runs as a daemon somewhere and it needs to be killed,
         #   put this in the config. Note that the script will not exit immediately
         #   because of the sleeping periods.
@@ -51,7 +51,7 @@ pipeline
         max_failures => 3,                  # How many repeated failures are allowed for a lane. Set 0 to unlimited.
 
         # Required only for __VRTrack_QC__ jobs. This parameter is not passed to the pipeline. If the pipeline
-        #   needs to write e.g. QC status to the database, the parameter must be repeated in the 
+        #   needs to write e.g. QC status to the database, the parameter must be repeated in the
         #   pipeline-specific data below.
         db =>
         {
@@ -123,7 +123,7 @@ exit;
 
 
 sub read_cmd_line_args
-{   
+{
     my $opts = {};
 
     $$opts{'verbose'}    = 0;
@@ -151,7 +151,7 @@ sub read_cmd_line_args
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{'verbose'}++; next; }
         if ( $arg eq '-a' || $arg eq '--dont_check_load' ) { $$opts{'dont_check_load'}=1; next; }
 	if ( $arg eq '-x' || $arg eq '--max-check-jobs' ) { $$opts{'max_check_jobs'}=shift(@ARGV); next; }
-	
+
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { usage(); }
         if ( -d $arg ) { $$opts{'dir'} = $arg; next; }
         usage("Unknown parameter \"$arg\". Run -h for help.\n");
@@ -174,7 +174,7 @@ sub check_load_on_host
 {
   my ($dont_check_load) = @_;
   return if(defined($dont_check_load) && $dont_check_load == 1);
-  
+
   my $number_of_cpus = Sys::CPU::cpu_count();
   my $current_1min_load = Sys::CpuLoadX::get_cpu_load();
   if($current_1min_load > $number_of_cpus )
@@ -230,10 +230,10 @@ sub run_pipelines
     {
         if ( !$first_pass && $$opts{'once'} )  { return }
 
-        if ( !$first_pass && $$opts{sleep_time} ) 
-        { 
+        if ( !$first_pass && $$opts{sleep_time} )
+        {
             if ( $$opts{verbose}>1 ) { print STDERR "Sleeping...\n"; }
-            sleep($$opts{'sleep_time'}); 
+            sleep($$opts{'sleep_time'});
         }
         $first_pass = 0;
 
@@ -248,13 +248,13 @@ sub run_pipelines
                 {
                     my $info   = $job->get_info();
                     my $status = $job->state();
-            
+
                     if ( !($status=~/$$opts{status_filter}/) ) { next; }
-            
+
                     print "$status\t$info\n";
                     next;
                 }
-            
+
                 if ( $$opts{lsf_limit} && n_lsf_jobs($opts) > $$opts{lsf_limit} ) { last; }
                 $job->run();
             }
@@ -319,7 +319,7 @@ sub n_lsf_jobs
 
 =head2 get_jobs
 
-  Arg[1]     : The hash reference with options: 
+  Arg[1]     : The hash reference with options:
                     config  .. the name of the config file
                     log     .. [optional]
                     verbose .. [optional]
@@ -342,10 +342,10 @@ sub get_jobs
 
     my @jobs = ();
 
-    if ( -e "$$opts{config}.lock" ) 
-    { 
+    if ( -e "$$opts{config}.lock" )
+    {
         if ( $$opts{verbose}>1 ) { print STDERR "The config locked, skipping: $$opts{config}.lock\n"; }
-        return \@jobs; 
+        return \@jobs;
     }
 
     open(my $fh,'<',$$opts{config}) or croak "$$opts{config}: $!";
@@ -355,8 +355,8 @@ sub get_jobs
         if ( $line=~/^\s*$/ ) { next }
         if ( $line=~/^\s*#/ ) { next }
 
-        if ( $line=~/^__EXIT__/ ) 
-        { 
+        if ( $line=~/^__EXIT__/ )
+        {
             print STDERR "Exiting...\n";
             exit;
         }
@@ -370,39 +370,39 @@ sub get_jobs
               if ( $$opts{verbose}>1 ) { print STDERR "Config file not found, skipping: $config_fname\n";}
               next;
             }
-            
-            if ( -e "$config_fname.lock" ) 
-            { 
+
+            if ( -e "$config_fname.lock" )
+            {
                 if ( $$opts{verbose}>1 ) { print STDERR "The config locked, skipping: $config_fname.lock\n"; }
-                next; 
+                next;
             }
             my $config_data  = $$opts{config_data}->get_data($config_fname);
             my $config_mtime = $$opts{config_data}->get_mtime($config_fname);
             $config_data = {%default_opts, %$config_data};
 	    $$config_data{same_database_for_all} = $$opts{same_database_for_all};
-            
+
             if ($action =~ /^__VRTrack_Storing__$/) {
                 get_storage_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action =~ /^__Storing__$/) {
                 get_storage_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ( $action=~/^__VRTrack_QC__$/ )
             {
                 get_qc_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ( $action=~/^__VRTrack_Mapping__$/ )
             {
                 get_mapping_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ( $action=~/^__VRTrack_BamImprovement__$/ )
             {
                 get_improvement_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -414,55 +414,61 @@ sub get_jobs
                 get_import_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ( $action=~/^__VRTrack_HierarchyUpdate__$/ )
             {
                 get_hierarchy_update_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__VRTrack_SNPs__$/ )
             {
                 get_snps_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__VRTrack_RNASeqExpression__$/ )
             {
                 get_rna_seq_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__VRTrack_Assembly__$/ )
             {
                 get_assembly_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__VRTrack_AnnotateAssembly__$/ )
             {
                 get_annotate_assembly_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__VRTrack_Import_Pacbio__$/ )
             {
                 get_import_pacbio_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__VRTrack_PacbioAssembly__$/ )
             {
                 get_pacbio_assembly_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
+            if ($action=~/^__VRTrack_Methylation__$/ )
+            {
+                get_methylation_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+
             if ($action=~/^__VRTrack_Import_cram__$/ )
             {
                 get_import_cram_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-	    
+
             if ($action=~/^__VRTrack_Permissions__$/ )
             {
                 get_permissions_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -474,25 +480,25 @@ sub get_jobs
                 get_snps_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ( $action=~/^__DINDEL__$/ )
             {
                 get_dindel_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ( $action=~/^__MERGEUP__$/ )
             {
                 get_mergeup_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-        
+
             if ($action=~/^__SPLITBAM__$/ )
             {
                 get_splitbam_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
+
             if ($action=~/^__Assembly__$/ )
             {
                 get_assembly_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -541,8 +547,8 @@ sub lane_info
     $path =~ s{/$}{};
     my @items = split m{/}, $path;
 
-    if ( scalar @items < 5 ) 
-    { 
+    if ( scalar @items < 5 )
+    {
         # What if someone wants to run a pipeline with no hierarchy? Try to supply just
         #   the lane name and see what happens.
         my $info = { lane => $items[-1] };
@@ -650,35 +656,35 @@ sub get_jobs_from_file
 
 sub get_storage_jobs_from_vrtrack {
     my ($jobs,$config,$mtime,$config_data) = @_;
-    
+
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
     debug($config_data,"$config\tget_storage_jobs_from_vrtrack...");
-    
+
     my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
     my %filter  = (qc => 1, mapped => 1, stored => 0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     my $laneref = $vrtrack->processed_lane_hnames(%filter);
-    
+
     my $num_jobs = 0;
     my $max_jobs = $config_data->{limit} || 50;
     foreach my $lane (@$laneref) {
         my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$lane) or croak("Could not get lane for $lane: $config\n");
         next if $vrlane->is_withdrawn;
         next if $vrlane->is_processed('stored');
-        
+
         my $lane_name = $vrlane->name;
         my $path = $vrtrack->hierarchy_path_of_lane_name($lane_name);
         if ( !$path ) { croak("No path for [$lane_name]?\n"); }
         my $lane_info = lane_info($path);
-        
+
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
-        
+
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         $num_jobs++;
         debug($config_data,".");
-        
+
         # to stop us crushing io, we limit the number of simultaneous jobs
         last if $num_jobs > $max_jobs;
     }
@@ -699,10 +705,10 @@ sub get_storage_jobs_from_vrtrack {
 
 sub get_storage_jobs {
     my ($jobs,$config,$mtime,$config_data) = @_;
-    
+
     if ( !$$config_data{fod} ) { croak("Expected fod key in the config $config.\n"); }
     debug($config_data,"$config\tget_storage_jobs...");
-    
+
     my @paths;
     open(my $fh,'<',$$config_data{fod}) or croak("$$config_data{fod}: $!");
     while (<$fh>)
@@ -716,12 +722,12 @@ sub get_storage_jobs {
     }
     close($fh);
     debug($config_data,"found ".scalar(@paths)." paths to store...");
-    
+
     my $jobs_running = 0;
     my $jobs_failed = 0;
     my $jobs_done = 0;
     my $max_jobs = $$config_data{limit} || 50;
-    foreach my $path (@paths) 
+    foreach my $path (@paths)
     {
         my $lane_info = { lane_path => $path, root => $$config_data{root} };
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
@@ -853,7 +859,7 @@ sub get_qc_jobs_from_vrtrack
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
     my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
-    
+
     my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
 
     my $jobs_running = 0;
@@ -1079,8 +1085,8 @@ sub get_mapping_jobs_from_vrtrack_without_get_lanes {
     }
     # Get lanes
     my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
-    $hnames = filter_lane_names_based_on_mapping($hnames, $config_data, \%filter,$vrtrack); 
-    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config); 
+    $hnames = filter_lane_names_based_on_mapping($hnames, $config_data, \%filter,$vrtrack);
+    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
 
     my $count = 0;
     foreach my $vrlane (@lanes) {
@@ -1126,7 +1132,7 @@ sub filter_lane_names_based_on_mapping
 
   my %hnames_freq = map { $_ => 0 } @{$hnames};
   my $mapper =  exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'} : $$config_data{data}{'454_mapper'};
-  
+
   my $hlanes_with_mapping_complete = $vrtrack->lanes_with_mapping_filtered_by_limits(-1,$config_data->{limits},$$config_data{prefix},  $mapper,$$config_data{data}{assembly_name}, %{$filter});
   for my $lane_name(@{$hlanes_with_mapping_complete})
   {
@@ -1154,17 +1160,17 @@ sub filter_lane_names_based_on_mapping
   Arg [2]    : Hash of filters corresponding to processed flags on a VRlane
   Return     : Boolean
   Description: Check that the and passes the filters passed in
-  
+
 =cut
 sub does_lane_pass_vrtrack_processed_flag_filters
 {
   my ($vrlane, $filter) = @_;
-  
+
   for my $pipeline_task (keys %{$filter})
   {
     if($vrlane->is_processed($pipeline_task) != $filter->{$pipeline_task})
     {
-     return 0; 
+     return 0;
     }
   }
   return 1;
@@ -1191,8 +1197,8 @@ sub get_improvement_jobs_from_vrtrack {
     my %filter  = ( mapped => 1, improved => 0, swapped => 0 );
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     my @lanes;
-    if ( exists $config_data->{qc} && $config_data->{qc} ) { 
-        $filter{qc} = $config_data->{qc}; 
+    if ( exists $config_data->{qc} && $config_data->{qc} ) {
+        $filter{qc} = $config_data->{qc};
         @lanes = @{$vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter) || []};
         debug($config_data, "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved...");
     } else {
@@ -1530,12 +1536,12 @@ sub get_import_pacbio_jobs_from_vrtrack
 
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
-        
+
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
             push @{$lane_info->{files}}, $file->name if ( $file->name=~m{^/} ) ;
         }
-        
+
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
@@ -1584,14 +1590,14 @@ sub get_permissions_jobs_from_vrtrack
 
     my $count = 0;
     my $unix_group; # set once per config
-    
+
     foreach my $vrlane (@lanes) {
         unless (ref($vrlane)) {
             $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
         }
         next if $vrlane->is_withdrawn;
         $count++;
-	
+
 	my %lane_objs = $vrtrack->lane_hierarchy_objects($vrlane);
 	if(!defined($unix_group) && defined($lane_objs{project}) && defined($lane_objs{project}->data_access_group) )
 	{
@@ -1617,7 +1623,7 @@ sub get_permissions_jobs_from_vrtrack
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
 	$lane_info->{unix_group} = $unix_group;
-        
+
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
@@ -1679,14 +1685,75 @@ sub get_import_cram_jobs_from_vrtrack
 
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
-        
+
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
             next unless( $file->type() == 6);
             push @{$lane_info->{files}}, $file->name;
         }
-        
+
         next if(! defined($lane_info->{files}));
+        my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        debug($config_data,".");
+
+        last if ($config_data->{limit} && $count >= $config_data->{limit});
+    }
+    debug($config_data,"done\n");
+    return;
+}
+
+
+=head2 get_methylation_jobs_from_vrtrack
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the lane list from the VRTrack database.
+
+=cut
+
+sub get_methylation_jobs_from_vrtrack
+{
+    my ($jobs,$config,$mtime,$config_data) = @_;
+
+    if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
+    debug($config_data,"$config\tget_methylation_jobs_from_vrtrack...");
+
+    my $vrtrack = setup_or_reuse_db_connection($config_data,$config);
+
+    my %filter  = (assembled => 1, methylation => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+
+
+    my $max_lanes = 3000;
+    if(defined($config_data->{max_lanes_to_search}))
+    {
+      $max_lanes = $config_data->{max_lanes_to_search};
+    }
+    my @lanes = @{$vrtrack->processed_lane_hnames_with_limits($max_lanes,$config_data->{limits}, %filter) || []};
+
+    if (defined $config_data->{limits}) {
+          @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+          debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
+    }
+
+    my $count =0;
+    foreach my $vrlane (@lanes) {
+        unless (ref($vrlane)) {
+            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
+        }
+        next if $vrlane->is_withdrawn;
+        $count++;
+
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
+        my $lane_info = lane_info($path);
+
+        $lane_info->{vrlane} = $vrlane;
+        $lane_info->{lane_path} = $path;
+
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
@@ -1747,7 +1814,7 @@ sub get_pacbio_assembly_jobs_from_vrtrack
 
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
-        
+
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
@@ -1889,10 +1956,10 @@ sub get_snps_jobs_from_vrtrack {
 
         for my $candidate_mapstat ( @{$candidate_mapstats} ) {
             next if ( -e $lane_path."/".$candidate_mapstat . ".pe.markdup.snp/.snps_done" && $vrlane->is_processed('snp_called') );
-						
+
 						my @bam_files = glob("$lane_path/".$candidate_mapstat."*.bam");
 						next if ( !scalar @bam_files );
-						
+
 		        my $regex = $config_data->{data}{bam_suffix};
 		        $regex =~ s/\.bam/\\\.bam/;
 		        $regex = '^(\d+)\.[ps]e\..*' . $regex . '$';
@@ -1916,7 +1983,7 @@ sub get_snps_jobs_from_vrtrack {
 		                }
 		            }
 		        }
-						
+
         }
 
         next unless ( scalar keys %mapstat_ids );
@@ -2012,7 +2079,7 @@ sub get_snps_jobs {
     Utils::CMD("mkdir -p $$config_data{new_root}") unless (-d $$config_data{new_root});
 
     my $bams_fofn = File::Spec->catfile($$config_data{new_root}, 'bams.fofn');
-    unless (-s $bams_fofn) 
+    unless (-s $bams_fofn)
     {
         copy($$config_data{bams_fofn}, $bams_fofn) || die "Could not copy '$$config_data{bams_fofn}' to '$bams_fofn'\n";
     }
@@ -2031,7 +2098,7 @@ sub get_snps_jobs {
         {
             $snp_dir = "$1.snp";
         }
-        else 
+        else
         {
             die "Fixme: couldn't work out snp dir name, bam $bam doesn't end with .bam?\n";
         }
@@ -2041,10 +2108,10 @@ sub get_snps_jobs {
             $snp_dir = File::Spec->catdir($snp_dir, $$config_data{outdir});
         }
 
-        unless (-d $snp_dir) 
+        unless (-d $snp_dir)
         {
             Utils::CMD("mkdir -p $snp_dir");
-        }     
+        }
 
         if (-e File::Spec->catfile($snp_dir, '.snps_done')) { $jobs_done++; next; }
 
@@ -2176,7 +2243,7 @@ sub get_splitbam_jobs {
         }
         elsif (-s $split_done) {  # if split done, but cleanup about to be run,  don't count this as running
             $jobs_running--;
-        } 
+        }
 
         if ($config_data->{simultaneous_splits} and $config_data->{simultaneous_splits} == $jobs_running) {
             debug($config_data, "jobs limit $config_data->{simultaneous_splits} reached...");
@@ -2231,7 +2298,7 @@ sub get_mergeup_jobs {
     # first work out which samples changed and which didn't; record the results
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
-    unless (-s $s_file) {   
+    unless (-s $s_file) {
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
 
@@ -2381,7 +2448,7 @@ sub get_mergeup_jobs {
         $cleanup = 1;
     }
 
-    # note which samples we have to deal with   
+    # note which samples we have to deal with
     my %new_samples;
     my %old_samples;
     open(my $sfh, $s_file) || die "Could not open $s_file\n";
@@ -2441,7 +2508,7 @@ sub get_mergeup_jobs {
             close($ofh);
         }
 
-        # Check for done files. 
+        # Check for done files.
         if ( -s $expected_file && ! -e $done_file ) {
             my $done_count = 0;
             my $expected_done = 0;
@@ -2510,7 +2577,7 @@ sub get_mergeup_jobs {
         }
     }
 
-    # Unless cleanup action will be run, remove from new samples hash if final 
+    # Unless cleanup action will be run, remove from new samples hash if final
     # task has completed
     unless ($cleanup) {
         while ( my ($sample, $task) = each(%done_tasks) ) {
@@ -2552,7 +2619,7 @@ sub get_mergeup_jobs {
 
   Arg [1]    : The config data
   Arg [2]    : The vrlane object
-  Description: Checks if mapping complete based on mapstats entry. 
+  Description: Checks if mapping complete based on mapstats entry.
 
 =cut
 
@@ -2595,7 +2662,7 @@ sub mapping_complete
   Arg [3]    : The vrlane object
   Arg [4]    : The mapstats id
   Arg [5]    : The bam filename
-  Description: Checks if SNPs have been called for a BAM file produced by the mapping pipeline. 
+  Description: Checks if SNPs have been called for a BAM file produced by the mapping pipeline.
                Used if running jobs on several BAM files from alignement with different assemblies.
 
 =cut
@@ -2628,7 +2695,7 @@ sub uncalled_mapstat
     # 3. Check mapping completed.
     return(0) unless(defined($mapstats->raw_reads())); # Mapping not completed
 
-    return(1); # Uncalled completed mapping 
+    return(1); # Uncalled completed mapping
 }
 
 
@@ -2641,7 +2708,7 @@ sub get_bam_reference
   return undef unless defined($seq_line);
   if( $seq_line =~ /UR:file:(.+)\.fa/)
   {
-   return $1.".fa"; 
+   return $1.".fa";
   }
   return undef;
 }
@@ -2718,9 +2785,9 @@ sub Job::new
         $$self{module_path} .= '.pm';
     }
 
-    #   .. and these are lane-specific data. 
+    #   .. and these are lane-specific data.
     if ( !$$self{lane_info} ) { $self->throw(qq[Missing the "lane_info" parameter.]); }
-    
+
     $$self{lane_info}->{hierarchy_path} = $$self{path};
     if ( !($$self{path}=~m{^/}) )
     {
@@ -2729,8 +2796,8 @@ sub Job::new
     }
     if ( !-d $$self{path} )
     {
-        # Pipeline was designed to work with lanes (directories). The decision was to 
-        #   store the information and locking mechanism in the hierarchy, therefore 
+        # Pipeline was designed to work with lanes (directories). The decision was to
+        #   store the information and locking mechanism in the hierarchy, therefore
         #   the directory must exist before the pipeline is run.
         Utils::CMD(qq[mkdir -p '$$self{path}']);
     }
@@ -2747,8 +2814,8 @@ sub Job::new
     #   prefix and log are not set, create a deep local copy and set them.
     #   (Setting them directly would set them also for other jobs using the same config.)
     if ( !exists($$self{data}) ) { $$self{data}={}; }
-    else 
-    { 
+    else
+    {
         my $data = dclone($$self{data});
         $$self{data} = $data;
     }
@@ -2773,7 +2840,7 @@ sub Job::new
 sub Job::get_info
 {
     my ($self) = @_;
-    
+
     return "$$self{module}\t$$self{config}\t$$self{path}";
 }
 
@@ -2787,7 +2854,7 @@ sub Job::get_info
 sub Job::clean_state
 {
     my ($self) = @_;
-    
+
     if ( ! -e $$self{status_file} ) { return; }
 
     my $lock = VertRes::Pipeline::lock_file($$self{update_lock},1) or $self->throw("Could not lock $$self{update_lock}: $!");
@@ -2838,11 +2905,11 @@ sub Job::state
 sub Job::pipeline_state
 {
     my ($self) = @_;
-    
+
     #my $verbose = $$self{verbose} > 1 ? 1 : 0;
     my $verbose = 0;
     my $status;
-    eval 
+    eval
     {
         require "$$self{module_path}";
         my $qc  = $$self{module}->new(%{$$self{lane_info}},%{$$self{data}},check_status=>1,verbose=>$verbose);
@@ -2871,15 +2938,15 @@ sub Job::pipeline_state
 =head2 last_state
 
   Description: Returns the last state of a job and how many times it already failed.
-  Returntype : Array (  state,          # One of 'todo','done','running','failed'. 
-                        nfailures )     # How many times the job failed.   
+  Returntype : Array (  state,          # One of 'todo','done','running','failed'.
+                        nfailures )     # How many times the job failed.
 
 =cut
 
 sub Job::last_state
 {
     my ($self) = @_;
-    
+
     # If there is no status file, behave as if there was no history.
     if ( ! -e $$self{status_file} ) { return ('todo',0); }
 
@@ -2898,31 +2965,31 @@ sub Job::last_state
 
 
     chomp($config);
-    if ( $config ne $$self{config} ) 
+    if ( $config ne $$self{config} )
     {
         # The status file contains different config file, thus the status file is obsolete.
         $self->clean_state();
         return ('todo',0);
     }
-    
+
     chomp($mtime);
-    if ( $mtime ne $$self{mtime} ) 
-    { 
-        # If the time stamp differ, the config file has been updated. The parameters can be now completely 
+    if ( $mtime ne $$self{mtime} )
+    {
+        # If the time stamp differ, the config file has been updated. The parameters can be now completely
         #   different from the last run. Delete the status file and return 'no record'.
         $self->clean_state();
-        return ('todo',0); 
+        return ('todo',0);
     }
 
     chomp($state);
-    if ( $state ne 'running' && $state ne 'done' && $state ne 'failed' ) 
-    { 
-        $self->throw("Eh? $$self{status_file} .. [$config] [$mtime] [$state] [$nfailures]\n"); 
+    if ( $state ne 'running' && $state ne 'done' && $state ne 'failed' )
+    {
+        $self->throw("Eh? $$self{status_file} .. [$config] [$mtime] [$state] [$nfailures]\n");
     }
 
-    if ( !($nfailures=~/^(\d+)$/) ) 
-    { 
-        $self->throw("Eh? $$self{status_file} .. [$config] [$mtime] [$state] [$nfailures]\n"); 
+    if ( !($nfailures=~/^(\d+)$/) )
+    {
+        $self->throw("Eh? $$self{status_file} .. [$config] [$mtime] [$state] [$nfailures]\n");
     }
     return ($state,$1);
 }
@@ -2942,7 +3009,7 @@ sub Job::last_state
 sub Job::write_state
 {
     my ($self,$state,$nfailures) = @_;
-    
+
     if ( $state ne 'running' && $state ne 'done' && $state ne 'failed' ) { $self->throw("Unknown state [$state]\n"); }
 
     my $lock = VertRes::Pipeline::lock_file($$self{update_lock},1) or $self->throw("Could not lock $$self{update_lock}: $!");
@@ -2988,10 +3055,10 @@ sub Job::run
     my ($state,$nfailures) = $self->last_state();
 
     # Exit if there were too many failures.
-    if ( $$self{max_failures} && $nfailures >= $$self{max_failures} ) 
-    { 
+    if ( $$self{max_failures} && $nfailures >= $$self{max_failures} )
+    {
         $self->debug("Failed repeatedly\t" . $self->get_info() . "\n");
-        goto UNLOCK_AND_EXIT; 
+        goto UNLOCK_AND_EXIT;
     }
 
     # If no status file found or the config changed, query the pipeline itself.
@@ -3005,10 +3072,10 @@ sub Job::run
         # Last time we checked the lane it was running. Has something changed?
         $state = $self->pipeline_state();
 
-        if ( $state eq 'running' ) 
+        if ( $state eq 'running' )
         {
             $self->debug("Running\t" . $self->get_info() . "\n");
-            goto UNLOCK_AND_EXIT; 
+            goto UNLOCK_AND_EXIT;
         }
 
         if ( $state eq 'failed' )
@@ -3030,7 +3097,7 @@ sub Job::run
     }
 
     # Even with the pipeline finished, we still must be able to clean the lane.
-    if ( $state eq 'done' && !$$self{data}{clean} ) 
+    if ( $state eq 'done' && !$$self{data}{clean} )
     {
         $self->debug("Done\t" . $self->get_info() . "\n");
         if ( $$self{data}{rerun} )
@@ -3043,7 +3110,7 @@ sub Job::run
             # Remove the status file, we will not need it any more.
             $self->clean_state();
         }
-        goto UNLOCK_AND_EXIT; 
+        goto UNLOCK_AND_EXIT;
     }
 
     if ( $nfailures > 0 )
@@ -3066,7 +3133,7 @@ sub Job::run
         # The pipeline received SIGTERM or SIGINT.
         die $@;
     }
-    if ( $@ || $state==$Error ) 
+    if ( $@ || $state==$Error )
     {
         $nfailures++;
         if ( $$self{max_failures} && $nfailures >= $$self{max_failures} )
@@ -3182,7 +3249,7 @@ sub ConfigData::new
 
   Description: Returns the cached config file data. Calls stats to determine if the
                 config is up to date.
-  Returntype : The config file data. 
+  Returntype : The config file data.
 
 =cut
 
