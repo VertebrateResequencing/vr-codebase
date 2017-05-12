@@ -419,7 +419,7 @@ while (<>) {
 			if ($opts{r}) {
 				chomp $line;
 				my @c = split "\t", $line;
-				my $addline = "##SampleNames changed: ";
+				my $addline = "##SampleNames changed=";
 				foreach my $i (9..$#c) {
 					if ($names{$c[$i]}) {
 						$addline .= " $c[$i]:$names{$c[$i]};"; 
