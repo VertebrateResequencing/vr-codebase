@@ -52,31 +52,63 @@ elsif (! -e $file) {
 my @files = `cat $file`;
 chomp @files;
 my @samples;
+my %seen;
+my $full = 0;
 foreach my $f (@files) {
-	my $s = `basename $f "-MuTect.txt"`;
-	chomp $s;
+	my $line = `grep ^#CHR $f`;
+	my $s = $1 if $line =~/NormalAltBases\s\S+\t(\S+)/;
 	push @samples, $s;
 	print STDERR "$s\n";
+	if ($seen{s}) {
+		print STDERR "Sample name not unique $s: using names in filename\n";
+		$full=1;
+		last;
+	}
+	$seen{$s}++ if !$seen{$s};
 }
-
+if ($full==1) {
+	@samples = ();
+	foreach my $f (@files) {
+		my $s = `basename $f "-MuTect.txt"`;
+		chomp $s;
+		push @samples, $s;
+		print STDERR "$s\n";
+	}
+}
 ##print join ("\t",@samples)."\n";
 ##exit;
 
 my $dp4check = `grep ^# $files[0] | grep DP4T`;
 print STDERR "DP found\n" if $dp4check;
+my $pick = `grep ^# $files[0] | grep PICK`;
+print STDERR "PICK found\n" if $pick;
 
 # input list of sites
 my %inlines;
+#CHROM  POS     REF     ALT     GENE_SYMBOL     CONSEQUENCE     PROT_POS        TRANSCRIPTS
 
 foreach my $in (@files) {
-	my @lines = $dp4check ? `cut -f 1,2,4,5,13,14,16,18 $in | sed 's/\t/_/g'` :  `cut -f 2,4,5,12,13,15,17 $in | sed 's/\t/_/g'`; 
+##	my @lines = $dp4check ? `cut -f 1,2,4,5,13,14,16,18 $in | sed 's/\t/_/g'` :  `cut -f 1,2,4,5,12,13,15,17 $in | sed 's/\t/_/g'`; 
+	my @lines;
+	if ($dp4check && $pick) {
+		@lines = `cut -f 1,2,4,5,13,14,16,19 $in | sed 's/\t/_/g'`;
+	}
+	elsif ($dp4check) {
+		@lines = `cut -f 1,2,4,5,13,14,16,18 $in | sed 's/\t/_/g'`;
+	}
+	elsif ($pick) {
+		@lines = `cut -f 1,2,4,5,12,13,15,18 $in | sed 's/\t/_/g'`; 
+	}
+	else {
+		@lines = `cut -f 1,2,4,5,12,13,15,17 $in | sed 's/\t/_/g'`; 
+	}
 	for (@lines) {
 		chomp;
 		die "Error: already seen $_\n" if $inlines{$in}{$_};
 		$inlines{$in}{$_}=1;
 	}
 }
-
+my $pick2;
 while (<>) {
 	my $line = $_;
 	chomp $line;
@@ -86,10 +118,11 @@ while (<>) {
 	}
 	elsif (/^#/) {
 		print "$line\t".join ("\t",@samples)."\n";
+		$pick2 = 1 if $line=~/PICK/;
 		next;
 	}
 	my @c = split "\t", $line;
-	my $match = join ("_", $c[0],$c[1],$c[3],$c[4],$c[6],$c[7],$c[9],$c[11]);
+	my $match = $pick2 ? join ("_", $c[0],$c[1],$c[3],$c[4],$c[6],$c[7],$c[9],$c[12])  : join ("_", $c[0],$c[1],$c[3],$c[4],$c[6],$c[7],$c[9],$c[11]);
 	my @tally;
 	foreach my $in (@files) {
 		if ($inlines{$in}{$match}){

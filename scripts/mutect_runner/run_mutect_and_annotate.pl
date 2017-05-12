@@ -122,6 +122,8 @@ sub new {
 			# The hard-coded options are: -t SO --format vcf --force_overwrite --buffer 20000 --offline --symbol --biotype --vcf --sift s 
 			#vep_opt => '--pick' 
 			chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 X Y) ],
+			# a file listing sample names to replace in the output VEP and downstream file; format: old[tab]new
+			rename => 'sanger2cgp.list',
 			##--------------------------------------------------------------------##
 
 
@@ -221,7 +223,8 @@ sub parse_args {
 		'cosmic',
 		'bedtools',
 		'assembly',
-		'vep_opt'
+		'vep_opt',
+		'rename'
 	);
 
     while (defined(my $arg=shift(@ARGV))) {
@@ -281,6 +284,9 @@ sub parse_args {
 	$$self{ensembl_api} .= " ";
 	foreach my $path ("/ensembl/modules/","/ensembl-compara/modules/","/ensembl-variation/modules/","/ensembl-funcgen/modules/") {
 		$$self{ensembl_api} .= "-I $apidir"."$path ";
+	}
+	if (!$$self{rename}) {
+		$$self{rename} = "NA";
 	}
 
 }
@@ -440,7 +446,7 @@ sub main {
 	elsif (!$$self{biotype} && $$self{conseq_list} ne 'all' && $$self{output} ne 'vcf' ) {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample";
-			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list});
+			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list},$$self{rename});
 		}
 		$self->wait;
 	}
@@ -448,7 +454,7 @@ sub main {
 	else {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample";
-			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list},$$self{biotype_filter});
+			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list},$$self{rename},$$self{biotype_filter});
 		}
 		$self->wait;
 	}
@@ -726,11 +732,14 @@ sub concat_vcfs {
 }
 
 sub reformat_vcf {
-	my ($self,$outfile,$vcfin,$outputformats,$outdir,$which,$conseq,$biotype) = @_;
+	my ($self,$outfile,$vcfin,$outputformats,$outdir,$which,$conseq,$rename,$biotype) = @_;
 	$which = $which eq 'y' ? 'extended' : 'default';
 	my $cmd = "zcat $vcfin | $$self{reformat_vcf} -f $conseq -m $which -o $outputformats -d $outdir ";
 	if ($biotype) {
-		$cmd .= "-b $biotype";
+		$cmd .= "-b $biotype ";
+	}
+	if ($rename ne 'NA') {
+		$cmd .= "-r $rename ";
 	}
 	$self->cmd($cmd);
 	$self->cmd("touch $outfile");
@@ -738,14 +747,17 @@ sub reformat_vcf {
 
 sub summary_table_sites {
 	my ($self,$outfile,$dp4,$list) = @_;
-	my $header = "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT";
+	#check to see if PICK added
+	my $do = "for f in `cat $list | head -n1`; do grep ^CHR \$f | grep -w PICK; done";
+	my $pick = $do;
+	my $header = !$pick ? "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" : "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tPICK\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" ;
 	my $cmd;
 	if ($dp4 eq 'n') {
-		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,11- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
+#		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,11- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 		$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && xargs cat < $list | grep -v ^# | cut -f 1-5,11- | sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 	}
 	else {
-		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,12- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
+#		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,12- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 		$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && xargs cat < $list | grep -v ^# | cut -f 1-5,12- | sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 	}
 	$self->cmd($cmd);

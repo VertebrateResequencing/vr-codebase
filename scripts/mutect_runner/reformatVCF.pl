@@ -95,10 +95,10 @@ my @all_cons = (
 );
 
 my %opts;
-getopts('f:m:b:o:t:pd:', \%opts);
+getopts('f:m:b:o:t:pd:r:', \%opts);
 
 # required params:
-if (!$opts{f} || !$opts{m} || !$opts{o}) {
+if (!$opts{f} || !$opts{m} || !$opts{o} ) {
 	my $help = <<END;
 
   This is a tool to parse and filter VCF, and reformat to tabular format.
@@ -113,7 +113,7 @@ if (!$opts{f} || !$opts{m} || !$opts{o}) {
     http://www.ensembl.org/info/genome/variation/predicted_data.html#consequences
 
   Output is written to \$OUTDIR/\$sample-vs-\$ref-MuTect.vcf/txt where \$sample and \$ref are
-  tumour and normal sample names from the original VCF.
+  tumour and normal sample names from the original VCF or names replaced using the -r option.
 
   Usage: zcat in.vcf.gz | reformatVCF.pl -f default|all|consequencelist 
 	-m default|extended -o vcf|table|both [-b biotypeslist] [-t targetregions] [-p]
@@ -143,17 +143,26 @@ if (!$opts{f} || !$opts{m} || !$opts{o}) {
 	   list is a "|" separated list, eg: "protein_coding|non_coding"
 	   OPTIONAL
 
-	-t file; BED file (CHR,START,END; start is zero-based) with regions to keep SNV calls
-	   Can be text file or bgzip
-	   OPTIONAL
+	-t file; BED file (CHR,START,END; start is zero-based)
+	   with regions to keep SNV calls.  Can be text file or
+	   bgzip.
+	    OPTIONAL
 
 	-d path; optional output directory, otherwise prints to working dir
 
 	-p print out PASS calls only
 
+	-r file containing sample names to replace names found in
+	   BAM/VCF header. The VCF created by VEP uses the sample
+	   name in the BAM header. To replace tumour and/or normal
+	   names use this option. Input file format: A[tab]B,
+	   where A is the name in the BAM, B is the name you want
+	   to replace with)
+
 END
 	die $help;
 }	
+my $prefix = $opts{n};
 # check consequences
 my $which = lc $opts{f};
 my @conseq = split /\|/, $which;
@@ -239,8 +248,17 @@ mkdir($dir) if $opts{d} && ! -d $opts{d};
 if (! -d -r -w -x $dir ) {
 	die "No such directory or no permissions to read/write $dir\n";
 }
-
- 
+# make a hash with old and new sample names
+my %names;
+if ($opts{r}) {
+	open R, "<$opts{r}" or die "Can't open file $opts{r}\n";
+	while (<R>) {
+		my ($bamname, $newname) = ($1,$2) if /^(\S+)\s+(\S+)/;
+		die ("Problem reading file $opts{r}\n") if !$bamname || !$newname;
+		$names{$bamname}=$newname;
+	}
+	close R; 
+} 
 
 my $reference;
 my $vcfheader;
@@ -274,6 +292,18 @@ while (<>) {
 			my ($header,$n1,$n2) = ($1,$2,$3) if $headerline=~/(.+\s+)(\S+)\s+(\S+)$/;
 			my $sample = $gt1=~/^0:/ ? $n2 : $n1;
 			my $ref = $gt1=~/^0:/ ? $n1 : $n2;
+			if ($opts{r}) {
+				my $sample1 = $names{$sample} if $names{$ref};
+				my $ref1 = $names{$ref} if $names{$ref};
+				if ($sample1 ne $sample) {
+					print STDERR "Replacing $sample with $sample1\n";
+					$sample = $sample1;
+				}
+				if ($ref1 ne $ref) {
+					print STDERR "Replacing $ref with $ref1\n";
+					$ref = $ref1;
+				}
+			}
 			# Table output table or both:
 			if ($outformat ne 'vcf') {
 				open F, ">$dir/$sample-vs-$ref-MuTect.txt" or die "Can't open $dir/$sample-vs-$ref-MuTect.txt" ;
@@ -291,7 +321,9 @@ while (<>) {
 				print F "##A site is listed multiple times if there is more than one consequence type, AA change type or gene affected\n";
 				print F $header;
 				print F "$sample\t$ref\t";
-				print F "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n";
+				print STDERR "PICK $csqindex{PICK}\n";
+				print F "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n" if !$csqindex{PICK};
+				print F "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tPICK\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n"  if $csqindex{PICK};
 			}
 			if ($outformat ne 'table') {
 				open V, ">$dir/$sample-vs-$ref-MuTect.vcf" or die "Can't open $dir/$sample-vs-$ref-MuTect.vcf" ;
@@ -383,6 +415,19 @@ while (<>) {
 	elsif ($line =~ /#CHR/ ) {
 		$headerline = $line;
 		if ($outformat ne 'table') {
+			# replace sample names if requested
+			if ($opts{r}) {
+				chomp $line;
+				my @c = split "\t", $line;
+				my $addline = "##SampleNames changed: ";
+				foreach my $i (9..$#c) {
+					if ($names{$c[$i]}) {
+						$addline .= " $c[$i]:$names{$c[$i]};"; 
+						$c[$i] = $names{$c[$i]};
+					}
+				}
+				$line = $addline ? "$addline\n".join("\t", @c) :  join ("\t", @c);
+			}
 			$vcfheader .= "$line\n";
 		}
 	}
@@ -435,6 +480,7 @@ sub formatgenes {
 		# push trans and biotypes for each gene/cons combination 
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
+		$info{$c[4]}{"$inf"}{pick}="PICK" if $c[$csqindex{PICK}] && $c[$csqindex{PICK}]==1;
 		# order sift scores by most severe first
 		##print STDERR "LINE $line\n";
 		##print STDERR "sift is $c[$csqindex{SIFT}]\n";
@@ -454,6 +500,8 @@ sub formatgenes {
 	foreach my $gene (keys %info) {
 		foreach my $inf (keys %{$info{$gene}}) {
 			my $line = "$gene\t$inf\t";
+			$line .= $info{$gene}{$inf}{pick} || "-";
+			$line .= "\t";
 			$line .= join (",", @{$info{$gene}{$inf}{trans}});
 			$line .= "\t";
 			$line .= join (",", @{$info{$gene}{$inf}{biotype}});
