@@ -292,15 +292,19 @@ while (<>) {
 			my ($header,$n1,$n2) = ($1,$2,$3) if $headerline=~/(.+\s+)(\S+)\s+(\S+)$/;
 			my $sample = $gt1=~/^0:/ ? $n2 : $n1;
 			my $ref = $gt1=~/^0:/ ? $n1 : $n2;
+			my $addline = "##SampleNames changed=";
 			if ($opts{r}) {
 				my $sample1 = $names{$sample} if $names{$ref};
 				my $ref1 = $names{$ref} if $names{$ref};
 				if ($sample1 ne $sample) {
+					$addline .= "$sample:$sample1;";
 					print STDERR "Replacing $sample with $sample1\n";
+					
 					$sample = $sample1;
 				}
 				if ($ref1 ne $ref) {
 					print STDERR "Replacing $ref with $ref1\n";
+					$addline .= "$ref:$ref1;";
 					$ref = $ref1;
 				}
 			}
@@ -319,11 +323,14 @@ while (<>) {
 				print F "##Consequence information see:http://www.ensembl.org/info/genome/variation/predicted_data.html#consequences\n";
 				print F "##First 11 most severe consequnences in the table from the above link are retained below\n";
 				print F "##A site is listed multiple times if there is more than one consequence type, AA change type or gene affected\n";
+				print F "$addline\n" if $opts{r};
 				print F $header;
 				print F "$sample\t$ref\t";
 				print STDERR "PICK $csqindex{PICK}\n";
-				print F "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n" if !$csqindex{PICK};
-				print F "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tPICK\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n"  if $csqindex{PICK};
+				my $annots = "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n";
+				$annots =~ s/AA_CHANGE/AA_CHANGE\tPICK/ if $csqindex{PICK};
+				$annots =~ s/AA_CHANGE/AA_CHANGE\tCANONICAL/ if $csqindex{CANONICAL};
+				print F $annots;
 			}
 			if ($outformat ne 'table') {
 				open V, ">$dir/$sample-vs-$ref-MuTect.vcf" or die "Can't open $dir/$sample-vs-$ref-MuTect.vcf" ;
@@ -467,7 +474,6 @@ sub formatgenes {
 		my @c = split "\t", $line;
 		my $inf;
 		# Genes, conseq, cds pos, aa pos, aa change
-		#for (13,4,6,7,8) {
 		#for ('Gene','SYMBOL','Consequence','CDS_position','Protein_position','Amino_acids') {
 		for ('SYMBOL','Consequence','CDS_position','Protein_position','Amino_acids') {
 			my $index = $csqindex{$_};
@@ -481,6 +487,7 @@ sub formatgenes {
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
 		$info{$c[4]}{"$inf"}{pick}="PICK" if $c[$csqindex{PICK}] && $c[$csqindex{PICK}]==1;
+		$info{$c[4]}{"$inf"}{canonical}="CANONICAL" if $c[$csqindex{CANONICAL}] && $c[$csqindex{CANONICAL}] eq "YES";
 		# order sift scores by most severe first
 		##print STDERR "LINE $line\n";
 		##print STDERR "sift is $c[$csqindex{SIFT}]\n";
@@ -500,8 +507,14 @@ sub formatgenes {
 	foreach my $gene (keys %info) {
 		foreach my $inf (keys %{$info{$gene}}) {
 			my $line = "$gene\t$inf\t";
-			$line .= $info{$gene}{$inf}{pick} || "-";
-			$line .= "\t";
+			if ($csqindex{CANONICAL}) {
+				$line .= $info{$gene}{$inf}{canonical} || "-";
+				$line .= "\t";
+			}
+			if ($csqindex{PICK}) {
+				$line .= $info{$gene}{$inf}{pick} || "-";
+				$line .= "\t";
+			}
 			$line .= join (",", @{$info{$gene}{$inf}{trans}});
 			$line .= "\t";
 			$line .= join (",", @{$info{$gene}{$inf}{biotype}});

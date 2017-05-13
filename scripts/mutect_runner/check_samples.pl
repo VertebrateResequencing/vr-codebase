@@ -82,47 +82,55 @@ my $dp4check = `grep ^# $files[0] | grep DP4T`;
 print STDERR "DP found\n" if $dp4check;
 my $pick = `grep ^# $files[0] | grep PICK`;
 print STDERR "PICK found\n" if $pick;
+my $checkheader = `grep "#CHR" $files[0] | sed 's/^#//'`;
+
+my @csqorder = split /\t/, $checkheader;
+chomp @csqorder;
+# record the index position of each annotation
+my %csqindex;
+foreach my $i (0..$#csqorder) {
+	# add 1 to get the column num instead of the index number
+	$csqindex{$csqorder[$i]}=$i+1;
+}
+
+
+
 
 # input list of sites
 my %inlines;
 #CHROM  POS     REF     ALT     GENE_SYMBOL     CONSEQUENCE     PROT_POS        TRANSCRIPTS
+my $cols = join (",", $csqindex{CHROM},$csqindex{POS},$csqindex{REF},$csqindex{ALT},$csqindex{GENE_SYMBOL},$csqindex{CONSEQUENCE},$csqindex{PROT_POS},$csqindex{TRANSCRIPTS});
 
 foreach my $in (@files) {
-##	my @lines = $dp4check ? `cut -f 1,2,4,5,13,14,16,18 $in | sed 's/\t/_/g'` :  `cut -f 1,2,4,5,12,13,15,17 $in | sed 's/\t/_/g'`; 
-	my @lines;
-	if ($dp4check && $pick) {
-		@lines = `cut -f 1,2,4,5,13,14,16,19 $in | sed 's/\t/_/g'`;
-	}
-	elsif ($dp4check) {
-		@lines = `cut -f 1,2,4,5,13,14,16,18 $in | sed 's/\t/_/g'`;
-	}
-	elsif ($pick) {
-		@lines = `cut -f 1,2,4,5,12,13,15,18 $in | sed 's/\t/_/g'`; 
-	}
-	else {
-		@lines = `cut -f 1,2,4,5,12,13,15,17 $in | sed 's/\t/_/g'`; 
-	}
+	my @lines = `cut -f $cols $in | sed 's/\t/_/g'`;
 	for (@lines) {
 		chomp;
 		die "Error: already seen $_\n" if $inlines{$in}{$_};
 		$inlines{$in}{$_}=1;
 	}
 }
-my $pick2;
+my %csqindex2;
 while (<>) {
 	my $line = $_;
 	chomp $line;
-	if (/^##/) {
+	if ($line=~/^##/) {
 		print "$line\n";
 		next;
 	}
-	elsif (/^#/) {
+	elsif ($line=~/^#/) {
 		print "$line\t".join ("\t",@samples)."\n";
-		$pick2 = 1 if $line=~/PICK/;
+		$line =~ s/^#//;
+		my @csqorder = split /\t/, $line;
+		chomp @csqorder;
+		# record the index position of each annotation
+		foreach my $i (0..$#csqorder) {
+			$csqindex2{$csqorder[$i]}=$i+1;
+		}
 		next;
 	}
 	my @c = split "\t", $line;
-	my $match = $pick2 ? join ("_", $c[0],$c[1],$c[3],$c[4],$c[6],$c[7],$c[9],$c[12])  : join ("_", $c[0],$c[1],$c[3],$c[4],$c[6],$c[7],$c[9],$c[11]);
+	unshift @c, "NA";
+	my $match = join ("_", $c[$csqindex2{CHROM}],$c[$csqindex2{POS}],$c[$csqindex2{REF}],$c[$csqindex2{ALT}],$c[$csqindex2{GENE_SYMBOL}],$c[$csqindex2{CONSEQUENCE}],$c[$csqindex2{PROT_POS}],$c[$csqindex2{TRANSCRIPTS}]);
 	my @tally;
 	foreach my $in (@files) {
 		if ($inlines{$in}{$match}){

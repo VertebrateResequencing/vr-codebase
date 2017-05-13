@@ -120,7 +120,7 @@ sub new {
 			# Other VEP options, eg --pick, --most_severe; USE WITH CAUTION, not all options
 			# are compatible with this mutect runner pipeline, eg: --tab
 			# The hard-coded options are: -t SO --format vcf --force_overwrite --buffer 20000 --offline --symbol --biotype --vcf --sift s 
-			#vep_opt => '--pick' 
+			#vep_opt => '--flag_pick_allele --canonical' 
 			chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 X Y) ],
 			# a file listing sample names to replace in the output VEP and downstream file; format: old[tab]new
 			rename => 'sanger2cgp.list',
@@ -709,7 +709,7 @@ sub check_vep {
 		system($cmd) == 0 || die "$cmd failed : $!";
 		system("touch $donefile") == 0 || die "touch $donefile failed : $!";
 	}
-	my $cmd2 = "bgzip $infile && tabix -p vcf $infile.gz";
+	my $cmd2 = "bgzip -f $infile && tabix -f -p vcf $infile.gz";
 	$self->cmd($cmd2);
 	$self->cmd("touch $outfile");
 
@@ -748,9 +748,11 @@ sub reformat_vcf {
 sub summary_table_sites {
 	my ($self,$outfile,$dp4,$list) = @_;
 	#check to see if PICK added
-	my $do = "for f in `cat $list | head -n1`; do grep ^CHR \$f | grep -w PICK; done";
-	my $pick = $do;
-	my $header = !$pick ? "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" : "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tPICK\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" ;
+	my $pick = "for f in `cat $list | head -n1`; do grep ^CHR \$f | grep -w PICK; done";
+	my $canon = "for f in `cat $list | head -n1`; do grep ^CHR \$f | grep -w CANONIC; done";
+	my $header = "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" ;
+	$header =~ s/AA_CHANGE/AA_CHANGE\tPICK/ if $pick;
+	$header =~ s/AA_CHANGE/AA_CHANGE\tCANONICAL/ if $canon;
 	my $cmd;
 	if ($dp4 eq 'n') {
 #		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,11- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
