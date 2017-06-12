@@ -203,7 +203,6 @@ sub parse_args {
 		'add_DP4T',
 		'remove_fail',
 		'summary_table',
-		'add_hgvs',
 	);
 	my @files = (
 		'bams',
@@ -224,7 +223,8 @@ sub parse_args {
 		'bedtools',
 		'assembly',
 		'vep_opt',
-		'rename'
+		'rename',
+		'add_hgvs',
 	);
 
     while (defined(my $arg=shift(@ARGV))) {
@@ -282,7 +282,7 @@ sub parse_args {
 	# add the required paths to ensembl vep modules
 	my $apidir = $$self{ensembl_api};
 	$$self{ensembl_api} .= " ";
-	foreach my $path ("/ensembl/modules/","/ensembl-compara/modules/","/ensembl-variation/modules/","/ensembl-funcgen/modules/") {
+	foreach my $path ("/ensembl/modules/","/ensembl-io/modules/","/ensembl-compara/modules/","/ensembl-variation/modules/","/ensembl-funcgen/modules/") {
 		$$self{ensembl_api} .= "-I $apidir"."$path ";
 	}
 	if (!$$self{rename}) {
