@@ -171,7 +171,7 @@ my $reset_stage = $reset_stages{$stage};
              -s,   --stage     <stage of pipeline to be restarted>
              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
-             -r, --reference   <only apply to mappings/snp calling with this reference>
+             -f, --reference   <only apply to mappings/snp calling with this reference>
              -h,   --help      <this message>
 
   This tool is able to perform the following operations:
@@ -296,8 +296,8 @@ while (<>) {
                     next if ( $mapping_obj->is_qc() == 1 );
                     my $assembly_obj = $mapping_obj->assembly();
                     if ( $reference eq $assembly_obj->name() ) {
-                        push( @mapping_ids, $mapping_obj->mapstats_id() );
-                        $mapstats_id_to_obj { $mapping_obj->mapstats_id() } = $mapping_obj;
+                        push( @mapping_ids, $mapping_obj->id() );
+                        $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
                     }
                 }
             }
