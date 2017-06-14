@@ -297,7 +297,7 @@ while (<>) {
                     my $assembly_obj = $mapping_obj->assembly();
                     if ( $reference eq $assembly_obj->name() ) {
                         push( @mapping_ids, $mapping_obj->mapstats_id() );
-                        ${mapstats_id} _to_obj { $mapping_obj->mapstats_id() } = $mapping_obj;
+                        $mapstats_id_to_obj { $mapping_obj->mapstats_id() } = $mapping_obj;
                     }
                 }
             }
@@ -318,8 +318,8 @@ while (<>) {
 
             for my $mapstats_id (@mapping_ids) {
                 my $mapping_prefix = '[0-9]+';
-                if ( defined( ${mapstats_id} _to_obj { $mapstats_id } ) ) {
-                    $mapping_prefix = ${mapstats_id} _to_obj { $mapstats_id }->prefix;
+                if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
+                    $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
                 }
 
                 my %files_deleted = (
