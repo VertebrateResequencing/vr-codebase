@@ -147,6 +147,7 @@ GetOptions(
     'v|verbose'     => \$verbose,
     't|test'        => \$test,
     'f|reference=s' => \$reference,
+    'p|prefix=s'    => \$prefix,
     'h|help'        => \$help,
 );
 
@@ -172,6 +173,7 @@ my $reset_stage = $reset_stages{$stage};
              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
              -f, --reference   <only apply to mappings/snp calling with this reference>
+             -p, --prefix      <filter mappings/snp_calling to this prefix>
              -h,   --help      <this message>
 
   This tool is able to perform the following operations:
@@ -317,9 +319,17 @@ while (<>) {
             }
 
             for my $mapstats_id (@mapping_ids) {
-                my $mapping_prefix = '[0-9]+';
-                if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
-                    $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
+                my $mapping_prefix ='[0-9]+';
+                
+                if(defined($prefix))
+                {
+                        $mapping_prefix = $prefix;
+                }
+                else
+                {
+                        if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
+                            $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
+                        }
                 }
 
                 my %files_deleted = (
