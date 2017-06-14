@@ -121,7 +121,7 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use Carp;
 
-my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix );
+my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix,$assembler, $filter );
 
 #values for $stage that involve *resetting* db flags and file deletion
 my @stages = ( 'import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped', 'rna_seq_expression', 'annotated' );
