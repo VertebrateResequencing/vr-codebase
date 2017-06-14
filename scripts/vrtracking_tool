@@ -121,7 +121,7 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use Carp;
 
-my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix );
+my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix,$assembler, $filter );
 
 #values for $stage that involve *resetting* db flags and file deletion
 my @stages = ( 'import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped', 'rna_seq_expression', 'annotated' );
@@ -146,7 +146,7 @@ GetOptions(
     'del|delete'    => \$delete,
     'v|verbose'     => \$verbose,
     't|test'        => \$test,
-    'f|reference=s' => \$reference,
+    'f|filter=s'    => \$filter,
     'p|prefix=s'    => \$prefix,
     'h|help'        => \$help,
 );
@@ -172,7 +172,7 @@ my $reset_stage = $reset_stages{$stage};
              -s,   --stage     <stage of pipeline to be restarted>
              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
-             -f, --reference   <only apply to mappings/snp calling with this reference>
+             -f, --filter      <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
              -p, --prefix      <filter mappings/snp_calling to this mapstats prefix>
              -h,   --help      <this message>
 
@@ -243,6 +243,19 @@ croak "Can't connect to tracking database" unless ($vrtrack);
 if ( $delete && !$entity_op ) {
     croak "--stage can not be set to $stage if the delete flag is used (only lane, library, sample or study).";
 }
+
+if ( defined($filter))
+{
+        if($stage eq 'mapped' || $stage eq 'snp_called')
+        {
+                 $reference = $filter;
+        }
+        elsif($stage eq 'assembled' || $stage eq 'annotated')
+        {
+                $assembler = $filter;
+        }
+}
+
 
 # get input from file of study/library/lane names or stdin
 while (<>) {
@@ -322,13 +335,13 @@ while (<>) {
             }
 
             for my $mapstats_id (@mapping_ids) {
-                my $mapping_prefix ='[0-9]+';
-
+                my $mapping_prefix ='[0-9_]+';
                 if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
                     $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
                 }
-
                 next if(defined($prefix) && $prefix ne $mapping_prefix);
+                
+                my $assembler_regex = $assembler || "[\\w]*";
 
                 my %files_deleted = (
                     import   => [],
@@ -376,40 +389,40 @@ while (<>) {
                     all => ["^[\\w]+"],
 
                     assembled => [    #Files from pool fastqs stage
-                        "[\\w]*pool_fastqs_done",
-                        "[\\w]*pool_fastqs\.(e|o|pl)",
+                        "_${assembler_regex}_pool_fastqs_done",
+                        "_${assembler_regex}_pool_fastqs\.(e|o|pl)",
                         "^pool_1\.fastq\.gz\$",
-                        "[\\w]*pool_fastq_tmp_files",
+                        "_${assembler_regex}_pool_fastq_tmp_files",
 
                         #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
-                        "[\\w]*optimise_parameters\.(e|o|pl)",
-                        "[\\w]*optimise_parameters_done",
-                        "[\\w]*assembly_logfile\.txt\$",
+                        "_${assembler_regex}_optimise_parameters\.(e|o|pl)",
+                        "_${assembler_regex}_optimise_parameters_done",
+                        "${assembler_regex}_assembly_logfile\.txt\$",
                         "optimise_parameters\.jids\$",
-                        "[\\w]_assembly",
+                        "${assembler_regex}_assembly",
                         "^forward\.fastq\$",
                         "^reverse\.fastq\$",
 
                         #Files from map back stage
-                        "[\\w]*map_back\.(e|o|pl|jids)",
-                        "[\\w]*map_back_done",
+                        "${assembler_regex}_map_back\.(e|o|pl|jids)",
+                        "${assembler_regex}_map_back_done",
 
                         #Files from update db and clean up stages
-                        "[\\w]*assembly_cleanup_done\$",
-                        "[\\w]*assembly_update_db_done\$",
+                        "${assembler_regex}_assembly_cleanup_done\$",
+                        "${assembler_regex}_assembly_update_db_done\$",
                         "^_assembly_job_status\$",
-                        "_(spades|velvet|pacbio|iva)_job_status\$",
+                        "_${assembler_regex}_job_status\$",
 
                         # Done/failed files from circularisation & pacbio assembly
-                        "[\\w]*circlator_failed\$",
-                        "[\\w]*quiver_failed\$",
-                        "[\\w]*circularise_done\$",
-                        "[\\w]*pacbio_assembly_done\$",
-                        "[\\w]*pacbio_assembly\.(e|o|pl|jids)",
+                        "${assembler_regex}_circlator_failed\$",
+                        "${assembler_regex}_quiver_failed\$",
+                        "${assembler_regex}_circularise_done\$",
+                        "${assembler_regex}_pacbio_assembly_done\$",
+                        "${assembler_regex}_pacbio_assembly\.(e|o|pl|jids)",
 
                         # Done/failed files from iva_qc
-                        "[\\w]*iva_qc_failed\$",
-                        "[\\w]*iva_qc_done\$",
+                        "${assembler_regex}_iva_qc_failed\$",
+                        "${assembler_regex}_iva_qc_done\$",
                     ],
                     rna_seq_expression => [
                         "\.intergenic\.",               "calculate\_expression",
@@ -422,8 +435,7 @@ while (<>) {
                     annotated => [
                         "annotate\_assembly\.(e|o|pl)\$", "annotate\_cleanup\_done\$",
                         "annotate\_update\_db\_done\$",   "annotate\_assembly\_done\$",
-                        "^velvet_assembly\/annotation\$", "^iva_assembly\/annotation\$",
-                        "^pacbio_assembly\/annotation\$", "^spades_assembly\/annotation\$",
+                        "^${assembler_regex}_assembly\/annotation\$",
                     ],
                 );
 
