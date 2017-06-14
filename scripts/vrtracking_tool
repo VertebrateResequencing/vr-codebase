@@ -313,7 +313,7 @@ while (<>) {
                 || $stage eq 'assembled'
                 || $stage eq 'annotated' )
             {
-                push( @mapping_ids, 1 );
+                @mapping_ids = ( 1 );
             }
 
             for my $mapstats_id (@mapping_ids) {
