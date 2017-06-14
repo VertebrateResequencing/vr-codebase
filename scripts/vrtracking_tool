@@ -293,13 +293,13 @@ while (<>) {
             my %mapstats_id_to_obj;
 
             for my $mapping_obj ( @{ $vrobject->mappings() } ) {
+                    next if($stage ne 'qc' && $mapping_obj->is_qc() == 1 );
                     $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
             }
 
             # Filter the mapping_ids to a single referece, ignoring QC mappings
             if ( defined($reference) ) {
-                for my $mapping_obj ( @{ $vrobject->mappings() } ) {
-                    next if ( $mapping_obj->is_qc() == 1 );
+                for my $mapping_obj ( values %mapstats_id_to_obj ) {
                     my $assembly_obj = $mapping_obj->assembly();
                     if ( $reference eq $assembly_obj->name() ) {
                         push( @mapping_ids, $mapping_obj->id() );
@@ -307,7 +307,7 @@ while (<>) {
                 }
             }
             else {
-                @mapping_ids = sort { $b <=> $a } @{ $vrobject->mapping_ids() };
+                @mapping_ids = sort { $b <=> $a } @{ keys %mapstats_id_to_obj };
             }
 
             # These stages dont need the mapstats so just give a dummy value so that it only runs once.
@@ -327,7 +327,7 @@ while (<>) {
                 if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
                     $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
                 }
-                
+
                 next if(defined($prefix) && $prefix ne $mapping_prefix);
 
                 my %files_deleted = (
