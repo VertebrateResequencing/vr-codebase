@@ -320,8 +320,7 @@ while (<>) {
 
             for my $mapstats_id (@mapping_ids) {
                 my $mapping_prefix ='[0-9]+';
-                
-                $mapping_prefix = $prefix;
+
                 if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
                     $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
                 }
