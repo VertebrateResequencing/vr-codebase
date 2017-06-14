@@ -307,7 +307,7 @@ while (<>) {
                 }
             }
             else {
-                @mapping_ids = sort { $b <=> $a } @{ keys %mapstats_id_to_obj };
+                @mapping_ids = sort { $b <=> $a } keys %mapstats_id_to_obj;
             }
 
             # These stages dont need the mapstats so just give a dummy value so that it only runs once.
