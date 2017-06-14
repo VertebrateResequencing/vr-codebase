@@ -287,79 +287,81 @@ while (<>) {
         #for recalculation operations (reset flags on db and delete files from disk)
         else {
             my @mapping_ids;
-            my $qcdir       = $vrdirectory . '/qc-sample/';
+            my $qcdir = $vrdirectory . '/qc-sample/';
             my %mapstats_id_to_obj;
 
             # Filter the mapping_ids to a single referece, ignoring QC mappings
             if ( defined($reference) ) {
-               for my $mapping_obj (@{$vrobject->mappings()})
-               {
-                  next if( $mapping_obj->is_qc() == 1);
-                  my $assembly_obj = $mapping_obj->assembly();
-                  if($reference eq $assembly_obj->name())
-                  {
-                          push(@mapping_ids, $mapping_obj->mapstats_id());
-                          $mapstats_id_to_obj{$mapping_obj->mapstats_id()} = $mapping_obj;
-                  }
-               }
+                for my $mapping_obj ( @{ $vrobject->mappings() } ) {
+                    next if ( $mapping_obj->is_qc() == 1 );
+                    my $assembly_obj = $mapping_obj->assembly();
+                    if ( $reference eq $assembly_obj->name() ) {
+                        push( @mapping_ids, $mapping_obj->mapstats_id() );
+                        ${mapstats_id} _to_obj { $mapping_obj->mapstats_id() } = $mapping_obj;
+                    }
+                }
             }
-            else
-            {
-                  @mapping_ids  = sort { $b <=> $a } @{ $vrobject->mapping_ids() };
+            else {
+                @mapping_ids = sort { $b <=> $a } @{ $vrobject->mapping_ids() };
             }
 
             # These stages dont need the mapstats so just give a dummy value so that it only runs once.
-            if( $stage eq 'import' ||  $stage eq 'qc' || $stage eq 'genotype' || $stage eq 'all' || $stage eq 'assembled' ||   $stage eq 'annotated' )
+            if (   $stage eq 'import'
+                || $stage eq 'qc'
+                || $stage eq 'genotype'
+                || $stage eq 'all'
+                || $stage eq 'assembled'
+                || $stage eq 'annotated' )
             {
-                    push(@mapping_ids,1);
+                push( @mapping_ids, 1 );
             }
-            
+
             for my $mapstats_id (@mapping_ids) {
                 my $mapping_prefix = '[0-9]+';
-                if(defined($mapstats_id_to_obj{$mapstats_id}))
-                {
-                        $mapping_prefix = $mapstats_id_to_obj{$mapstats_id}->prefix;
+                if ( defined( ${mapstats_id} _to_obj { $mapstats_id } ) ) {
+                    $mapping_prefix = ${mapstats_id} _to_obj { $mapstats_id }->prefix;
                 }
 
                 my %files_deleted = (
                     import   => [],
-                    qc       => [ "^qc-sample\$" ],
+                    qc       => ["^qc-sample\$"],
                     genotype => [
                         "^$vrinput\.gtype\$",   "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$",
                         "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"
                     ],
                     improved => [
-                        "^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$",
-                        "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam",
-                        "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)",
-                        "^\.realign\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$",
-                        "^\.recalibrate\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$",
-                        "^\.sort\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$",
-                        "^\.rewrite\_header\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$"
+                        "^${mapstats_id}\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$",
+                        "^${mapstats_id}\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam",
+                        "^${mapstats_id}\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)",
+                        "^\.realign\_complete\_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$",
+                        "^\.recalibrate\_complete\_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$",
+                        "^\.sort\_complete\_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$",
+                        "^\.rewrite\_header\_complete\_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$"
                     ],
                     snp_called => [
-                        "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$", "^$mapstats_id\.[ps]e\.markdup\.snp\$",
-                        "^$mapstats_id\.[ps]e\.raw\.sorted\.snp\$"
+                        "^${mapstats_id}\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$",
+                        "^${mapstats_id}\.[ps]e\.markdup\.snp\$",
+                        "^${mapstats_id}\.[ps]e\.raw\.sorted\.snp\$"
                     ],
                     mapped => [
-                        "^\.[\\w]+mark_duplicates_[ps]e_$mapstats_id\.[oe].archive\$",
-                        "^\.[\\w]+statistics_$mapstats_id\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
-                        "^\.[\\w]+merge_[ps]e_$mapstats_id\.[oe]\.archive\$",
-                        "^\.[\\w]+map_[ps]e_$mapstats_id_[0-9]+\.[oe]\.archive\$",
-                        "^\.[\\w]+split_[ps]e_$mapstats_id\.[oe]\.archive\$",
-                        "^$mapstats_id\.[ps]e\.markdup\.bam\$",
-                        "^$mapstats_id\.[ps]e\.markdup\.bam\.bai\$",
-                        "^$mapstats_id\.[ps]e\.raw\.sorted\.bam\$",
-                        "^$mapstats_id\.[ps]e\.raw\.sorted\.bam_graphs\$",
-                        "^$mapstats_id\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat|tmp|bad|bai|checked)\$",
-                        "^\.mapping_complete_[ps]e_$mapstats_id\$",
-                        "^\.split_complete_[ps]e_$mapstats_id\$",
-                        "^[\\w]+split_[ps]e_$mapstats_id\.([oe]|pl)\$",
-                        "^split_[ps]e_$mapstats_id\$",
-                        "^[\\w]+map_[ps]e_$mapstats_id_[0-9]+\.[oe](\.previous)?\$",
-                        "^[\\w]+merge_[ps]e_$mapstats_id\.([oe](\.previous)?|pl)\$",
-                        "^[\\w]+statistics_$mapstats_id\.[ps]e\.raw\.sorted\.bam\.([oe](\.previous)?|pl)\$",
-                        "^[\\w]+mark_duplicates_[ps]e_$mapstats_id\.([oe](\.previous)?|pl)\$",
+                        "^\.[\\w]+mark_duplicates_[ps]e_${mapstats_id}\.[oe].archive\$",
+                        "^\.[\\w]+statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
+                        "^\.[\\w]+merge_[ps]e_${mapstats_id}\.[oe]\.archive\$",
+                        "^\.[\\w]+map_[ps]e_${mapstats_id}_[0-9]+\.[oe]\.archive\$",
+                        "^\.[\\w]+split_[ps]e_${mapstats_id}\.[oe]\.archive\$",
+                        "^${mapstats_id}\.[ps]e\.markdup\.bam\$",
+                        "^${mapstats_id}\.[ps]e\.markdup\.bam\.bai\$",
+                        "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$",
+                        "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam_graphs\$",
+                        "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat|tmp|bad|bai|checked)\$",
+                        "^\.mapping_complete_[ps]e_${mapstats_id}\$",
+                        "^\.split_complete_[ps]e_${mapstats_id}\$",
+                        "^[\\w]+split_[ps]e_${mapstats_id}\.([oe]|pl)\$",
+                        "^split_[ps]e_${mapstats_id}\$",
+                        "^[\\w]+map_[ps]e_${mapstats_id}_[0-9]+\.[oe](\.previous)?\$",
+                        "^[\\w]+merge_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
+                        "^[\\w]+statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.([oe](\.previous)?|pl)\$",
+                        "^[\\w]+mark_duplicates_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
                         "^${mapping_prefix}job_status\$",
                         "^${mapping_prefix}split.jids\$"
                     ],
@@ -443,29 +445,29 @@ while (<>) {
                         }
                     }
                 }
-            }
 
-            #update database for lane (and file if appropriate)
-            for my $reset_obj (@reset_objects) {
-                for my $flag (@reset_flags) {
-                    unless ($test) {
-                        $reset_obj->is_processed( $flag => 0 );
-                        if ( ( $reset_stage eq 'qc' || $reset_stage eq 'mapped' || $reset_stage eq 'all' )
-                            && $reset_obj->isa('VRTrack::Lane') )
-                        {
-                            $reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
-                            $logger->info( "Deleted " . $flag . " mapstats for the lane " . $reset_obj->name() )
-                              if delete_mapstats_entries( $reset_obj, $flag );
+                #update database for lane (and file if appropriate)
+                for my $reset_obj (@reset_objects) {
+                    for my $flag (@reset_flags) {
+                        unless ($test) {
+                            $reset_obj->is_processed( $flag => 0 );
+                            if ( ( $reset_stage eq 'qc' || $reset_stage eq 'mapped' || $reset_stage eq 'all' )
+                                && $reset_obj->isa('VRTrack::Lane') )
+                            {
+                                $reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
+                                $logger->info( "Deleted " . $flag . " mapstats for the lane " . $reset_obj->name() )
+                                  if delete_mapstats_entries( $reset_obj, $flag );
+                            }
+                            $reset_obj->update;
                         }
-                        $reset_obj->update;
                     }
                 }
+                $logger->info( "Processed flag for "
+                      . join( ', ', @reset_flags )
+                      . " has been reset to 0 for the "
+                      . ( ( $reset_stage eq 'import' || $reset_stage eq 'all' ) ? "lane and bam file of " : "lane " )
+                      . $vrobject->name );
             }
-            $logger->info( "Processed flag for "
-                  . join( ', ', @reset_flags )
-                  . " has been reset to 0 for the "
-                  . ( ( $reset_stage eq 'import' || $reset_stage eq 'all' ) ? "lane and bam file of " : "lane " )
-                  . $vrobject->name );
         }
     }
 }
