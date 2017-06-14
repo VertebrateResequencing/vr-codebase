@@ -292,12 +292,15 @@ while (<>) {
             my $qcdir = $vrdirectory . '/qc-sample/';
             my %mapstats_id_to_obj;
 
+            for my $mapping_obj ( @{ $vrobject->mappings() } ) {
+                    $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
+            }
+
             # Filter the mapping_ids to a single referece, ignoring QC mappings
             if ( defined($reference) ) {
                 for my $mapping_obj ( @{ $vrobject->mappings() } ) {
                     next if ( $mapping_obj->is_qc() == 1 );
                     my $assembly_obj = $mapping_obj->assembly();
-                    $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
                     if ( $reference eq $assembly_obj->name() ) {
                         push( @mapping_ids, $mapping_obj->id() );
                     }
