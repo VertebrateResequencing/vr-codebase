@@ -121,7 +121,7 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use Carp;
 
-my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference );
+my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix );
 
 #values for $stage that involve *resetting* db flags and file deletion
 my @stages = ( 'import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped', 'rna_seq_expression', 'annotated' );
@@ -147,6 +147,7 @@ GetOptions(
     'v|verbose'     => \$verbose,
     't|test'        => \$test,
     'f|reference=s' => \$reference,
+    'p|prefix=s'    => \$prefix,
     'h|help'        => \$help,
 );
 
@@ -172,6 +173,7 @@ my $reset_stage = $reset_stages{$stage};
              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
              -f, --reference   <only apply to mappings/snp calling with this reference>
+             -p, --prefix      <filter mappings/snp_calling to this mapstats prefix>
              -h,   --help      <this message>
 
   This tool is able to perform the following operations:
@@ -290,19 +292,22 @@ while (<>) {
             my $qcdir = $vrdirectory . '/qc-sample/';
             my %mapstats_id_to_obj;
 
+            for my $mapping_obj ( @{ $vrobject->mappings() } ) {
+                    next if($stage ne 'qc' && $mapping_obj->is_qc() == 1 );
+                    $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
+            }
+
             # Filter the mapping_ids to a single referece, ignoring QC mappings
             if ( defined($reference) ) {
-                for my $mapping_obj ( @{ $vrobject->mappings() } ) {
-                    next if ( $mapping_obj->is_qc() == 1 );
+                for my $mapping_obj ( values %mapstats_id_to_obj ) {
                     my $assembly_obj = $mapping_obj->assembly();
                     if ( $reference eq $assembly_obj->name() ) {
                         push( @mapping_ids, $mapping_obj->id() );
-                        $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
                     }
                 }
             }
             else {
-                @mapping_ids = sort { $b <=> $a } @{ $vrobject->mapping_ids() };
+                @mapping_ids = sort { $b <=> $a } keys %mapstats_id_to_obj;
             }
 
             # These stages dont need the mapstats so just give a dummy value so that it only runs once.
@@ -317,10 +322,13 @@ while (<>) {
             }
 
             for my $mapstats_id (@mapping_ids) {
-                my $mapping_prefix = '[0-9]+';
+                my $mapping_prefix ='[0-9]+';
+
                 if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
                     $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
                 }
+
+                next if(defined($prefix) && $prefix ne $mapping_prefix);
 
                 my %files_deleted = (
                     import   => [],
@@ -344,11 +352,11 @@ while (<>) {
                         "^${mapstats_id}\.[ps]e\.raw\.sorted\.snp\$"
                     ],
                     mapped => [
-                        "^\.[\\w]+mark_duplicates_[ps]e_${mapstats_id}\.[oe].archive\$",
-                        "^\.[\\w]+statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
-                        "^\.[\\w]+merge_[ps]e_${mapstats_id}\.[oe]\.archive\$",
-                        "^\.[\\w]+map_[ps]e_${mapstats_id}_[0-9]+\.[oe]\.archive\$",
-                        "^\.[\\w]+split_[ps]e_${mapstats_id}\.[oe]\.archive\$",
+                        "^\.${mapping_prefix}mark_duplicates_[ps]e_${mapstats_id}\.[oe].archive\$",
+                        "^\.${mapping_prefix}statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
+                        "^\.${mapping_prefix}merge_[ps]e_${mapstats_id}\.[oe]\.archive\$",
+                        "^\.${mapping_prefix}map_[ps]e_${mapstats_id}_[0-9]+\.[oe]\.archive\$",
+                        "^\.${mapping_prefix}split_[ps]e_${mapstats_id}\.[oe]\.archive\$",
                         "^${mapstats_id}\.[ps]e\.markdup\.bam\$",
                         "^${mapstats_id}\.[ps]e\.markdup\.bam\.bai\$",
                         "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$",
@@ -356,12 +364,12 @@ while (<>) {
                         "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat|tmp|bad|bai|checked)\$",
                         "^\.mapping_complete_[ps]e_${mapstats_id}\$",
                         "^\.split_complete_[ps]e_${mapstats_id}\$",
-                        "^[\\w]+split_[ps]e_${mapstats_id}\.([oe]|pl)\$",
+                        "^${mapping_prefix}split_[ps]e_${mapstats_id}\.([oe]|pl)\$",
                         "^split_[ps]e_${mapstats_id}\$",
-                        "^[\\w]+map_[ps]e_${mapstats_id}_[0-9]+\.[oe](\.previous)?\$",
-                        "^[\\w]+merge_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
-                        "^[\\w]+statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.([oe](\.previous)?|pl)\$",
-                        "^[\\w]+mark_duplicates_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
+                        "^${mapping_prefix}map_[ps]e_${mapstats_id}_[0-9]+\.[oe](\.previous)?\$",
+                        "^${mapping_prefix}merge_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
+                        "^${mapping_prefix}statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.([oe](\.previous)?|pl)\$",
+                        "^${mapping_prefix}mark_duplicates_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
                         "^${mapping_prefix}job_status\$",
                         "^${mapping_prefix}split.jids\$"
                     ],
