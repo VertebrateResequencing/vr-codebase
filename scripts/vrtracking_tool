@@ -120,6 +120,7 @@ use Scalar::Util qw(looks_like_number);
 use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use Carp;
+use VertRes::Utils::FileSystem;
 
 my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix,$assembler, $filter );
 
@@ -240,6 +241,9 @@ my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(
 );
 croak "Can't connect to tracking database" unless ($vrtrack);
 
+my $fsu = VertRes::Utils::FileSystem->new(reconnect_db=>1);
+
+
 if ( $delete && !$entity_op ) {
     croak "--stage can not be set to $stage if the delete flag is used (only lane, library, sample or study).";
 }
@@ -255,6 +259,7 @@ if ( defined($filter))
                 $assembler = $filter;
         }
 }
+
 
 
 # get input from file of study/library/lane names or stdin
@@ -457,10 +462,19 @@ while (<>) {
                         my $filepath = File::Spec->catfile( $file_dir, $file );
                         if ( -d $filepath ) {
                             unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
+                            
+                            if( $fsu->file_exists($filepath))
+                            {
+                                unless ($test) { $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 ) or die "Unable to delete the directory $filepath from fsu database, error = $!\n" }   
+                            }
                             $logger->info( "Removed directory: ", $filepath );
                         }
                         elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
                             unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
+                            if( $fsu->file_exists($filepath))
+                            {
+                                unless ($test) { $fsu->file_exists( $filepath, wipe_out => 1 ) or die "Unable to delete $filepath from fsu database, error = $!\n" }
+                    }
                             $logger->info( "Deleted: ", $filepath );
                         }
                     }
