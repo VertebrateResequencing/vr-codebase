@@ -748,8 +748,10 @@ sub reformat_vcf {
 sub summary_table_sites {
 	my ($self,$outfile,$dp4,$list) = @_;
 	#check to see if PICK added
-	my $pick = "for f in `cat $list | head -n1`; do grep ^CHR \$f | grep -w PICK; done";
-	my $canon = "for f in `cat $list | head -n1`; do grep ^CHR \$f | grep -w CANONIC; done";
+	my $pickcmd = "for f in `cat $list | head -n1`; do grep ^#CHR \$f | grep -w PICK; done";
+	my $canoncmd = "for f in `cat $list | head -n1`; do grep ^#CHR \$f | grep -w CANONICAL; done";
+	my $pick = `$pickcmd`;
+	my $canon = `$canoncmd`;
 	my $header = "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" ;
 	$header =~ s/AA_CHANGE/AA_CHANGE\tPICK/ if $pick;
 	$header =~ s/AA_CHANGE/AA_CHANGE\tCANONICAL/ if $canon;

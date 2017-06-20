@@ -326,7 +326,7 @@ while (<>) {
 				print F "$addline\n" if $opts{r};
 				print F $header;
 				print F "$sample\t$ref\t";
-				print STDERR "PICK $csqindex{PICK}\n";
+				print STDERR "PICK $csqindex{PICK}\n" if $csqindex{PICK};
 				my $annots = "ENS_GENEID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT\n";
 				$annots =~ s/AA_CHANGE/AA_CHANGE\tPICK/ if $csqindex{PICK};
 				$annots =~ s/AA_CHANGE/AA_CHANGE\tCANONICAL/ if $csqindex{CANONICAL};
@@ -486,7 +486,7 @@ sub formatgenes {
 		# push trans and biotypes for each gene/cons combination 
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
-		$info{$c[4]}{"$inf"}{pick}="PICK" if $c[$csqindex{PICK}] && $c[$csqindex{PICK}]==1;
+		$info{$c[4]}{"$inf"}{pick}="PICK" if $csqindex{PICK} && $c[$csqindex{PICK}] && $c[$csqindex{PICK}]==1;
 		$info{$c[4]}{"$inf"}{canonical}="CANONICAL" if $c[$csqindex{CANONICAL}] && $c[$csqindex{CANONICAL}] eq "YES";
 		# order sift scores by most severe first
 		##print STDERR "LINE $line\n";
