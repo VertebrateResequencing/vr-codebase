@@ -487,7 +487,7 @@ sub formatgenes {
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
 		$info{$c[4]}{"$inf"}{pick}="PICK" if $csqindex{PICK} && $c[$csqindex{PICK}] && $c[$csqindex{PICK}]==1;
-		$info{$c[4]}{"$inf"}{canonical}="CANONICAL" if $c[$csqindex{CANONICAL}] && $c[$csqindex{CANONICAL}] eq "YES";
+		$info{$c[4]}{"$inf"}{canonical}="CANONICAL" if $csqindex{CANONICAL} && $c[$csqindex{CANONICAL}] && $c[$csqindex{CANONICAL}] eq "YES";
 		# order sift scores by most severe first
 		##print STDERR "LINE $line\n";
 		##print STDERR "sift is $c[$csqindex{SIFT}]\n";
