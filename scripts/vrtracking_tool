@@ -491,9 +491,9 @@ while (<>) {
                                 $reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
 
                                 if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
-                                    if delete_mapstats_entries( $reset_obj, $flag, $mapstats_id_to_obj { $mapstats_id } )
+                                    if( delete_mapstats_entries( $reset_obj, $flag, $mapstats_id_to_obj { $mapstats_id } ))
                                     {
-                                         $logger->info( "Deleted " . $mapstats_id . " mapstats for the lane " . $reset_obj->name() )
+                                         $logger->info( "Deleted " . $mapstats_id . " mapstats for the lane " . $reset_obj->name() );
                                     }
                                 }
                             }
@@ -614,7 +614,7 @@ sub delete_mapstats_entries {
     # Get mappings
     my @mappings = ();
     push(@mappings, @{ $lane->qc_mappings() }  ) if ( $stage eq 'qc' );
-    push(@mappings, @{ $mapstats_obj )           if ( $stage eq 'mapped' );
+    push(@mappings, $mapstats_obj )              if ( $stage eq 'mapped' );
 
     # Delete mappings
     for my $mapstats (@mappings) {
