@@ -178,7 +178,6 @@ sub parse_args {
 	my ($self) = @_;
 	my @required = (
 		'add_DP4T',
-		'add_hgvs',
 		'bams',
 		'bcftools',
 		'bychrom',
@@ -264,7 +263,7 @@ sub parse_args {
 		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
-		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly' && $o ne 'vep_opt') {
+		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly' && $o ne 'vep_opt' && $o ne 'add_hgvs') {
 			if ( ! -e $$self{$o} ) {
 				$self->throw("No such file $$self{$o}");
 			}
@@ -693,7 +692,7 @@ sub run_vep {
 	$cmd .= "--no_stats " if $$self{vep_stats} eq 'no' || $$self{vep_stats} eq 'n' ;
 	$cmd .= "--assembly $$self{assembly} " if $$self{assembly};
 	$cmd .= " $$self{vep_opt} " if $$self{vep_opt};
-	$cmd .= "--hgvs --shift_hgvs 1 " if $$self{add_hgvs};
+	$cmd .= "--hgvs --shift_hgvs 1 " if $$self{add_hgvs} && $$self{add_hgvs} =~ /^y/g;
 	if ( $$self{vep_fasta} ) { $cmd .= " --fasta $$self{reference}"; }
 	$self->cmd($cmd);
 	if ( -e "$vcfout.tmp") {
