@@ -315,7 +315,7 @@ while (<>) {
                 next if ( $stage ne 'qc' && $mapping_obj->is_qc() == 1 );
                 $mapstats_id_to_obj{ $mapping_obj->id() } = $mapping_obj;
             }
-            my $number_non_qc_mappings = @mapstats_id_to_obj;
+            my $number_non_qc_mappings = keys %mapstats_id_to_obj;
 
             # Filter the mapping_ids to a single referece, ignoring QC mappings
             if ( defined($reference) ) {
