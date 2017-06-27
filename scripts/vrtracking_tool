@@ -122,7 +122,7 @@ use VRTrack::Lane;
 use Carp;
 use VertRes::Utils::FileSystem;
 
-my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix,$assembler, $filter );
+my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix, $assembler, $filter );
 
 #values for $stage that involve *resetting* db flags and file deletion
 my @stages = ( 'import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped', 'rna_seq_expression', 'annotated' );
@@ -140,16 +140,16 @@ foreach (@entities) {
 }
 
 GetOptions(
-    'c|config=s'    => \$config,
-    'd|db=s'        => \$db,
-    'r|root=s'      => \$root,
-    's|stage=s'     => \$stage,
-    'del|delete'    => \$delete,
-    'v|verbose'     => \$verbose,
-    't|test'        => \$test,
-    'f|filter=s'    => \$filter,
-    'p|prefix=s'    => \$prefix,
-    'h|help'        => \$help,
+    'c|config=s' => \$config,
+    'd|db=s'     => \$db,
+    'r|root=s'   => \$root,
+    's|stage=s'  => \$stage,
+    'del|delete' => \$delete,
+    'v|verbose'  => \$verbose,
+    't|test'     => \$test,
+    'f|filter=s' => \$filter,
+    'p|prefix=s' => \$prefix,
+    'h|help'     => \$help,
 );
 
 # determine type of operation
@@ -201,6 +201,13 @@ my $reset_stage = $reset_stages{$stage};
       library
       sample
       study
+      
+Examples:
+  Delete mappings/ snp calling for 1 reference but leave the others.
+    vrtracking_tool -f RefName -s (mapped|snp_called) -d pathogen_prok_track -r  /lustre/.../seq-pipelines file_of_lanes
+  
+  Delete mappings/snp calling which match a given prefix from the mapping config file, but leaves the others.
+    vrtracking_tool -p '_123_456_' -s (mapped|snp_called) -d pathogen_prok_track -r  /lustre/.../seq-pipelines file_of_lanes
 
 USAGE
 
@@ -241,26 +248,20 @@ my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(
 );
 croak "Can't connect to tracking database" unless ($vrtrack);
 
-my $fsu = VertRes::Utils::FileSystem->new(reconnect_db=>1);
-
+my $fsu = VertRes::Utils::FileSystem->new( reconnect_db => 1 );
 
 if ( $delete && !$entity_op ) {
     croak "--stage can not be set to $stage if the delete flag is used (only lane, library, sample or study).";
 }
 
-if ( defined($filter))
-{
-        if($stage eq 'mapped' || $stage eq 'snp_called')
-        {
-                 $reference = $filter;
-        }
-        elsif($stage eq 'assembled' || $stage eq 'annotated')
-        {
-                $assembler = $filter;
-        }
+if ( defined($filter) ) {
+    if ( $stage eq 'mapped' || $stage eq 'snp_called' ) {
+        $reference = $filter;
+    }
+    elsif ( $stage eq 'assembled' || $stage eq 'annotated' ) {
+        $assembler = $filter;
+    }
 }
-
-
 
 # get input from file of study/library/lane names or stdin
 while (<>) {
@@ -311,9 +312,10 @@ while (<>) {
             my %mapstats_id_to_obj;
 
             for my $mapping_obj ( @{ $vrobject->mappings() } ) {
-                    next if($stage ne 'qc' && $mapping_obj->is_qc() == 1 );
-                    $mapstats_id_to_obj { $mapping_obj->id() } = $mapping_obj;
+                next if ( $stage ne 'qc' && $mapping_obj->is_qc() == 1 );
+                $mapstats_id_to_obj{ $mapping_obj->id() } = $mapping_obj;
             }
+            my $number_non_qc_mappings = keys %mapstats_id_to_obj;
 
             # Filter the mapping_ids to a single referece, ignoring QC mappings
             if ( defined($reference) ) {
@@ -336,16 +338,16 @@ while (<>) {
                 || $stage eq 'assembled'
                 || $stage eq 'annotated' )
             {
-                @mapping_ids = ( 1 );
+                @mapping_ids = (1);
             }
 
             for my $mapstats_id (@mapping_ids) {
-                my $mapping_prefix ='[0-9_]+';
-                if ( defined( $mapstats_id_to_obj { $mapstats_id } ) ) {
-                    $mapping_prefix = $mapstats_id_to_obj { $mapstats_id }->prefix;
+                my $mapping_prefix = '[0-9_]+';
+                if ( defined( $mapstats_id_to_obj{$mapstats_id} ) ) {
+                    $mapping_prefix = $mapstats_id_to_obj{$mapstats_id}->prefix;
                 }
-                next if(defined($prefix) && $prefix ne $mapping_prefix);
-                
+                next if ( defined($prefix) && $prefix ne $mapping_prefix );
+
                 my $assembler_regex = $assembler || "[\\w]*";
 
                 my %files_deleted = (
@@ -462,19 +464,23 @@ while (<>) {
                         my $filepath = File::Spec->catfile( $file_dir, $file );
                         if ( -d $filepath ) {
                             unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
-                            
-                            if( $fsu->file_exists($filepath))
-                            {
-                                unless ($test) { $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 ) or die "Unable to delete the directory $filepath from fsu database, error = $!\n" }   
+
+                            if ( $fsu->file_exists($filepath) ) {
+                                unless ($test) {
+                                    $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
+                                      or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                }
                             }
                             $logger->info( "Removed directory: ", $filepath );
                         }
                         elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
                             unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
-                            if( $fsu->file_exists($filepath))
-                            {
-                                unless ($test) { $fsu->file_exists( $filepath, wipe_out => 1 ) or die "Unable to delete $filepath from fsu database, error = $!\n" }
-                    }
+                            if ( $fsu->file_exists($filepath) ) {
+                                unless ($test) {
+                                    $fsu->file_exists( $filepath, wipe_out => 1 )
+                                      or die "Unable to delete $filepath from fsu database, error = $!\n";
+                                }
+                            }
                             $logger->info( "Deleted: ", $filepath );
                         }
                     }
@@ -484,13 +490,28 @@ while (<>) {
                 for my $reset_obj (@reset_objects) {
                     for my $flag (@reset_flags) {
                         unless ($test) {
-                            $reset_obj->is_processed( $flag => 0 );
+
+                            if ( ( $reset_stage eq 'mapped' || $reset_stage eq 'snp_called' ) && $number_non_qc_mappings > 1 ) {
+                                $logger->info( "Not resetting flag '"
+                                      . $flag
+                                      . "' for multiple mappings mapstats ID "
+                                      . $mapstats_id
+                                      . " and lane "
+                                      . $reset_obj->name() );
+                            }
+                            else {
+                                $reset_obj->is_processed( $flag => 0 );
+                            }
                             if ( ( $reset_stage eq 'qc' || $reset_stage eq 'mapped' || $reset_stage eq 'all' )
                                 && $reset_obj->isa('VRTrack::Lane') )
                             {
                                 $reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
-                                $logger->info( "Deleted " . $flag . " mapstats for the lane " . $reset_obj->name() )
-                                  if delete_mapstats_entries( $reset_obj, $flag );
+
+                                if ( defined( $mapstats_id_to_obj{$mapstats_id} ) ) {
+                                    if ( delete_mapstats_entries( $reset_obj, $flag, $mapstats_id_to_obj{$mapstats_id} ) ) {
+                                        $logger->info( "Deleted " . $mapstats_id . " mapstats for the lane " . $reset_obj->name() );
+                                    }
+                                }
                             }
                             $reset_obj->update;
                         }
@@ -596,7 +617,7 @@ sub get_config_data {
 }
 
 sub delete_mapstats_entries {
-    my ( $lane, $stage ) = @_;
+    my ( $lane, $stage, $mapstats_obj ) = @_;
 
     # Check lane
     croak "Cannot delete mapstats as lane is undefined\n" unless defined $lane;
@@ -608,8 +629,8 @@ sub delete_mapstats_entries {
 
     # Get mappings
     my @mappings = ();
-    push @mappings, @{ $lane->qc_mappings() }           if ( $stage eq 'qc' );
-    push @mappings, @{ $lane->mappings_excluding_qc() } if ( $stage eq 'mapped' );
+    push( @mappings, @{ $lane->qc_mappings() } ) if ( $stage eq 'qc' );
+    push( @mappings, $mapstats_obj )             if ( $stage eq 'mapped' );
 
     # Delete mappings
     for my $mapstats (@mappings) {
