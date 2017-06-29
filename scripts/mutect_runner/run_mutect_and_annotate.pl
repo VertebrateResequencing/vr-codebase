@@ -693,7 +693,7 @@ sub run_vep {
 	$cmd .= "--assembly $$self{assembly} " if $$self{assembly};
 	$cmd .= " $$self{vep_opt} " if $$self{vep_opt};
 	$cmd .= "--hgvs --shift_hgvs 1 " if $$self{add_hgvs} && $$self{add_hgvs} =~ /^y/g;
-	if ( $$self{vep_fasta} ) { $cmd .= " --fasta $$self{reference}"; }
+	if ( $$self{vep_fasta} ) { $cmd .= " --fasta $$self{vep_fasta}"; }
 	$self->cmd($cmd);
 	if ( -e "$vcfout.tmp") {
 		rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
