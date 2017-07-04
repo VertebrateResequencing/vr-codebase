@@ -647,11 +647,11 @@ sub add_dp4 {
 	my $cmd;
 	if ($remove_reject eq 'n') {
 		# different format for version 1.1.7
-		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && bcftools annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
+		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && $$self{bcftools} annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
 	}
 	else {
 		# different format for version 1.1.7
-		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && bcftools annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin |  awk '/^#/ || \$7!~/REJECT/' | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
+		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && $$self{bcftools} annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin |  awk '/^#/ || \$7!~/REJECT/' | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
 	}
 	$self->cmd($cmd);
 	rename("$vcfout.tmp.tbi","$vcfout.tbi") or $self->throw("rename $vcfout.tmp.tbi $vcfout.tbi: $!"); 
