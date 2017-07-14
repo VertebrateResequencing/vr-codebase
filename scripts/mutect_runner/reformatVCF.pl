@@ -484,6 +484,7 @@ sub formatgenes {
 		$csqindex{Gene} = '-' if !$csqindex{Gene}; 
 		#$c[1] = '-' if !$c[1];
 		# push trans and biotypes for each gene/cons combination 
+		$c[$csqindex{Gene}] = "-" if !$c[$csqindex{Gene}];
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{trans}}, $c[$csqindex{Feature}] || '-';
 		push @{$info{$c[$csqindex{Gene}]}{"$inf"}{biotype}}, $c[$csqindex{BIOTYPE}] || '-';
 		$info{$c[4]}{"$inf"}{pick}="PICK" if $csqindex{PICK} && $c[$csqindex{PICK}] && $c[$csqindex{PICK}]==1;
