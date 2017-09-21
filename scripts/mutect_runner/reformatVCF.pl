@@ -294,7 +294,7 @@ while (<>) {
 			my $ref = $gt1=~/^0:/ ? $n1 : $n2;
 			my $addline = "##SampleNames changed=";
 			if ($opts{r}) {
-				my $sample1 = $names{$sample} if $names{$ref};
+				my $sample1 = $names{$sample} if $names{$sample};
 				my $ref1 = $names{$ref} if $names{$ref};
 				if ($sample1 ne $sample) {
 					$addline .= "$sample:$sample1;";
