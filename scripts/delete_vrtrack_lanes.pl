@@ -66,6 +66,9 @@ unless ($vrtrack){
 while (<>){
     my $lanename = $_;
     chomp $lanename;
+	
+	next if(length($lanename) < 3 );
+	
     #Check lane actually exists or bail out
     my $lane = VRTrack::Lane->new_by_name($vrtrack,$lanename);
     unless ($lane){
@@ -73,9 +76,6 @@ while (<>){
        next;
     }
     if ($root){
-    
-
-        
         # We first get the hierarchy structure for this lane. This is usually a symlink. 
         # If -c is specified, we delete any entries in the fsu_file_exists table for this lane
         # and also the folder which the symlink points to. We then delete the symlink itself.
@@ -86,7 +86,11 @@ while (<>){
         # 5 June 2013
         
         #Get full path to lane directory
-        my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
+		
+		my $lane_suffix_dir = $vrtrack->hierarchy_path_of_lane_name($lane->name);
+		# If you dont check this exists then you end up deleting the root directory of the pipeline 
+		next if(! defined($lane_suffix_dir) || (length($lane_suffix_dir) < 10) );
+        my $lanedir = $root.$lane_suffix_dir;
         
         if($clean){
         	
