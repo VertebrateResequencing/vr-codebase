@@ -91,8 +91,7 @@ our $actions = [
 
 ];
 our %options = (
-    bsub_opts  => '',
-    bash5tools => '/nfs/srpipe_data/smrtanalysis/install/smrtanalysis-2.2.0.133377/analysis/bin/bash5tools.py'
+    bsub_opts  => ''
 );
 
 sub new {
@@ -186,12 +185,14 @@ sub convert_cells_to_fastq {
 
     for my $bas_file ( @{$bas_files} ) {
         my ( $filename, $dirs, $suffix ) = fileparse( $bas_file, '.bas.h5' );
-        my $fastq = $filename . '.fastq';
-        next if ( -e $fastq.'.gz');
-        system( $self->{bash5tools} . " --outType fastq " . $bas_file );
-        Utils::CMD(qq[gzip -9 $fastq]);
+        my $fastq = $filename . '.fastq.gz';
+        next if ( -e $fastq);
+		
+		system("pacbio_smrtpipe -o bax2fastq bax2fastq $filename*.bax.h5");
+		Utils::CMD(qq[mv bax2fastq/reads.fastq.gz $fastq]);
+		
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
-        $fastqcheck->run( $fastq . '.gz', $fastq . '.gz.fastqcheck' );
+        $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
     }
 }
 
