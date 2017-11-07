@@ -380,14 +380,11 @@ sub update_db {
     }
 	
       # Remove Large Files
-      my @cram_suffix   = ('cram','cram.md5');
-
+      my @cram_suffix   = ('.cram','.cram.md5','_1.fastq.gz.md5','_2.fastq.gz.md5');
       my $bam = $self->{files}->[0];
-
       for my $suffix (@cram_suffix)
       {
-  	# Remove crams
-    	Utils::CMD(qq[rm $lane_path/$$self{lane}.$suffix]) if(-e qq[$lane_path/$$self{lane}.$suffix]);
+    	Utils::CMD(qq[rm $lane_path/$$self{lane}$suffix]) if(-e qq[$lane_path/$$self{lane}$suffix]);
       }
    
     my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
@@ -470,7 +467,6 @@ sub update_db_master
             $vrfile = $vrlane->add_file($name); 
             $vrfile->hierarchy_name($name);
         }
-        $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
 
         # Hm, this must be evaled, otherwise it dies without rollback
         my ($avg_len,$tot_len,$num_seq,$avg_qual);
