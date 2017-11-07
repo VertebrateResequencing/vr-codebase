@@ -384,7 +384,7 @@ sub update_db {
             unlink( $self->{fsu}->catfile( $lane_path, $prefix . $file . '.' . $suffix ) );
         }
     }
-    
+	
       # Remove Large Files
       my @cram_suffix   = ('cram','cram.md5');
 
@@ -415,7 +415,13 @@ sub update_db {
     $vrlane->raw_bases($rawbases);
     $vrlane->update();
     $vrtrack->transaction_commit();
-    system("touch _import_done");
+	
+	# remove left over files
+    for my $file (qw(_cram_to_fastq_done _job_status _get_files.jids ))
+    {
+  	  Utils::CMD(qq[rm $lane_path/$file ]) if(-e qq[$lane_path/$file]);
+    }
+	
     $self->update_file_permissions($lane_path);    
     return $$self{Yes};
 }
