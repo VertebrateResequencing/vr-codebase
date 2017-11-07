@@ -190,7 +190,7 @@ sub convert_to_fastq {
     close($fh);
     VertRes::LSF::run(
         $lock_file, $work_dir, "${prefix}convert_to_fastq",
-        { bsub_opts => "-M${memory_in_mb} -n $threads -R 'span[hosts=1] select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'" },
+        { bsub_opts => "-M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]' -n $threads -R 'span[hosts=1]' " },
         qq[perl -w ${prefix}convert_to_fastq.pl]
     );
 
