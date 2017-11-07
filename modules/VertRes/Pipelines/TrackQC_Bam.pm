@@ -1073,10 +1073,7 @@ sub update_db
     $vrtrack->transaction_commit();
 
     # Clean the big files
-    for my $file (
-        'gc-depth.bindepth',       "$$self{lane}.bam.bai",    "$$self{lane}_1.sai", "$$self{lane}_2.sai",
-        "$$self{lane}_1.fastq.gz", "$$self{lane}_2.fastq.gz", "$$self{lane}.bam",   "$$self{lane}.glf"
-      )
+    for my $file ("$$self{lane}_1.fastq.gz", "$$self{lane}_2.fastq.gz", "$$self{lane}.bam", "$$self{lane}.glf")
     {
         if ( -e "$sample_dir/$file" ) {
             Utils::CMD("rm -f $sample_dir/$file");
@@ -1086,19 +1083,17 @@ sub update_db
         }
     }
 
-    for my $file ( "*.gp", "*.png")
+	# within qc directory - files which can be deleted and dont need a placeholder
+    for my $file ('gc-depth.bindepth', "$$self{lane}.bam.bai", "$$self{lane}_1.sai", "$$self{lane}_2.sai", "*.gp", "*.png", "*.pl", "*.e", "*.o")
     {
-        if ( -e "$sample_dir/$file" ) {
-            Utils::CMD("rm -f $sample_dir/$file");
-        }
-    }
-
-    if ( $$self{clean_fastqs} ) {
-        Utils::CMD("rm -f $lane_path/$$self{lane}*.fastq.gz");
+        Utils::CMD("rm -f $sample_dir/$file");
     }
     
-    unlink($lane_path."/.renamed.".$$self{lane}.'_1.fastq.gz') if( -e $lane_path."/.renamed.".$$self{lane}.'_1.fastq.gz');
-    unlink($lane_path."/.renamed.".$$self{lane}.'_2.fastq.gz') if( -e $lane_path."/.renamed.".$$self{lane}.'_2.fastq.gz');
+	# Within the toplevel directory - explicity delete files
+    for my $file (".renamed.$$self{lane}_1.fastq.gz", ".renamed.$$self{lane}_2.fastq.gz", '_assign_taxonomy.pl', '_assign_taxonomy.o', '_assign_taxonomy.e')
+    {
+        unlink("${lane_path}/${file}") if( -e "${lane_path}/${file}");
+    }
 
     # Rename the sample dir by mapstats ID, cleaning existing one
     if ( $has_mapstats && $mapstats_id )
