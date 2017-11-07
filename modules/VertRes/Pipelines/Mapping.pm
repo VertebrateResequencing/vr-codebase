@@ -1261,7 +1261,7 @@ unless (\$num_present == ($#stat_files + 1)) {
     }
 }
 
-VertRes::Pipelines::Mapping->create_graphs(qq[$$self{bamcheck}],  qq[$self->{reference}], qq[$bam_file]);
+VertRes::Pipelines::Mapping->create_bamcheck(qq[$$self{bamcheck}],  qq[$self->{reference}], qq[$bam_file]);
         };
         
 	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
@@ -1295,27 +1295,22 @@ exit;
 }
 
 
-=head2 create_graphs
+=head2 create_bamcheck
 
- Title   : create_graphs
- Usage   : VertRes::Pipelines::Mapping ->create_graphs('bamcheck -q 20', '/path/to/reference.fa','my_bam_file.bam');
- Function: Create a bamcheck file and graphs from plot-bamcheck
+ Title   : create_bamcheck
+ Usage   : VertRes::Pipelines::Mapping ->create_bamcheck('bamcheck -q 20', '/path/to/reference.fa','my_bam_file.bam');
+ Function: Create a bamcheck file
  Returns : Nothing
  Args    : bamcheck executable plus parameters, reference fasta used for mapping, bamfile
 
 =cut
-sub create_graphs
+sub create_bamcheck
 {
   my ($class, $bamcheck, $reference, $bam_file) = @_;
   
   my $basename = basename($bam_file);
   my $bam_check_cmd = qq[$bamcheck -r $reference $bam_file > $bam_file.bc];
-  my $reference_gc_file = $reference.'.gc';
-  my $plot_bamcheck_reference_gc = qq[plot-bamcheck -s $reference > $reference_gc_file];
-  my $plot_bamcheck  = qq[plot-bamcheck -p $basename].'_graphs'.qq[/ -r  $reference_gc_file $bam_file.bc];
   Utils::CMD($bam_check_cmd) unless(-e qq[$bam_file.bc]);
-  Utils::CMD($plot_bamcheck_reference_gc) unless( -e $reference_gc_file);
-  Utils::CMD($plot_bamcheck);
   1;
 }
 
