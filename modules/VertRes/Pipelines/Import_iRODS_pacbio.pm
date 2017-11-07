@@ -64,6 +64,7 @@ use VRTrack::File;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::fastqcheck;
 use File::Basename;
+use File::Path qw(remove_tree);
 
 our $actions = [
 
@@ -91,8 +92,7 @@ our $actions = [
 
 ];
 our %options = (
-    bsub_opts  => '',
-    bash5tools => '/nfs/srpipe_data/smrtanalysis/install/smrtanalysis-2.2.0.133377/analysis/bin/bash5tools.py'
+    bsub_opts  => ''
 );
 
 sub new {
@@ -123,6 +123,10 @@ sub convert_to_fastq_provides {
       push(@output_files,$file);
       push(@output_files,$file.'.fastqcheck');
     }
+	for my $file(@{$self->_output_bam_filenames})
+	{
+		push(@output_files,$file);
+	}
     push(@output_files,'_convert_to_fastq_done');
     return \@output_files;
 }
@@ -135,6 +139,17 @@ sub _output_fastq_filenames {
 
         my $fastq_filename = $filename . '.fastq.gz';
         push( @output_files, $fastq_filename );
+    }
+    return \@output_files;
+}
+
+sub _output_bam_filenames {
+    my ($self) = @_;
+    my @output_files;
+    for my $file ( @{ $self->_bas_h5_filenames } ) {
+        my ( $filename, $dirs, $suffix ) = fileparse( $file, '.bas.h5' );
+        push( @output_files, $filename . '.subreads.bam' );
+		push( @output_files, $filename . '.scraps.bam' );
     }
     return \@output_files;
 }
@@ -152,7 +167,8 @@ sub _bas_h5_filenames {
 
 sub convert_to_fastq {
     my ( $self, $lane_path, $lock_file ) = @_;
-    my $memory_in_mb = 1000;
+    my $memory_in_mb = 2000;
+	my $threads = 1;
 
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
@@ -167,31 +183,50 @@ sub convert_to_fastq {
   my $opts
 
   my \$import = VertRes::Pipelines::Import_iRODS_pacbio->new();
-  \$import->convert_cells_to_fastq(\$bas_files);
+  \$import->convert_bax_to_fastq(\$bas_files);
   system('touch _convert_to_fastq_done');
   ];
 
     close($fh);
     VertRes::LSF::run(
         $lock_file, $work_dir, "${prefix}convert_to_fastq",
-        { bsub_opts => "-M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'" },
+        { bsub_opts => "-M${memory_in_mb} -n $threads -R 'span[hosts=1] select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'" },
         qq[perl -w ${prefix}convert_to_fastq.pl]
     );
 
     return $$self{No};
 }
 
-sub convert_cells_to_fastq {
+sub convert_bax_to_fastq {
     my ( $self, $bas_files ) = @_;
 
     for my $bas_file ( @{$bas_files} ) {
         my ( $filename, $dirs, $suffix ) = fileparse( $bas_file, '.bas.h5' );
-        my $fastq = $filename . '.fastq';
-        next if ( -e $fastq.'.gz');
-        system( $self->{bash5tools} . " --outType fastq " . $bas_file );
-        Utils::CMD(qq[gzip -9 $fastq]);
+        my $fastq = $filename . '.fastq.gz';
+		my $subreads_bam = $filename . '.subreads.bam';
+		my $scraps_bam = $filename . '.scraps.bam';
+		
+        #next if ( -e $fastq);
+		system("pacbio_smrtpipe -o bax2fastq bax2fastq $filename*.bax.h5");
+		Utils::CMD(qq[mv bax2fastq/reads.fastq.gz $fastq]);
+		
+		if ( -e 'bax2fastq/subreads.bam')
+		{
+			Utils::CMD(qq[mv bax2fastq/subreads.bam $subreads_bam]);
+			Utils::CMD(qq[mv bax2fastq/subreads.bam.pbi ${subreads_bam}.pbi]);
+		}
+		if ( -e 'bax2fastq/scraps.bam')
+		{
+			Utils::CMD(qq[mv bax2fastq/scraps.bam $scraps_bam]);
+			Utils::CMD(qq[mv bax2fastq/scraps.bam.pbi ${scraps_bam}.pbi]);
+		}
+		if(-d 'bax2fastq')
+		{
+			remove_tree('bax2fastq');
+		}
+		
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
-        $fastqcheck->run( $fastq . '.gz', $fastq . '.gz.fastqcheck' );
+        $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
     }
 }
 
