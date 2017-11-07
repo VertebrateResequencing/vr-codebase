@@ -207,6 +207,11 @@ sub convert_bax_to_fastq {
 		my $scraps_bam = $filename . '.scraps.bam';
 		
         #next if ( -e $fastq);
+		if(-d 'bax2fastq')
+		{
+			remove_tree('bax2fastq');
+		}
+		
 		system("pacbio_smrtpipe -o bax2fastq bax2fastq $filename*.bax.h5");
 		Utils::CMD(qq[mv bax2fastq/reads.fastq.gz $fastq]);
 		
