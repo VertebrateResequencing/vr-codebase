@@ -240,6 +240,8 @@ sub run_pipelines
         my $jobs = get_jobs($opts);
 
         my $check_jobs_counter = 0;
+		# This option breaks things so turn it off.
+		$$opts{max_check_jobs} = 1;
 	for(my $check_jobs_counter = 0; $check_jobs_counter < $$opts{max_check_jobs}; $check_jobs_counter++)
 	{
             for my $job (@$jobs)

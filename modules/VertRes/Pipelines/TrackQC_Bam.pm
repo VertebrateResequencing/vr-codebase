@@ -1077,20 +1077,17 @@ sub update_db
     {
         if ( -e "$sample_dir/$file" ) {
             Utils::CMD("rm -f $sample_dir/$file");
-
-            # Leave a placeholder empty file so that when you run multiple bjobs in one run-pipeline it doesnt keep looping over.
-            Utils::CMD("touch $sample_dir/$file");
         }
     }
 
 	# within qc directory - files which can be deleted and dont need a placeholder
-    for my $file ('gc-depth.bindepth', "$$self{lane}.bam.bai", "$$self{lane}_1.sai", "$$self{lane}_2.sai", "*.gp", "*.png", "*.pl", "*.e", "*.o")
+    for my $file ('_detailed-stats.txt', 'adapters.fa',"$$self{lane}.cover", "$$self{lane}_1.nadapters","$$self{lane}_2.nadapters", "$$self{lane}.bam.rmdup.bc","_graphs.done", 'gc-depth.bindepth', "$$self{lane}.bam.bai", "$$self{lane}_1.sai", "$$self{lane}_2.sai", "*.gp", "*.png", "*.pl", "*.e", "*.o")
     {
         Utils::CMD("rm -f $sample_dir/$file");
     }
     
 	# Within the toplevel directory - explicity delete files
-    for my $file (".renamed.$$self{lane}_1.fastq.gz", ".renamed.$$self{lane}_2.fastq.gz", '_assign_taxonomy.pl', '_assign_taxonomy.o', '_assign_taxonomy.e')
+    for my $file (".renamed.$$self{lane}_1.fastq.gz", ".renamed.$$self{lane}_2.fastq.gz", '_assign_taxonomy.pl', '_assign_taxonomy.o', '_assign_taxonomy.e', '_assign_taxonomy_done', '_heterozygous_snps_done', '_job_status', )
     {
         unlink("${lane_path}/${file}") if( -e "${lane_path}/${file}");
     }
