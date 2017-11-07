@@ -1073,18 +1073,27 @@ sub update_db
     $vrtrack->transaction_commit();
 
     # Clean the big files
-    for my $file ('gc-depth.bindepth', "$$self{lane}.bam.bai", "$$self{lane}_1.sai","$$self{lane}_2.sai",  "$$self{lane}_1.fastq.gz","$$self{lane}_2.fastq.gz", "$$self{lane}.bam", "$$self{lane}.glf")
+    for my $file (
+        'gc-depth.bindepth',       "$$self{lane}.bam.bai",    "$$self{lane}_1.sai", "$$self{lane}_2.sai",
+        "$$self{lane}_1.fastq.gz", "$$self{lane}_2.fastq.gz", "$$self{lane}.bam",   "$$self{lane}.glf"
+      )
     {
-        if(-e "$sample_dir/$file")
-	{
-		Utils::CMD("rm -f $sample_dir/$file");
-		# Leave a placeholder empty file so that when you run multiple bjobs in one run-pipeline it doesnt keep looping over.
-		Utils::CMD("touch $sample_dir/$file");
-	}
+        if ( -e "$sample_dir/$file" ) {
+            Utils::CMD("rm -f $sample_dir/$file");
+
+            # Leave a placeholder empty file so that when you run multiple bjobs in one run-pipeline it doesnt keep looping over.
+            Utils::CMD("touch $sample_dir/$file");
+        }
     }
 
-    if ( $$self{clean_fastqs} )
+    for my $file ( "*.gp", "*.png")
     {
+        if ( -e "$sample_dir/$file" ) {
+            Utils::CMD("rm -f $sample_dir/$file");
+        }
+    }
+
+    if ( $$self{clean_fastqs} ) {
         Utils::CMD("rm -f $lane_path/$$self{lane}*.fastq.gz");
     }
     
