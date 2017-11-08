@@ -229,10 +229,19 @@ sub map_back_requires
 
 sub map_back_provides
 {
-   my ($self) = @_;
+   my $self = shift;
+   my @provided_files ;
 
-   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_done'];
+   for my $final_file (@{$self->cleanup_provides()})
+   {
+    unless(-e $final_file)
+    {
+ 	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_done');
+ 	   return \@provided_files;
+    }
+   }   
 
+   return $self->cleanup_provides();
 }
 
 sub map_back
@@ -293,8 +302,6 @@ sub mapping_and_generate_stats
   unlink("\$directory/contigs.fa.small.sma");
   unlink("\$directory/contigs.fa.small.smi");
 
-  system("touch \$directory/$self->{prefix}$self->{assembler}_${action_name_suffix}_done");
-
   system("touch $self->{prefix}$self->{assembler}_${action_name_suffix}_done");
   exit;
                 };
@@ -314,8 +321,18 @@ sub mapping_and_generate_stats
 sub optimise_parameters_provides
 {
   my $self = shift;
+  my @provided_files ;
 
-  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_done"];
+  for my $final_file (@{$self->cleanup_provides()})
+  {
+   unless(-e $final_file)
+   {
+	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_done");
+	   return \@provided_files;
+   }
+  }   
+
+  return $self->cleanup_provides();
 }
 
 sub optimise_parameters_requires
@@ -463,17 +480,25 @@ sub optimise_parameters
 sub assembly_improvement_provides
 {
   my $self = shift;
+  my @provided_files ;
 
-  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_assembly_improvement_done"];
+  for my $final_file (@{$self->cleanup_provides()})
+  {
+   unless(-e $final_file)
+   {
+	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."$self->{assembler}_assembly_improvement_done");
+	   return \@provided_files;
+   }
+  }   
+
+  return $self->cleanup_provides();
 }
-
 
 sub assembly_improvement_requires
 {
   my $self = shift;
   return $self->optimise_parameters_provides();
 }
-
 
 sub assembly_improvement
 {
@@ -557,13 +582,20 @@ sub assembly_improvement
 
 sub iva_qc_provides
 {
-  my $self = shift;
-  if (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
-    return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
-  }
-  else {
+    my $self = shift;
+    my @provided_files ;
+
+    for my $final_file (@{$self->cleanup_provides()})
+    {
+     unless(-e $final_file)
+     {
+	     if (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
+	       return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
+	     }
+     }
+    }   
+
     return [];
-  }
 }
 
 
@@ -1070,9 +1102,17 @@ sub pool_fastqs_provides
 {
    my $self = shift;
    my @provided_files ;
-   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}.$self->{assembler}.'_pool_fastqs_done');
 
-   return \@provided_files;
+   for my $final_file (@{$self->cleanup_provides()})
+   {
+	   unless(-e $final_file)
+	   {
+		   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}.$self->{assembler}.'_pool_fastqs_done');
+		   return \@provided_files;
+	   }
+   }   
+
+   return $self->cleanup_provides();
 }
 
 sub get_all_lane_names
@@ -1280,13 +1320,30 @@ sub cleanup {
       }
     }
   }
+  
+  # remove unneeded done files
+  for my $file ('_map_back_done','_optimise_parameters_done', '_assembly_improvement_done', '_iva_qc_done', '_pool_fastqs_done')
+	{
+		my $to_remove = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}.$file;
+		if(-e $to_remove)
+		{
+			unlink($to_remove) or $self->throw("Error unlink $to_remove");
+		}
+	}  
+
+    for my $file ($self->{prefix}."assembly_update_db_done")
+  	{
+  		my $to_remove = $self->{lane_path}."/".$file;
+  		if(-e $to_remove)
+  		{
+  			unlink($to_remove) or $self->throw("Error unlink $to_remove");
+  		}
+  	}  
 
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
   $self->update_file_permissions($lane_path);
   return $self->{Yes};
 }
-
-
 
 =head2 update_db_requires
 
@@ -1314,8 +1371,19 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
-   my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done"];
+    my $self = shift;
+    my @provided_files ;
+
+    for my $final_file (@{$self->cleanup_provides()})
+    {
+     unless(-e $final_file)
+     {
+  	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done");
+  	   return \@provided_files;
+     }
+    }   
+
+    return $self->cleanup_provides();
 }
 
 =head2 update_db
