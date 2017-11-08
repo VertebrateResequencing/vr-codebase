@@ -450,7 +450,6 @@ sub optimise_parameters
         system("mv $tmp_directory/$self->{assembler}_assembly $output_directory") and die "Error mv $tmp_directory/$self->{assembler}_assembly $output_directory";
         chdir(qq[$output_directory]);
         remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
-        #unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
         touch(qq[$pipeline_version]) or die "Error touch $pipeline_version";
         my \$done_file = '$output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done';
         touch(\$done_file) or die "Error touch \$done_file";
@@ -1304,6 +1303,11 @@ sub cleanup {
     scaffolded.summaryfile.txt
     forward.fastq
     reverse.fastq
+	Log
+	assembly_graph.fastg
+	corrected
+	mismatch_corrector
+	scaffolds.paths
   /;
 
   my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
