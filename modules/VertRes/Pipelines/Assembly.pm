@@ -361,6 +361,26 @@ sub optimise_parameters
     my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
     my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
     my $contigs_base_name = $self->generate_contig_base_name();
+	
+	my $spades_options = '';
+	if($self->{assembler} eq 'spades')
+	{
+		$spades_options = qq{          
+			  spades_kmer_opts => qq[$self->{spades_kmer_opts}],
+	          spades_opts => qq[$self->{spades_opts}],
+		};
+	}
+	
+	my $iva_options = '';
+	if($self->{assembler} eq 'iva')
+	{
+		$iva_options = qq{           iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
+          iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
+          iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
+          iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
+          iva_insert_size	     => qq[$self->{iva_insert_size}],
+          iva_strand_bias		 => qq[$self->{iva_strand_bias}], };
+	}
 
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
 
@@ -409,8 +429,7 @@ sub optimise_parameters
           files_str => qq[$files_str],
           output_directory => qq[$tmp_directory],
           single_cell => $self->{single_cell},
-          spades_kmer_opts => qq[$self->{spades_kmer_opts}],
-          spades_opts => qq[$self->{spades_opts}],
+		  $spades_options
           trimmomatic_jar => qq[$self->{trimmomatic_jar}],
           remove_primers => $self->{remove_primers},
           primer_removal_tool => qq[$self->{primer_removal_tool}],
@@ -418,12 +437,7 @@ sub optimise_parameters
           remove_adapters => $self->{remove_adapters},
           adapter_removal_tool => qq[$self->{adapter_removal_tool}],
           adapters_file => qq[$self->{adapters_file}],
-          iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
-          iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
-          iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
-          iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
-          iva_insert_size	     => qq[$self->{iva_insert_size}],
-          iva_strand_bias		 => qq[$self->{iva_strand_bias}],
+		  $iva_options
         );
 
         my \$ok = \$assembler->optimise_parameters($num_threads);
