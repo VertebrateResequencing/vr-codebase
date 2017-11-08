@@ -1232,7 +1232,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{prefix}."assembly_update_db_done"];
+  return [ $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -1247,7 +1247,7 @@ sub cleanup_requires {
 
 sub cleanup_provides {
     my ($self) = @_;
-    return [$self->{prefix}."assembly_cleanup_done"];
+    return [$self->{lane_path}."/".$self->{prefix}."assembly_cleanup_done"];
 }
 
 =head2 cleanup
@@ -1322,6 +1322,8 @@ sub cleanup {
 	corrected
 	mismatch_corrector
 	scaffolds.paths
+	_velvet_optimise_parameters_done
+	_spades_optimise_parameters_done
   /;
 
   my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
