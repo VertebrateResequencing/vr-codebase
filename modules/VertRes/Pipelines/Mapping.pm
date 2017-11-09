@@ -1413,8 +1413,6 @@ sub mark_duplicates {
   \$sam_util->index_bams(files=>['$mark_dup_bam_file']);
   unlink('$bam_file');
   unlink('$bam_file.bai');
-  symlink('$mark_dup_bam_file', '$bam_file');
-  symlink('$mark_dup_bam_file.bai', '$bam_file.bai');
 
   exit;
               };
@@ -1634,6 +1632,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
+	my ($self, $lane_path) = @_;
     return [];
 }
 
@@ -1710,10 +1709,12 @@ sub cleanup {
             }
         }
     }
+	
     
     unlink($self->{fsu}->catfile($lane_path, 'GATK_Error.log'));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
+	
     $self->update_file_permissions($lane_path);
     return $self->{Yes};
 }

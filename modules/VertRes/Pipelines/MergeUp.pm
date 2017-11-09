@@ -345,7 +345,7 @@ sub tag_strip {
         next unless $self->{fsu}->file_exists($lane_bam);
         
         my $job_name = $self->{prefix}.'tag_strip';
-        $self->archive_bsub_files($path, $job_name);
+        $self->delete_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
@@ -552,7 +552,7 @@ sub lib_markdup {
         next unless $self->{fsu}->file_exists($merge_bam);
         
         my $job_name = $self->{prefix}.'lib_markdup_'.$basename;
-        $self->archive_bsub_files($path, $job_name);
+        $self->delete_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
@@ -636,7 +636,7 @@ sub extract_intervals {
         next unless $self->{fsu}->file_exists($markdup_bam);
 
         my $job_name = $self->{prefix}.'extract_intervals_'.$basename;
-        $self->archive_bsub_files($path, $job_name);
+        $self->delete_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->extract_intervals_from_bam(qq[$markdup_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$extract_bam]) || die qq[extract_intervals failed for $markdup_bam\\n];"~);
@@ -866,7 +866,7 @@ sub merge_up_one_level {
             next;
         }
         else {
-            $self->archive_bsub_files($path, $this_job_name);
+            $self->delete_bsub_files($path, $this_job_name);
             
             VertRes::LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\\n];"});
@@ -1052,7 +1052,7 @@ sub _index_bams {
 	
 	my $verbose = $self->verbose();
     my $this_job_name = $self->{prefix}.$job_name;
-    $self->archive_bsub_files($lane_path, $this_job_name);
+    $self->delete_bsub_files($lane_path, $this_job_name);
     $job_name = $self->{fsu}->catfile($lane_path, $this_job_name);
 	VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
 qq~perl -MVertRes::Utils::Sam -Mstrict -e "my \@bams = qw(@bams_to_index); VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(files=>\\\@bams) || die qq[index_bams failed for $this_fofn\\n];"~);
