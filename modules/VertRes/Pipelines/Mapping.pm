@@ -1715,6 +1715,17 @@ sub cleanup {
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
 	
+    for my $file ($self->{mapstats_id}.".pe.raw.sorted.bam.bas", 
+	    $self->{mapstats_id}.".pe.raw.sorted.bam.bc", 
+	    $self->{mapstats_id}.".pe.raw.sorted.bam.cover", 
+	    $self->{mapstats_id}.".pe.raw.sorted.bam.flagstat", 
+	    '.'.$self->{mapstats_id}.".pe.raw.sorted.bam.checked", 
+	    ".split_complete_pe_".$self->{mapstats_id}, 
+	    ".mapping_complete_pe_".$self->{mapstats_id}, ) 
+	{
+		unlink($lane_path."/".$file) if (-e $lane_path."/".$file);
+	}
+	
     $self->update_file_permissions($lane_path);
     return $self->{Yes};
 }
