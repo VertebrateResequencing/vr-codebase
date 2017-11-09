@@ -1332,6 +1332,7 @@ sub cleanup {
 	scaffolds.paths
 	_velvet_optimise_parameters_done
 	_spades_optimise_parameters_done
+	assembly_graph.gfa
   /;
 
   my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
