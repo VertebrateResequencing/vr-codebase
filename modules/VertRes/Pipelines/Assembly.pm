@@ -365,10 +365,18 @@ sub optimise_parameters
 	my $spades_options = '';
 	if($self->{assembler} eq 'spades')
 	{
-		$spades_options = qq{          
-			  spades_kmer_opts => qq[$self->{spades_kmer_opts}],
-	          spades_opts => qq[$self->{spades_opts}],
-		};
+		if(defined($self->{spades_kmer_opts}))
+		{
+			$spades_options .= qq{          
+				  spades_kmer_opts => qq[$self->{spades_kmer_opts}],
+			};
+		}
+		if(defined($self->{spades_opts}))
+		{
+			$spades_options .= qq{          
+				  spades_opts => qq[$self->{spades_opts}],
+			};	    	      
+		}
 	}
 	
 	my $iva_options = '';
