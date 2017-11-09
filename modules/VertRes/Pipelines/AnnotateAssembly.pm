@@ -179,8 +179,20 @@ sub _annotation_base_name_with_path {
 }
 
 sub annotate_assembly_provides {
-    my ($self) = @_;
-    return [ $self->{prefix}."annotate_assembly_done", join( '.', ( $self->_annotation_base_name_with_path, 'gff' ) ) ];
+    my $self = shift;
+    my @provided_files ;
+
+    for my $final_file (@{$self->cleanup_provides()})
+    {
+     unless(-e $final_file)
+     {
+  	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."annotate_assembly_done");
+	   push(@provided_files, join( '.', ( $self->_annotation_base_name_with_path, 'gff' ) ) );
+  	   return \@provided_files;
+     }
+    }   
+
+    return $self->cleanup_provides();
 }
 
 sub annotate_assembly_requires {
@@ -271,9 +283,21 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
-   my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."annotate_update_db_done"];
+    my $self = shift;
+    my @provided_files ;
+
+    for my $final_file (@{$self->cleanup_provides()})
+    {
+     unless(-e $final_file)
+     {
+  	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."annotate_update_db_done");
+  	   return \@provided_files;
+     }
+    }   
+
+    return $self->cleanup_provides();
 }
+
 
 =head2 update_db
 
@@ -325,7 +349,7 @@ sub update_db {
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{prefix}."annotate_update_db_done"];
+  return [ $self->{lane_path}."/".$self->{prefix}."annotate_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -340,7 +364,7 @@ sub cleanup_requires {
 
 sub cleanup_provides {
     my ($self) = @_;
-    return [$self->{prefix}."annotate_cleanup_done"];
+    return [$self->{lane_path}."/".$self->{prefix}."annotate_cleanup_done"];
 }
 
 =head2 cleanup
@@ -359,13 +383,19 @@ sub cleanup {
   
   my $prefix = $self->{prefix};
   # remove job files
-  foreach my $file (qw(annotate_assembly )) 
+  for my $file (qw(annotate_assembly )) 
     {
       foreach my $suffix (qw(o e pl)) 
       {
         unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
       }
   }
+  
+  for my $file ($self->_annotation_base_directory().'/'.$self->{vrlane}->name.'.tbl', $self->{lane_path}."/".$self->{prefix}."annotate_update_db_done", $self->{lane_path}."/".$self->{prefix}."annotate_assembly_done")
+  {
+	  unlink($file) if(-e $file);
+  }
+  
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}annotate_cleanup_done")   );  
   $self->update_file_permissions($lane_path);
   return $self->{Yes};

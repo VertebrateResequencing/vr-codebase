@@ -204,10 +204,11 @@ sub usage
         "   -t, --todo                      List jobs which should be run (i.e. jobs with the status 0,1,2).\n",
         "   -a, --dont_check_load           Dont halt script if the load is higher than the number of CPUs.\n",
 	"   -b, --same_database_for_all     All config files refer to the same DB so reuse connection.\n",
-	"   -x, --max-check-jobs            Loop over a lane this many times to check for new work (default 1).\n",
         "   -v, --verbose                   Be verbose. (Given twice increases the verbosity level.)\n",
         "\n";
-
+		
+		# not working since we cleanup the done files
+		#	"   -x, --max-check-jobs            Loop over a lane this many times to check for new work (not working so hardcoded to 1).\n",
     exit;
 }
 
