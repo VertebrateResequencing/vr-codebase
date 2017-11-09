@@ -734,7 +734,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'import_'.$fastq;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         $script_name =~ s/ /\\ /g;
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
@@ -926,7 +926,7 @@ sub cleanup {
         $fastq = basename($fastq);
         push(@files, 'import_'.$fastq.'.pl');
         
-        $self->archive_bsub_files($lane_path, $prefix.'import_'.$fastq, 1);
+        $self->delete_bsub_files($lane_path, $prefix.'import_'.$fastq, 1);
     }
     
     foreach my $file (@files) {

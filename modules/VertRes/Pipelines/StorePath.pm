@@ -156,7 +156,7 @@ sub store_nfs
     my $job_name = File::Spec->catfile($path, "$self->{prefix}store_nfs");
     
     my $storage_path = $self->storage_path($path);
-    $self->archive_bsub_files($path, File::Basename::basename($job_name));
+    $self->delete_bsub_files($path, File::Basename::basename($job_name));
     VertRes::LSF::run($action_lock, $path, $job_name, $self, 
              qq{perl -MVertRes::Pipelines::StorePath -Mstrict -e "VertRes::Pipelines::StorePath->new()->store_path(qq[$path], qq[$storage_path]) || die qq[Failed to store path, $path in $storage_path]; system(qq[touch $done_file]);"});
     $self->debug("Storing '$path' to '$storage_path'\n");

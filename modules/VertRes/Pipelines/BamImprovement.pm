@@ -568,7 +568,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'realign_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
@@ -711,7 +711,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'sort_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
@@ -857,7 +857,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'recalibrate_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
@@ -963,7 +963,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'calmd_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
@@ -1128,7 +1128,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'rewrite_header_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
         $job_submitted = 1;
@@ -1244,7 +1244,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'statistics_'.$basename;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
@@ -1324,7 +1324,7 @@ sub extract_intervals {
         
         my $base = basename($in_bam);
         my $job_name =  $self->{prefix}.'extract_intervals_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
 
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$penultimate_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $penultimate_bam\n];"~);
@@ -1425,7 +1425,7 @@ my \$samtools = VertRes::Wrapper::samtools->new();
 
         close $scriptfh;
         my $job_name =  $self->{prefix}.'index_'.$base;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
 
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
@@ -1618,7 +1618,7 @@ sub cleanup {
             foreach my $suffix (qw(o e pl)) {
                 my $job_name = $prefix.$action.'_'.$base;
                 if ($suffix eq 'o') {
-                    $self->archive_bsub_files($lane_path, $job_name, 1);
+                    $self->delete_bsub_files($lane_path, $job_name, 1);
                 }
                 unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
             }

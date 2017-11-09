@@ -501,7 +501,7 @@ exit;
     close $scriptfh;
     
     my $job_name = $self->{prefix}.'bam2fastq';
-    $self->archive_bsub_files($lane_path, $job_name);
+    $self->delete_bsub_files($lane_path, $job_name);
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -611,7 +611,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'split_'.$ended.'_'.$self->{mapstats_id};
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
@@ -820,7 +820,7 @@ sub map {
             }
             
             my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
-            my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
+            my $prev_error_file = $self->delete_bsub_files($lane_path, $job_name) || '';
             
             
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -1125,7 +1125,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'merge_'.$ended.'_'.$self->{mapstats_id};
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge'), qq{perl -w $script_name});
     }
@@ -1286,7 +1286,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'statistics_'.$basename;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
@@ -1387,7 +1387,7 @@ sub mark_duplicates {
 
         my $script_name = $self->{fsu}->catfile($lane_path,  $self->{prefix}.'mark_duplicates_'.$ended.'_'.$self->{mapstats_id}.'.pl');
         my $job_name = $self->{prefix}.'mark_duplicates_'.$ended.'_'.$self->{mapstats_id};
-        my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
+        my $prev_error_file = $self->delete_bsub_files($lane_path, $job_name) || '';
 
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         
@@ -1671,7 +1671,7 @@ sub cleanup {
                     my $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split;
                     
                     if ($suffix eq 'o') {
-                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                        $self->delete_bsub_files($lane_path, $job_name, 1);
                     }
                     
                     unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
@@ -1685,7 +1685,7 @@ sub cleanup {
                     
                     $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'.'.$bam;
                     if ($suffix eq 'o') {
-                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                        $self->delete_bsub_files($lane_path, $job_name, 1);
                     }
                     unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
                 }
@@ -1694,7 +1694,7 @@ sub cleanup {
                 foreach my $ended ('pe', 'se') {
                     $job_name = $prefix.$file.'_'.$ended.'_'.$self->{mapstats_id};
                     if ($suffix eq 'o') {
-                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                        $self->delete_bsub_files($lane_path, $job_name, 1);
                     }
                     unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
                 }
@@ -1703,7 +1703,7 @@ sub cleanup {
                 $job_name = $prefix.$file.'_'.$self->{mapstats_id};
                 
                 if ($suffix eq 'o') {
-                    $self->archive_bsub_files($lane_path, $job_name, 1);
+                    $self->delete_bsub_files($lane_path, $job_name, 1);
                 }
                 
                 unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
