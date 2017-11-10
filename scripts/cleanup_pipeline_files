@@ -1,0 +1,271 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Getopt::Long;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Lane;
+use VertRes::Utils::FileSystem;
+use File::Path qw(remove_tree);
+use Cwd 'abs_path';
+use File::Find;
+
+my ( $db, $root, $clean, $help, $verbose, $dry_run, $tmp_directory );
+
+GetOptions(
+    'd|db=s'      => \$db,
+    'r|root=s'    => \$root,
+    'y|dry_run'   => \$dry_run,
+    'v|verbose'   => \$verbose,
+    't|tempdir=s' => \$tmp_directory,
+    'h|help'      => \$help,
+);
+
+( $db && !$help ) or die <<USAGE;
+    Usage: $0 <file of lane names to delete>  
+      --db        <specify db name>
+      [--root      <root directory for the analyses>]
+      --clean     [delete stored folder - in nexsan]
+      --dry_run   [dont delete anything, just print out]
+      --verbose   [be extra verbose about what it is doing]
+      --tempdir   [temp dir on lustre]
+      --help      <this message>
+
+USAGE
+
+$tmp_directory ||= '/lustre/scratch118/infgen/pathogen/pathpipe/tmp/';
+
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(
+    database => $db,
+    mode     => 'rw'
+);
+unless ($vrtrack) {
+    die "Can't connect to tracking database\n";
+}
+my $total_files_deleted = 0;
+print join( "\t", ( "Progress:", 'Lane', "NumBefore", "NumAfter", "Change", "TotalDeleted", "\n" ) );
+
+# get lanes from file of lane names or stdin
+while (<>) {
+    my $lanename = $_;
+    chomp $lanename;
+
+    next if ( length($lanename) < 4 );
+
+    #Check lane actually exists or bail out
+    my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $lanename );
+    unless ($vrlane) {
+        print "Can't get lane $lanename\n";
+        next;
+    }
+    if ($root) {
+        my $lane_suffix_dir = $vrtrack->hierarchy_path_of_lane_name( $vrlane->name );
+
+        # If you dont check this exists then you end up deleting the root directory of the pipeline
+        next if ( !defined($lane_suffix_dir) || ( length($lane_suffix_dir) < 10 ) );
+        my $lanedir = $root . $lane_suffix_dir . '/';
+
+        my $before_counter = 0;
+        find( sub { $before_counter++; }, $lanedir );
+
+        #    import => 1,
+        #	 qc => 2,
+        #	 mapped => 4,
+        #	 stored => 8,
+        #	 deleted => 16,
+        #	 swapped => 32,
+        #	 altered_fastq => 64,
+        # improved => 128,
+        # snp_called => 256,
+        # rna_seq_expression => 512,
+        # assembled  => 1024,
+        # annotated  => 2048,
+        # methylation => 4096,
+
+        my @files_to_delete = [];
+        if ( $vrlane->is_processed('import') ) {
+            for my $file (qw(import_files convert_to_fastq )) {
+                foreach my $suffix (qw(o e pl)) {
+                    push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
+                }
+            }
+
+            for my $file (
+                '_import_done',
+                '_cram_to_fastq_done',
+                $vrlane->name . '.cram',
+                $vrlane->name . '.cram.md5',
+                $vrlane->name . '.bam',
+                $vrlane->name . '.bam.md5',
+                $vrlane->name . '_1.fastq.gz.md5',
+                $vrlane->name . '_2.fastq.gz.md5',
+                $vrlane->name . '_1.fastq.md5',
+                $vrlane->name . '_2.fastq.md5'
+              )
+            {
+                push( @files_to_delete, $lanedir . $file );
+            }
+        }
+
+        if ( $vrlane->is_processed('qc') ) {
+            my $qc_lanedir = $lanedir . 'qc-sample/';
+
+            # top level directory
+            for my $file (
+                '_assign_taxonomy.o',                        '_assign_taxonomy.e',
+                '_assign_taxonomy.pl',                       '_assign_taxonomy_done',
+                '.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz',
+                '_heterozygous_snps_done',                   '_assign_taxonomy.lock'
+              )
+            {
+                push( @files_to_delete, $lanedir . $file );
+            }
+
+            for my $glob_pattern ( "*.gp", "*.png", "*.pl", "*.e", "*.o" ) {
+                my @globbed_files = glob( $qc_lanedir . $glob_pattern );
+                for my $file (@globbed_files) {
+                    push( @files_to_delete, $file );
+                }
+            }
+
+            # within the sample directory
+            for my $file (
+                $vrlane->name . '_1.fastq.gz',
+                $vrlane->name . '_2.fastq.gz',
+                $vrlane->name . '.bam',
+                $vrlane->name . '.glf',
+                $vrlane->name . '.bam.bai',
+                $vrlane->name . '_1.sai',
+                $vrlane->name . '_2.sai',
+                $vrlane->name . '.cover',
+                $vrlane->name . '_1.nadapters',
+                $vrlane->name . '_2.nadapters',
+                $vrlane->name . '.bam.rmdup.bc',
+                '_graphs.done',
+                'gc-depth.bindepth',
+                '_detailed-stats.txt',
+                'adapters.fa',
+              )
+            {
+                push( @files_to_delete, $qc_lanedir . $file );
+            }
+        }
+
+        # Assembly
+        if ( $vrlane->is_processed('assembled') ) {
+
+            for my $prefix ( '_assembly_', '_spades_', '_velvet_', '_iva_' ) {
+                next unless ( -e $lanedir . $prefix . "assembly_cleanup_done" );
+
+                for my $file ( 'assembly_update_db_done', 'pool_fastqs.o', 'pool_fastqs.e', 'pool_fastqs.pl' ) {
+                    push( @files_to_delete, $lanedir . $prefix . $file );
+                }
+
+                for my $assembler ( 'velvet', 'spades', 'iva' ) {
+                    for my $file (
+                        '_map_back_done',             '_optimise_parameters_done',
+                        '_assembly_improvement_done', '_iva_qc_done',
+                        '_pool_fastqs_done',          '_pool_fastq_tmp_files',
+                        'optimise_parameters.o',      'optimise_parameters.e',
+                        'optimise_parameters.pl',     'assembly_improvement.o',
+                        'assembly_improvement.e',     'assembly_improvement.pl',
+                        'iva_qc.o',                   'iva_qc.e',
+                        'iva_qc.pl',                  'map_back.o',
+                        'map_back.e',                 'map_back.pl'
+                      )
+                    {
+                        push( @files_to_delete, $lanedir . $prefix . $assembler . $file );
+                    }
+
+                    for my $file (
+                        qw/
+                        before_rr.fasta
+                        contigs.paths
+                        input_dataset.yaml
+                        split_input
+                        tmp
+                        contigs.fa.scaffolded.filtered
+                        .RData
+                        contigs.fa.png.Rout
+                        scaffolded.summaryfile.txt
+                        forward.fastq
+                        reverse.fastq
+                        Log
+                        assembly_graph.fastg
+                        corrected
+                        mismatch_corrector
+                        scaffolds.paths
+                        _velvet_optimise_parameters_done
+                        _spades_optimise_parameters_done
+                        assembly_graph.gfa
+                        /
+                      )
+                    {
+                        push( @files_to_delete, $lanedir . $assembler . '_assembly/' . $file );
+                    }
+
+                    # Remove the tmp directory from lustre
+                    push( @files_to_delete, $tmp_directory . $prefix . $assembler . '_' . $vrlane->name );
+
+                }
+
+            }
+        }
+		
+		# Annotation
+        if ( $vrlane->is_processed('annotated') ) {
+            for my $prefix ( '_annotate_', '_spades_ann_') {
+                next unless ( -e $lanedir . $prefix . "annotate_cleanup_done" );
+				
+				for my $file ('annotate_assembly.o', 'annotate_assembly.e', 'annotate_assembly.pl', 'annotate_update_db_done', 'annotate_assembly_done')
+				{
+					push( @files_to_delete, $lanedir . $prefix . $file );
+				}
+			}
+		}
+
+        # global deletes - these files should always go
+        for my $file (qw(store_nfs)) {
+            for my $suffix (qw(o e pl)) {
+                push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
+            }
+        }
+        for my $file ('minikraken_20140104.kraken.report') {
+            push( @files_to_delete, $lanedir . $file );
+        }
+
+        # global globs
+        my @globbed_files = glob("$lanedir.*archive $lanedir.*previous");
+        for my $file (@globbed_files) {
+            push( @files_to_delete, $file );
+        }
+
+        for my $file (@files_to_delete) {
+
+            if ( -d $file ) {
+                print "Delete directory:\t" . $file . "\n";
+                remove_tree($file) unless ($dry_run);
+            }
+            elsif ( -e $file ) {
+                print "Delete file:\t" . $file . "\n";
+                unlink($file) unless ($dry_run);
+            }
+        }
+
+        my $after_counter = 0;
+        find( sub { $after_counter++; }, $lanedir );
+
+        $total_files_deleted += ( $before_counter - $after_counter );
+        print join(
+            "\t",
+            (
+                "Progress:", $vrlane->name, $before_counter, $after_counter, ( $before_counter - $after_counter ),
+                $total_files_deleted, "\n"
+            )
+        );
+
+    }
+
+}
+
