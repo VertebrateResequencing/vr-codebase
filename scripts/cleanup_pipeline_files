@@ -199,6 +199,7 @@ while (<>) {
                         _velvet_optimise_parameters_done
                         _spades_optimise_parameters_done
                         assembly_graph.gfa
+                        qc_graphs
                         /
                       )
                     {
@@ -212,18 +213,65 @@ while (<>) {
 
             }
         }
-		
-		# Annotation
+
+        # Annotation
         if ( $vrlane->is_processed('annotated') ) {
-            for my $prefix ( '_annotate_', '_spades_ann_') {
+            for my $prefix ( '_annotate_', '_spades_ann_' ) {
                 next unless ( -e $lanedir . $prefix . "annotate_cleanup_done" );
-				
-				for my $file ('annotate_assembly.o', 'annotate_assembly.e', 'annotate_assembly.pl', 'annotate_update_db_done', 'annotate_assembly_done')
-				{
-					push( @files_to_delete, $lanedir . $prefix . $file );
-				}
-			}
-		}
+
+                for my $file (
+                    'annotate_assembly.o', 'annotate_assembly.e', 'annotate_assembly.pl', 'annotate_update_db_done',
+                    'annotate_assembly_done'
+                  )
+                {
+                    push( @files_to_delete, $lanedir . $prefix . $file );
+                }
+            }
+        }
+
+        # mapping
+        if ( $vrlane->is_processed('mapped') ) {
+            for my $mapping_obj ( @{ $vrlane->mappings() } ) {
+                next if ( $mapping_obj->is_qc() == 1 );
+                next unless ( defined( $mapping_obj->bases_mapped() ) );
+
+                my $mapping_prefix = $mapping_obj->prefix();
+                my $mapstats_id    = $mapping_obj->id();
+
+                for my $file (
+                    "${mapstats_id}.pe.raw.sorted.bam_graphs",
+                    "${mapstats_id}.pe.raw.sorted.bam.cover",
+                    "${mapstats_id}.pe.raw.sorted.bam.bc",
+                    "${mapstats_id}.pe.raw.sorted.bam.bas",
+                    "${mapstats_id}.pe.raw.sorted.bam.flagstat",
+                    "${mapstats_id}.pe.raw.sorted.bam.tmp",
+                    "${mapstats_id}.pe.raw.sorted.bam.bad",
+                    "${mapstats_id}.pe.raw.sorted.bam.checked",
+                    "${mapping_prefix}job_status",
+                    "${mapping_prefix}split.jids",
+                    ".mapping_complete_pe_${mapstats_id}",
+                    ".split_complete_pe_${mapstats_id}",
+                    "${mapping_prefix}split_pe_${mapstats_id}.o",
+                    "${mapping_prefix}split_pe_${mapstats_id}.e",
+                    "${mapping_prefix}split_pe_${mapstats_id}.pl",
+                    "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam.e",
+                    "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam.o",
+                    "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam.pl",
+                    "${mapping_prefix}merge_pe_${mapstats_id}.o",
+                    "${mapping_prefix}merge_pe_${mapstats_id}.e",
+                    "${mapping_prefix}merge_pe_${mapstats_id}.pl",
+                    "${mapping_prefix}mark_duplicates_pe_${mapstats_id}.o",
+                    "${mapping_prefix}mark_duplicates_pe_${mapstats_id}.e",
+                    "${mapping_prefix}mark_duplicates_pe_${mapstats_id}.pl",
+                    "split_pe_${mapstats_id}"
+                  )
+                {
+                    push( @files_to_delete, $lanedir . $prefix . $file );
+                }
+
+                #"${mapping_prefix}map_pe_${mapstats_id}_[0-9]+.[oe]",
+            }
+        }
 
         # global deletes - these files should always go
         for my $file (qw(store_nfs)) {
