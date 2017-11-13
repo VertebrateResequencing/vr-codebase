@@ -1562,8 +1562,17 @@ sub cleanup {
 
     # for each caller, we move the files we want to keep to the root directory
     # and the delete that caller's directory
-    for my $task (keys %{$self->{task}}) {
-        next if ($task eq "update_db" or $task eq "cleanup" or $task eq "pseudo_genome");
+    for my $task (keys %{$self->{task}}) {		
+		if ($task eq "pseudo_genome")
+		{
+			for my $suffix ('.o','.e','.pl')
+			{
+				my $file = $lane_path.'/'.$self->{prefix}."pseudo_genome".$suffix;
+				unlink($file) if(-e $file);
+			}
+			next;
+		}
+        next if ($task eq "update_db" or $task eq "cleanup");
          
         my @suffixes = qw(vcf.gz vcf.gz.stats vcf.gz.tbi);
 
@@ -1599,7 +1608,12 @@ sub cleanup {
         my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
         Utils::CMD("rm $job_status") if (-e $job_status);
     }
-    
+
+    for my $file ('mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats', '.pseudo_genome.done')
+	{
+		unlink($lane_path.'/'.$file) if(-e $lane_path.'/'.$file);
+	}
+
     my $file_list = File::Spec->catfile($lane_path, 'file.list');
     Utils::CMD("rm $file_list") if (-e $file_list);
     Utils::CMD("touch " . File::Spec->catfile($lane_path, '.snps_done'));

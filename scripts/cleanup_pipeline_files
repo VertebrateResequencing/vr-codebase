@@ -73,10 +73,6 @@ while (<>) {
         #	 qc => 2,
         #	 mapped => 4,
         #	 stored => 8,
-        #	 deleted => 16,
-        #	 swapped => 32,
-        #	 altered_fastq => 64,
-        # improved => 128,
         # snp_called => 256,
         # rna_seq_expression => 512,
         # assembled  => 1024,
@@ -266,12 +262,45 @@ while (<>) {
                     "split_pe_${mapstats_id}"
                   )
                 {
-                    push( @files_to_delete, $lanedir . $prefix . $file );
+                    push( @files_to_delete, $lanedir .  $file );
                 }
 
+				# mark dup was run so can safely delete raw.sorted.bam
+				if(-e  $lanedir ."${mapstats_id}.pe.markdup.bam")
+				{
+					push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam" );
+					push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam.bai" );
+				}
+				
                 #"${mapping_prefix}map_pe_${mapstats_id}_[0-9]+.[oe]",
             }
         }
+		
+		# snp calling
+		if ( $vrlane->is_processed('snp_called') ) 
+		{
+            for my $mapping_obj ( @{ $vrlane->mappings() } ) {
+                next if ( $mapping_obj->is_qc() == 1 );
+                next unless ( defined( $mapping_obj->bases_mapped() ) );
+
+                my $mapping_prefix = $mapping_obj->prefix();
+                my $mapstats_id    = $mapping_obj->id();
+			
+				my $snp_dir = $lanedir.${mapstats_id}.'.pe.markdup.snp/';
+				next unless(-e $snp_dir.'.snps_done');
+
+			    for my $file ('mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats', '.pseudo_genome.done')
+				{
+					push( @files_to_delete, $snp_dir.$file );
+				}
+				
+		        my @globbed_files = glob($snp_dir."*_pseudo_genome.pl ".$snp_dir."*_pseudo_genome.e ".$snp_dir."*_pseudo_genome.o");
+		        for my $file (@globbed_files) {
+		            push( @files_to_delete, $file );
+		        }
+			}
+		}
+		
 
         # global deletes - these files should always go
         for my $file (qw(store_nfs)) {
@@ -295,10 +324,16 @@ while (<>) {
                 print "Delete directory:\t" . $file . "\n";
                 remove_tree($file) unless ($dry_run);
             }
+			elsif( -l $file)
+			{
+                print "Delete link:\t" . $file . "\n";
+                unlink($file) unless ($dry_run);
+			}
             elsif ( -e $file ) {
                 print "Delete file:\t" . $file . "\n";
                 unlink($file) unless ($dry_run);
             }
+			
         }
 
         my $after_counter = 0;
