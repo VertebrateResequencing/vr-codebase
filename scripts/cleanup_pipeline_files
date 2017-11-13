@@ -23,15 +23,13 @@ GetOptions(
 );
 
 ( $db && !$help ) or die <<USAGE;
-    Usage: $0 <file of lane names to delete>  
-      --db        <specify db name>
-      [--root      <root directory for the analyses>]
-      --clean     [delete stored folder - in nexsan]
-      --dry_run   [dont delete anything, just print out]
-      --verbose   [be extra verbose about what it is doing]
-      --tempdir   [temp dir on lustre]
-      --help      <this message>
-
+Usage: $0 [options] <file of lanes to delete>  
+  -d STR specify db name
+  -r STR root directory for the analyses
+  -y     dont delete anything
+  -v     verbose output
+  -t STR temp dir on lustre, defaults to [/lustre/scratch118/infgen/pathogen/pathpipe/tmp/]
+  -h     this message
 USAGE
 
 $tmp_directory ||= '/lustre/scratch118/infgen/pathogen/pathpipe/tmp/';
