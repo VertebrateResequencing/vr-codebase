@@ -90,6 +90,7 @@ while (<>) {
             for my $file (
                 '_import_done',
                 '_cram_to_fastq_done',
+				'_get_files.jids',
                 $vrlane->name . '.cram',
                 $vrlane->name . '.cram.md5',
                 $vrlane->name . '.bam',
@@ -317,6 +318,17 @@ while (<>) {
         for my $file (@globbed_files) {
             push( @files_to_delete, $file );
         }
+		
+		
+		#### Failed QC pipeline cleanup
+		# If kraken ran, but the QC pipeline failed it can leave very large FASTQ files
+		if( -e $lanedir.'_assign_taxonomy_done')
+		{
+			  for my $file ('.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz', '_assign_taxonomy.pl', '_assign_taxonomy.o', '_assign_taxonomy.e')
+			  {
+			  	push( @files_to_delete, $lanedir . $file );
+			  }
+		}
 
         for my $file (@files_to_delete) {
 
