@@ -312,7 +312,7 @@ while (<>) {
         }
 
         # global globs
-        my @globbed_files = glob("$lanedir.*archive $lanedir.*previous");
+        my @globbed_files = glob("$lanedir.*archive $lanedir.*previous ".$lanedir."hs_err_pid*.log");
         for my $file (@globbed_files) {
             push( @files_to_delete, $file );
         }
@@ -327,7 +327,19 @@ while (<>) {
 			  	push( @files_to_delete, $lanedir . $file );
 			  }
 		}
-
+		
+		### Some directories can have vast numbers of files after they fail, cleanup ones older than 1 year.
+		for my $pattern ('split_pe_*', '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*')
+		{
+			my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
+			my $find_output = `$find_command`;
+			my @files = split(/\n/, $find_output);
+			for $file my(@files)
+			{
+				push( @files_to_delete,  $file );
+			}
+		}
+		
         for my $file (@files_to_delete) {
 
             if ( -d $file ) {
