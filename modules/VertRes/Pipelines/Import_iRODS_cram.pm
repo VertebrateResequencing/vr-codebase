@@ -242,12 +242,6 @@ sub cram_to_fastq {
       push(@fastqcheck_files,$fastq . '.fastqcheck');
       $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
       Utils::CMD(qq[md5sum $fastq > $fastq.md5]);
-
-      my $fastq_without_gz = $fastq;
-      $fastq_without_gz  =~ s!\.gz!!i;
-      Utils::CMD(qq[gunzip -c $fastq > $fastq_without_gz]);
-      Utils::CMD(qq[md5sum $fastq_without_gz > $fastq_without_gz.md5]);
-      unlink($fastq_without_gz);
     }
     
     my $filename_without_path = $filename. $suffix;
@@ -384,16 +378,13 @@ sub update_db {
             unlink( $self->{fsu}->catfile( $lane_path, $prefix . $file . '.' . $suffix ) );
         }
     }
-    
+	
       # Remove Large Files
-      my @cram_suffix   = ('cram','cram.md5');
-
+      my @cram_suffix   = ('.cram','.cram.md5','_1.fastq.gz.md5','_2.fastq.gz.md5');
       my $bam = $self->{files}->[0];
-
       for my $suffix (@cram_suffix)
       {
-  	# Remove crams
-    	Utils::CMD(qq[rm $lane_path/$$self{lane}.$suffix]) if(-e qq[$lane_path/$$self{lane}.$suffix]);
+    	Utils::CMD(qq[rm $lane_path/$$self{lane}$suffix]) if(-e qq[$lane_path/$$self{lane}$suffix]);
       }
    
     my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
@@ -415,7 +406,13 @@ sub update_db {
     $vrlane->raw_bases($rawbases);
     $vrlane->update();
     $vrtrack->transaction_commit();
-    system("touch _import_done");
+	
+	# remove left over files
+    for my $file (qw(_cram_to_fastq_done _job_status _get_files.jids ))
+    {
+  	  Utils::CMD(qq[rm $lane_path/$file ]) if(-e qq[$lane_path/$file]);
+    }
+	
     $self->update_file_permissions($lane_path);    
     return $$self{Yes};
 }
@@ -470,7 +467,6 @@ sub update_db_master
             $vrfile = $vrlane->add_file($name); 
             $vrfile->hierarchy_name($name);
         }
-        $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
 
         # Hm, this must be evaled, otherwise it dies without rollback
         my ($avg_len,$tot_len,$num_seq,$avg_qual);

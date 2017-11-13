@@ -441,6 +441,19 @@ sub unlock_file
     close($lock_fh) or confess "close $lock_fh: $!";
 }
 
+
+sub delete_bsub_files {
+    my ($self, $lane_path, $job_name, $final) = @_;
+    
+    my $prev_error;
+    foreach my $suffix ('e', 'o') {
+        my $bsub_file = File::Spec->catfile($lane_path, $job_name.'.'.$suffix);
+        my $previous_bsub_file = $bsub_file.'.previous';
+		unlink($bsub_file);
+		 unlink($previous_bsub_file);
+	 }
+ }
+
 # For a given bsub job name (arg 3 to VertRes::LSF::run), if the bsub o/e files exist
 # they will be moved to .previous files. If a .previous file exists, its
 # content will be moved to an .archive file. Returns the abs path to the

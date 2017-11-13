@@ -173,7 +173,7 @@ touch(\$done_file) or die "Error touch \$done_file";
 
     my $job_name = $self->{prefix}.'methylation';
 
-    $self->archive_bsub_files($lane_path, $job_name);
+    $self->delete_bsub_files($lane_path, $job_name);
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
 
     return $self->{No};

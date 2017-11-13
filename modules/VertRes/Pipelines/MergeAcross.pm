@@ -315,7 +315,7 @@ rename '$tmp_bam_out', '$bam_out';
 ];
         close $fh;
 
-        $self->archive_bsub_files($work_dir, "$self->{prefix}$group.pl");
+        $self->delete_bsub_files($work_dir, "$self->{prefix}$group.pl");
         VertRes::LSF::run($jids_file, $bam_out_dir, $job_name, $self, "perl -w $perl_out");
         print STDERR "    Submitted $perl_out\n"
     }

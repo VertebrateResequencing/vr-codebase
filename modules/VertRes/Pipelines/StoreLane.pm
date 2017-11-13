@@ -185,7 +185,7 @@ exit;
     };
     close $scriptfh;
     
-    $self->archive_bsub_files($lane_path, $job_name);
+    $self->delete_bsub_files($lane_path, $job_name);
     
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M80 -R 'select[mem>80] rusage[mem=80]'" }, qq{perl -w $script_name});
     

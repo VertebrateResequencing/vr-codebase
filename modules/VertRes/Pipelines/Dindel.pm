@@ -353,7 +353,7 @@ sub extract_indels {
             next;
         }
         else {
-            $self->archive_bsub_files($out_dir, $job_base_name);
+            $self->delete_bsub_files($out_dir, $job_base_name);
             
             VertRes::LSF::run($lock_file, $out_dir, $job_base_name, $self,
                      qq{$self->{dindel_bin} --analysis getCIGARindels --bamFile $bam --ref $self->{ref} --outputFile $running_base});
@@ -472,7 +472,7 @@ sub select_candidates {
     
     my $job_basename = 'select_candidates';
     my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
-    $self->archive_bsub_files($lane_path, $job_basename);
+    $self->delete_bsub_files($lane_path, $job_basename);
     
     VertRes::LSF::run($action_lock, $lane_path, $job_basename, $self,
              qq{python $self->{dindel_scripts}/selectCandidates.py --minCount $min_count -i $var_file -o $sel_file.running});
@@ -512,7 +512,7 @@ sub filter_candidates {
 
     my $job_basename = 'filter_candidates';
     my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
-    $self->archive_bsub_files($lane_path, $job_basename);
+    $self->delete_bsub_files($lane_path, $job_basename);
 
     VertRes::LSF::run($action_lock, $lane_path, $job_basename, $self,
             qq{perl -MVertRes::Pipelines::Dindel -e '\\''VertRes::Pipelines::Dindel->filter_candidates_run(q[$win],q[$candidates],q[$filter],q[$done_file])'\\''});
@@ -683,7 +683,7 @@ sub make_windows {
     
     my $job_basename = 'dindel_make_windows';
     my $job_name = $self->{fsu}->catfile($window_dir, $job_basename);
-    $self->archive_bsub_files($window_dir, $job_basename);
+    $self->delete_bsub_files($window_dir, $job_basename);
 
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = $self->{make_windows_bsub_opts};
@@ -804,7 +804,7 @@ sub realign_windows {
             $jobs++;
             last if $jobs > $self->{simultaneous_jobs};
             
-            $self->archive_bsub_files($window_dir, $job_base_name);
+            $self->delete_bsub_files($window_dir, $job_base_name);
             
             my $bam_mode_args = '';
             my @bam_files = @{$self->{bam_files}};
@@ -849,7 +849,7 @@ sub merge {
     
     my $job_basename = 'dindel_merge';
     my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
-    $self->archive_bsub_files($lane_path, $job_basename);
+    $self->delete_bsub_files($lane_path, $job_basename);
     
     my $script = '';
     if ($self->{type} eq 'pooled') {

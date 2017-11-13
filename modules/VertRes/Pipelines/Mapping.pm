@@ -501,7 +501,7 @@ exit;
     close $scriptfh;
     
     my $job_name = $self->{prefix}.'bam2fastq';
-    $self->archive_bsub_files($lane_path, $job_name);
+    $self->delete_bsub_files($lane_path, $job_name);
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -611,7 +611,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'split_'.$ended.'_'.$self->{mapstats_id};
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
@@ -820,7 +820,7 @@ sub map {
             }
             
             my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
-            my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
+            my $prev_error_file = $self->delete_bsub_files($lane_path, $job_name) || '';
             
             
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -1125,7 +1125,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'merge_'.$ended.'_'.$self->{mapstats_id};
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge'), qq{perl -w $script_name});
     }
@@ -1261,7 +1261,7 @@ unless (\$num_present == ($#stat_files + 1)) {
     }
 }
 
-VertRes::Pipelines::Mapping->create_graphs(qq[$$self{bamcheck}],  qq[$self->{reference}], qq[$bam_file]);
+VertRes::Pipelines::Mapping->create_bamcheck(qq[$$self{bamcheck}],  qq[$self->{reference}], qq[$bam_file]);
         };
         
 	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
@@ -1286,7 +1286,7 @@ exit;
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'statistics_'.$basename;
-        $self->archive_bsub_files($lane_path, $job_name);
+        $self->delete_bsub_files($lane_path, $job_name);
         
         VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
@@ -1295,27 +1295,22 @@ exit;
 }
 
 
-=head2 create_graphs
+=head2 create_bamcheck
 
- Title   : create_graphs
- Usage   : VertRes::Pipelines::Mapping ->create_graphs('bamcheck -q 20', '/path/to/reference.fa','my_bam_file.bam');
- Function: Create a bamcheck file and graphs from plot-bamcheck
+ Title   : create_bamcheck
+ Usage   : VertRes::Pipelines::Mapping ->create_bamcheck('bamcheck -q 20', '/path/to/reference.fa','my_bam_file.bam');
+ Function: Create a bamcheck file
  Returns : Nothing
  Args    : bamcheck executable plus parameters, reference fasta used for mapping, bamfile
 
 =cut
-sub create_graphs
+sub create_bamcheck
 {
   my ($class, $bamcheck, $reference, $bam_file) = @_;
   
   my $basename = basename($bam_file);
   my $bam_check_cmd = qq[$bamcheck -r $reference $bam_file > $bam_file.bc];
-  my $reference_gc_file = $reference.'.gc';
-  my $plot_bamcheck_reference_gc = qq[plot-bamcheck -s $reference > $reference_gc_file];
-  my $plot_bamcheck  = qq[plot-bamcheck -p $basename].'_graphs'.qq[/ -r  $reference_gc_file $bam_file.bc];
   Utils::CMD($bam_check_cmd) unless(-e qq[$bam_file.bc]);
-  Utils::CMD($plot_bamcheck_reference_gc) unless( -e $reference_gc_file);
-  Utils::CMD($plot_bamcheck);
   1;
 }
 
@@ -1392,7 +1387,7 @@ sub mark_duplicates {
 
         my $script_name = $self->{fsu}->catfile($lane_path,  $self->{prefix}.'mark_duplicates_'.$ended.'_'.$self->{mapstats_id}.'.pl');
         my $job_name = $self->{prefix}.'mark_duplicates_'.$ended.'_'.$self->{mapstats_id};
-        my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
+        my $prev_error_file = $self->delete_bsub_files($lane_path, $job_name) || '';
 
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         
@@ -1418,8 +1413,6 @@ sub mark_duplicates {
   \$sam_util->index_bams(files=>['$mark_dup_bam_file']);
   unlink('$bam_file');
   unlink('$bam_file.bai');
-  symlink('$mark_dup_bam_file', '$bam_file');
-  symlink('$mark_dup_bam_file.bai', '$bam_file.bai');
 
   exit;
               };
@@ -1639,6 +1632,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
+	my ($self, $lane_path) = @_;
     return [];
 }
 
@@ -1676,7 +1670,7 @@ sub cleanup {
                     my $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split;
                     
                     if ($suffix eq 'o') {
-                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                        $self->delete_bsub_files($lane_path, $job_name, 1);
                     }
                     
                     unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
@@ -1690,7 +1684,7 @@ sub cleanup {
                     
                     $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'.'.$bam;
                     if ($suffix eq 'o') {
-                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                        $self->delete_bsub_files($lane_path, $job_name, 1);
                     }
                     unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
                 }
@@ -1699,7 +1693,7 @@ sub cleanup {
                 foreach my $ended ('pe', 'se') {
                     $job_name = $prefix.$file.'_'.$ended.'_'.$self->{mapstats_id};
                     if ($suffix eq 'o') {
-                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                        $self->delete_bsub_files($lane_path, $job_name, 1);
                     }
                     unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
                 }
@@ -1708,17 +1702,30 @@ sub cleanup {
                 $job_name = $prefix.$file.'_'.$self->{mapstats_id};
                 
                 if ($suffix eq 'o') {
-                    $self->archive_bsub_files($lane_path, $job_name, 1);
+                    $self->delete_bsub_files($lane_path, $job_name, 1);
                 }
                 
                 unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
             }
         }
     }
+	
     
     unlink($self->{fsu}->catfile($lane_path, 'GATK_Error.log'));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
+	
+    for my $file ($self->{mapstats_id}.".pe.raw.sorted.bam.bas", 
+	    $self->{mapstats_id}.".pe.raw.sorted.bam.bc", 
+	    $self->{mapstats_id}.".pe.raw.sorted.bam.cover", 
+	    $self->{mapstats_id}.".pe.raw.sorted.bam.flagstat", 
+	    '.'.$self->{mapstats_id}.".pe.raw.sorted.bam.checked", 
+	    ".split_complete_pe_".$self->{mapstats_id}, 
+	    ".mapping_complete_pe_".$self->{mapstats_id}, ) 
+	{
+		unlink($lane_path."/".$file) if (-e $lane_path."/".$file);
+	}
+	
     $self->update_file_permissions($lane_path);
     return $self->{Yes};
 }

@@ -200,10 +200,6 @@ sub map_and_generate_stats
    $retcode = system("bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc");
    $self->throw("Error running bamcheck") unless(-e "$directory/contigs.mapped.sorted.bam.bc" and $retcode == 0);
 
-   system("plot-bamcheck -s $reference > $reference.gc");
-   $self->throw("Error running plot-bamcheck -s") unless(-e "$reference.gc" and $retcode == 0);
-   system("plot-bamcheck -p $directory/qc_graphs/ -r  $reference.gc $directory/contigs.mapped.sorted.bam.bc");
-
    $self->generate_stats($directory);
    unlink("$directory/contigs.mapped.bam") or $self->throw("Error deleting $directory/contigs.mapped.bam");
 }

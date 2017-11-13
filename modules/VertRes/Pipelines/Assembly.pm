@@ -229,10 +229,19 @@ sub map_back_requires
 
 sub map_back_provides
 {
-   my ($self) = @_;
+   my $self = shift;
+   my @provided_files ;
 
-   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_done'];
+   for my $final_file (@{$self->cleanup_provides()})
+   {
+    unless(-e $final_file)
+    {
+ 	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_done');
+ 	   return \@provided_files;
+    }
+   }   
 
+   return $self->cleanup_provides();
 }
 
 sub map_back
@@ -293,8 +302,6 @@ sub mapping_and_generate_stats
   unlink("\$directory/contigs.fa.small.sma");
   unlink("\$directory/contigs.fa.small.smi");
 
-  system("touch \$directory/$self->{prefix}$self->{assembler}_${action_name_suffix}_done");
-
   system("touch $self->{prefix}$self->{assembler}_${action_name_suffix}_done");
   exit;
                 };
@@ -314,8 +321,18 @@ sub mapping_and_generate_stats
 sub optimise_parameters_provides
 {
   my $self = shift;
+  my @provided_files ;
 
-  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_done"];
+  for my $final_file (@{$self->cleanup_provides()})
+  {
+   unless(-e $final_file)
+   {
+	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_done");
+	   return \@provided_files;
+   }
+  }   
+
+  return $self->cleanup_provides();
 }
 
 sub optimise_parameters_requires
@@ -344,6 +361,34 @@ sub optimise_parameters
     my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
     my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
     my $contigs_base_name = $self->generate_contig_base_name();
+	
+	my $spades_options = '';
+	if($self->{assembler} eq 'spades')
+	{
+		if(defined($self->{spades_kmer_opts}))
+		{
+			$spades_options .= qq{          
+				  spades_kmer_opts => qq[$self->{spades_kmer_opts}],
+			};
+		}
+		if(defined($self->{spades_opts}))
+		{
+			$spades_options .= qq{          
+				  spades_opts => qq[$self->{spades_opts}],
+			};	    	      
+		}
+	}
+	
+	my $iva_options = '';
+	if($self->{assembler} eq 'iva')
+	{
+		$iva_options = qq{           iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
+          iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
+          iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
+          iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
+          iva_insert_size	     => qq[$self->{iva_insert_size}],
+          iva_strand_bias		 => qq[$self->{iva_strand_bias}], };
+	}
 
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
 
@@ -392,8 +437,7 @@ sub optimise_parameters
           files_str => qq[$files_str],
           output_directory => qq[$tmp_directory],
           single_cell => $self->{single_cell},
-          spades_kmer_opts => qq[$self->{spades_kmer_opts}],
-          spades_opts => qq[$self->{spades_opts}],
+		  $spades_options
           trimmomatic_jar => qq[$self->{trimmomatic_jar}],
           remove_primers => $self->{remove_primers},
           primer_removal_tool => qq[$self->{primer_removal_tool}],
@@ -401,12 +445,7 @@ sub optimise_parameters
           remove_adapters => $self->{remove_adapters},
           adapter_removal_tool => qq[$self->{adapter_removal_tool}],
           adapters_file => qq[$self->{adapters_file}],
-          iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
-          iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
-          iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
-          iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
-          iva_insert_size	     => qq[$self->{iva_insert_size}],
-          iva_strand_bias		 => qq[$self->{iva_strand_bias}],
+		  $iva_options
         );
 
         my \$ok = \$assembler->optimise_parameters($num_threads);
@@ -433,7 +472,6 @@ sub optimise_parameters
         system("mv $tmp_directory/$self->{assembler}_assembly $output_directory") and die "Error mv $tmp_directory/$self->{assembler}_assembly $output_directory";
         chdir(qq[$output_directory]);
         remove_tree(qq[$tmp_directory]) or die "Error remove_tree $tmp_directory";
-        #unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
         touch(qq[$pipeline_version]) or die "Error touch $pipeline_version";
         my \$done_file = '$output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done';
         touch(\$done_file) or die "Error touch \$done_file";
@@ -463,17 +501,25 @@ sub optimise_parameters
 sub assembly_improvement_provides
 {
   my $self = shift;
+  my @provided_files ;
 
-  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_assembly_improvement_done"];
+  for my $final_file (@{$self->cleanup_provides()})
+  {
+   unless(-e $final_file)
+   {
+	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."$self->{assembler}_assembly_improvement_done");
+	   return \@provided_files;
+   }
+  }   
+
+  return $self->cleanup_provides();
 }
-
 
 sub assembly_improvement_requires
 {
   my $self = shift;
   return $self->optimise_parameters_provides();
 }
-
 
 sub assembly_improvement
 {
@@ -557,13 +603,20 @@ sub assembly_improvement
 
 sub iva_qc_provides
 {
-  my $self = shift;
-  if (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
-    return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
-  }
-  else {
+    my $self = shift;
+    my @provided_files ;
+
+    for my $final_file (@{$self->cleanup_provides()})
+    {
+     unless(-e $final_file)
+     {
+	     if (defined($self->{iva_qc}) and $self->{iva_qc} and defined(qq[$self->{kraken_db}])) {
+	       return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_iva_qc_done"];
+	     }
+     }
+    }   
+
     return [];
-  }
 }
 
 
@@ -1070,9 +1123,17 @@ sub pool_fastqs_provides
 {
    my $self = shift;
    my @provided_files ;
-   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}.$self->{assembler}.'_pool_fastqs_done');
 
-   return \@provided_files;
+   for my $final_file (@{$self->cleanup_provides()})
+   {
+	   unless(-e $final_file)
+	   {
+		   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}.$self->{assembler}.'_pool_fastqs_done');
+		   return \@provided_files;
+	   }
+   }   
+
+   return $self->cleanup_provides();
 }
 
 sub get_all_lane_names
@@ -1179,7 +1240,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{prefix}."assembly_update_db_done"];
+  return [ $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -1194,7 +1255,7 @@ sub cleanup_requires {
 
 sub cleanup_provides {
     my ($self) = @_;
-    return [$self->{prefix}."assembly_cleanup_done"];
+    return [$self->{lane_path}."/".$self->{prefix}."assembly_cleanup_done"];
 }
 
 =head2 cleanup
@@ -1264,6 +1325,14 @@ sub cleanup {
     scaffolded.summaryfile.txt
     forward.fastq
     reverse.fastq
+	Log
+	assembly_graph.fastg
+	corrected
+	mismatch_corrector
+	scaffolds.paths
+	_velvet_optimise_parameters_done
+	_spades_optimise_parameters_done
+	assembly_graph.gfa
   /;
 
   my $assembly_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{assembler}.'_assembly');
@@ -1280,13 +1349,30 @@ sub cleanup {
       }
     }
   }
+  
+  # remove unneeded done files
+  for my $file ('_map_back_done','_optimise_parameters_done', '_assembly_improvement_done', '_iva_qc_done', '_pool_fastqs_done')
+	{
+		my $to_remove = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}.$file;
+		if(-e $to_remove)
+		{
+			unlink($to_remove) or $self->throw("Error unlink $to_remove");
+		}
+	}  
+
+    for my $file ($self->{prefix}."assembly_update_db_done")
+  	{
+  		my $to_remove = $self->{lane_path}."/".$file;
+  		if(-e $to_remove)
+  		{
+  			unlink($to_remove) or $self->throw("Error unlink $to_remove");
+  		}
+  	}  
 
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
   $self->update_file_permissions($lane_path);
   return $self->{Yes};
 }
-
-
 
 =head2 update_db_requires
 
@@ -1314,8 +1400,19 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
-   my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done"];
+    my $self = shift;
+    my @provided_files ;
+
+    for my $final_file (@{$self->cleanup_provides()})
+    {
+     unless(-e $final_file)
+     {
+  	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done");
+  	   return \@provided_files;
+     }
+    }   
+
+    return $self->cleanup_provides();
 }
 
 =head2 update_db
