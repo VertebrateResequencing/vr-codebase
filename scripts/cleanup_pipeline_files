@@ -88,7 +88,7 @@ while (<>) {
             for my $file (
                 '_import_done',
                 '_cram_to_fastq_done',
-				'_get_files.jids',
+                '_get_files.jids',
                 $vrlane->name . '.cram',
                 $vrlane->name . '.cram.md5',
                 $vrlane->name . '.bam',
@@ -261,45 +261,44 @@ while (<>) {
                     "split_pe_${mapstats_id}"
                   )
                 {
-                    push( @files_to_delete, $lanedir .  $file );
+                    push( @files_to_delete, $lanedir . $file );
                 }
 
-				# mark dup was run so can safely delete raw.sorted.bam
-				if(-e  $lanedir ."${mapstats_id}.pe.markdup.bam")
-				{
-					push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam" );
-					push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam.bai" );
-				}
-				
+                # mark dup was run so can safely delete raw.sorted.bam
+                if ( -e $lanedir . "${mapstats_id}.pe.markdup.bam" ) {
+                    push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam" );
+                    push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam.bai" );
+                }
+
                 #"${mapping_prefix}map_pe_${mapstats_id}_[0-9]+.[oe]",
             }
         }
-		
-		# snp calling
-		if ( $vrlane->is_processed('snp_called') ) 
-		{
+
+        # snp calling
+        if ( $vrlane->is_processed('snp_called') ) {
             for my $mapping_obj ( @{ $vrlane->mappings() } ) {
                 next if ( $mapping_obj->is_qc() == 1 );
                 next unless ( defined( $mapping_obj->bases_mapped() ) );
 
                 my $mapping_prefix = $mapping_obj->prefix();
                 my $mapstats_id    = $mapping_obj->id();
-			
-				my $snp_dir = $lanedir.${mapstats_id}.'.pe.markdup.snp/';
-				next unless(-e $snp_dir.'.snps_done');
 
-			    for my $file ('mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats', '.pseudo_genome.done')
-				{
-					push( @files_to_delete, $snp_dir.$file );
-				}
-				
-		        my @globbed_files = glob($snp_dir."*_pseudo_genome.pl ".$snp_dir."*_pseudo_genome.e ".$snp_dir."*_pseudo_genome.o");
-		        for my $file (@globbed_files) {
-		            push( @files_to_delete, $file );
-		        }
-			}
-		}
-		
+                my $snp_dir = $lanedir . ${mapstats_id} . '.pe.markdup.snp/';
+                next unless ( -e $snp_dir . '.snps_done' );
+
+                for my $file ( 'mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats',
+                    '.pseudo_genome.done' )
+                {
+                    push( @files_to_delete, $snp_dir . $file );
+                }
+
+                my @globbed_files =
+                  glob( $snp_dir . "*_pseudo_genome.pl " . $snp_dir . "*_pseudo_genome.e " . $snp_dir . "*_pseudo_genome.o" );
+                for my $file (@globbed_files) {
+                    push( @files_to_delete, $file );
+                }
+            }
+        }
 
         # global deletes - these files should always go
         for my $file (qw(store_nfs)) {
@@ -312,50 +311,49 @@ while (<>) {
         }
 
         # global globs
-        my @globbed_files = glob("$lanedir.*archive $lanedir.*previous ".$lanedir."hs_err_pid*.log");
+        my @globbed_files = glob( "$lanedir.*archive $lanedir.*previous " . $lanedir . "hs_err_pid*.log" );
         for my $file (@globbed_files) {
             push( @files_to_delete, $file );
         }
-		
-		
-		#### Failed QC pipeline cleanup
-		# If kraken ran, but the QC pipeline failed it can leave very large FASTQ files
-		if( -e $lanedir.'_assign_taxonomy_done')
-		{
-			  for my $file ('.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz', '_assign_taxonomy.pl', '_assign_taxonomy.o', '_assign_taxonomy.e')
-			  {
-			  	push( @files_to_delete, $lanedir . $file );
-			  }
-		}
-		
-		### Some directories can have vast numbers of files after they fail, cleanup ones older than 1 year.
-		for my $pattern ('split_pe_*', '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*')
-		{
-			my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
-			my $find_output = `$find_command`;
-			my @files = split(/\n/, $find_output);
-			for $file my(@files)
-			{
-				push( @files_to_delete,  $file );
-			}
-		}
-		
+
+        #### Failed QC pipeline cleanup
+        # If kraken ran, but the QC pipeline failed it can leave very large FASTQ files
+        if ( -e $lanedir . '_assign_taxonomy_done' ) {
+            for my $file (
+                '.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz',
+                '_assign_taxonomy.pl',                       '_assign_taxonomy.o',
+                '_assign_taxonomy.e'
+              )
+            {
+                push( @files_to_delete, $lanedir . $file );
+            }
+        }
+
+        ### Some directories can have vast numbers of files after they fail, cleanup ones older than 1 year.
+        for my $pattern ( 'split_pe_*', '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*' ) {
+            my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
+            my $find_output  = `$find_command`;
+            my @files        = split( /\n/, $find_output );
+            for my $file (@files) {
+                push( @files_to_delete, $file );
+            }
+        }
+
         for my $file (@files_to_delete) {
 
             if ( -d $file ) {
                 print "Delete directory:\t" . $file . "\n";
                 remove_tree($file) unless ($dry_run);
             }
-			elsif( -l $file)
-			{
+            elsif ( -l $file ) {
                 print "Delete link:\t" . $file . "\n";
                 unlink($file) unless ($dry_run);
-			}
+            }
             elsif ( -e $file ) {
                 print "Delete file:\t" . $file . "\n";
                 unlink($file) unless ($dry_run);
             }
-			
+
         }
 
         my $after_counter = 0;
