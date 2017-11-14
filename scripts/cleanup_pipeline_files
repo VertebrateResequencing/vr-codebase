@@ -394,7 +394,7 @@ while (<>) {
 
         # disk space after
         my $disk_space_after = du($lanedir);
-        $total_files_deleted += ( $disk_space_before - $disk_space_after );
+        $total_disk_deleted += ( $disk_space_before - $disk_space_after );
         my $bytes_per_base = $disk_space_after / ( $vrlane->raw_bases );
 
         my $after_counter = 0;
@@ -408,7 +408,7 @@ while (<>) {
                 $before_counter,                      $after_counter,
                 ( $before_counter - $after_counter ), $total_files_deleted,
                 int( $disk_space_before / 1000000 ),  int( $disk_space_after / 1000000 ),
-                int( ( $disk_space_before - $disk_space_after ) / 1000000 ), int( $total_files_deleted / 1000000 ),
+                int( ( $disk_space_before - $disk_space_after ) / 1000000 ), int( $total_disk_deleted / 1000000 ),
                 $bytes_per_base, "\n"
             )
         );
