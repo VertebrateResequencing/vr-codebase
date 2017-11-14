@@ -187,7 +187,7 @@ while (<>) {
 
                     for my $file (qw(optimise_parameters assembly_improvement map_back iva_qc)) {
                         foreach my $suffix (qw(o e pl jids)) {
-                            push( @files_to_delete, $lanedir . $prefix . $assembler . $file . '.' . $suffix );
+                            push( @files_to_delete, $lanedir . $prefix . $assembler .'_'. $file . '.' . $suffix );
                         }
                     }
 
