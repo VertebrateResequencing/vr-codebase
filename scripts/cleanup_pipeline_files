@@ -66,13 +66,13 @@ while (<>) {
         # If you dont check this exists then you end up deleting the root directory of the pipeline
         next if ( !defined($lane_suffix_dir) || ( length($lane_suffix_dir) < 10 ) );
         my $lanedir = $root . $lane_suffix_dir . '/';
+		next unless (-d $lanedir);
 
         my $before_counter = 0;
         find( sub { $before_counter++; }, $lanedir );
 		
-		
 		# disk space before
-		my $disk_space_before = du(qw/$lanedir/);
+		my $disk_space_before = du($lanedir);
 
         #    import => 1,
         #	 qc => 2,
@@ -384,7 +384,7 @@ while (<>) {
         }
 		
 		# disk space after
-		my $disk_space_after = du(qw/$lanedir/);
+		my $disk_space_after = du($lanedir);
 		$total_files_deleted += ($disk_space_before - $disk_space_after);
 
         my $after_counter = 0;
@@ -395,7 +395,7 @@ while (<>) {
             "\t",
             (
                 "Progress:", $vrlane->name, $before_counter, $after_counter, ( $before_counter - $after_counter ),
-                $total_files_deleted, $disk_space_before, $disk_space_after, ($disk_space_before - $disk_space_after), $total_files_deleted, "\n"
+                $total_files_deleted, ($disk_space_before/1000000), ($disk_space_after/1000000), (($disk_space_before - $disk_space_after)/1000000), ($total_files_deleted/1000000), "\n"
             )
         );
 
