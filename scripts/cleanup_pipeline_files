@@ -94,6 +94,7 @@ while (<>) {
 
             for my $file (
                 '_import_done',
+				'_import_bams.done'
                 '_cram_to_fastq_done',
                 '_get_files.jids',
                 $vrlane->name . '.cram',
@@ -320,6 +321,8 @@ while (<>) {
                     push( @files_to_delete, $file );
                 }
             }
+			
+			# mpileup directory can have vast numbers of files. Also in fsu exists database table
         }
 
         # global deletes - these files should always go
@@ -328,7 +331,7 @@ while (<>) {
                 push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
             }
         }
-        for my $file ( 'minikraken_20140104.kraken.report', 'pool_1.fastq.gz' ) {
+        for my $file ( 'minikraken_20140104.kraken.report', 'pool_1.fastq.gz', '_permissions_job_status' ) {
             push( @files_to_delete, $lanedir . $file );
         }
 
@@ -354,7 +357,7 @@ while (<>) {
         }
 
         ### Some directories can have vast numbers of files after they fail, cleanup ones older than 1 year.
-        for my $pattern ( 'split_pe_*', '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*' ) {
+        for my $pattern ( 'split_pe_*', '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*', '_job_status' ) {
             my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
             my $find_output  = `$find_command`;
             my @files        = split( /\n/, $find_output );
