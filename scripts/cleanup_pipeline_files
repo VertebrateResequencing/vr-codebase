@@ -395,7 +395,7 @@ while (<>) {
             "\t",
             (
                 "Progress:", $vrlane->name, $before_counter, $after_counter, ( $before_counter - $after_counter ),
-                $total_files_deleted, ($disk_space_before/1000000), ($disk_space_after/1000000), (($disk_space_before - $disk_space_after)/1000000), ($total_files_deleted/1000000), "\n"
+                $total_files_deleted, int($disk_space_before/1000000), int($disk_space_after/1000000), int(($disk_space_before - $disk_space_after)/1000000), int($total_files_deleted/1000000), "\n"
             )
         );
 
