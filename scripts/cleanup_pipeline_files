@@ -43,7 +43,7 @@ unless ($vrtrack) {
     die "Can't connect to tracking database\n";
 }
 my $total_files_deleted = 0;
-my $disk_space_saved    = 0;
+my $total_disk_deleted    = 0;
 print join(
     "\t",
     (
