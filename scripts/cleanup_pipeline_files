@@ -12,7 +12,6 @@ use Cwd 'abs_path';
 use File::Find;
 use Filesys::DiskUsage qw/du/;
 
-
 my ( $db, $root, $clean, $help, $verbose, $dry_run, $tmp_directory );
 
 GetOptions(
@@ -44,8 +43,14 @@ unless ($vrtrack) {
     die "Can't connect to tracking database\n";
 }
 my $total_files_deleted = 0;
-my $disk_space_saved = 0;
-print join( "\t", ( "Progress:", 'Lane', "NumBefore", "NumAfter", "Change", "TotalDeleted", "DiskBefore", "DiskAfter", "DiskChange", "TotalDiskSaved","BytesPerBase","\n" ) );
+my $disk_space_saved    = 0;
+print join(
+    "\t",
+    (
+        "Progress:",  'Lane',      "NumBefore",  "NumAfter",       "Change",       "TotalDeleted",
+        "DiskBefore", "DiskAfter", "DiskChange", "TotalDiskSaved", "BytesPerBase", "\n"
+    )
+);
 
 # get lanes from file of lane names or stdin
 while (<>) {
@@ -66,13 +71,13 @@ while (<>) {
         # If you dont check this exists then you end up deleting the root directory of the pipeline
         next if ( !defined($lane_suffix_dir) || ( length($lane_suffix_dir) < 10 ) );
         my $lanedir = $root . $lane_suffix_dir . '/';
-		next unless (-d $lanedir);
+        next unless ( -d $lanedir );
 
         my $before_counter = 0;
         find( sub { $before_counter++; }, $lanedir );
-		
-		# disk space before
-		my $disk_space_before = du($lanedir);
+
+        # disk space before
+        my $disk_space_before = du($lanedir);
 
         #    import => 1,
         #	 qc => 2,
@@ -94,7 +99,7 @@ while (<>) {
 
             for my $file (
                 '_import_done',
-				'_import_bams.done',
+                '_import_bams.done',
                 '_cram_to_fastq_done',
                 '_get_files.jids',
                 $vrlane->name . '.cram',
@@ -321,8 +326,8 @@ while (<>) {
                     push( @files_to_delete, $file );
                 }
             }
-			
-			# mpileup directory can have vast numbers of files. Also in fsu exists database table
+
+            # mpileup directory can have vast numbers of files. Also in fsu exists database table
         }
 
         # global deletes - these files should always go
@@ -357,7 +362,11 @@ while (<>) {
         }
 
         ### Some directories can have vast numbers of files after they fail, cleanup ones older than 1 year.
-        for my $pattern ( 'split_pe_*', '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*', '_job_status' ) {
+        for my $pattern (
+            'split_pe_*',                 '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*',        '_job_status',
+            '_sga_error_corrected.fastq', '_sga_preprocessed.bwt',   '_sga_preprocessed.sai', '_sga_preprocessed.fastq'
+          )
+        {
             my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
             my $find_output  = `$find_command`;
             my @files        = split( /\n/, $find_output );
@@ -382,11 +391,11 @@ while (<>) {
             }
 
         }
-		
-		# disk space after
-		my $disk_space_after = du($lanedir);
-		$total_files_deleted += ($disk_space_before - $disk_space_after);
-		my $bytes_per_base = $disk_space_after/($vrlane->raw_bases);
+
+        # disk space after
+        my $disk_space_after = du($lanedir);
+        $total_files_deleted += ( $disk_space_before - $disk_space_after );
+        my $bytes_per_base = $disk_space_after / ( $vrlane->raw_bases );
 
         my $after_counter = 0;
         find( sub { $after_counter++; }, $lanedir );
@@ -395,8 +404,12 @@ while (<>) {
         print join(
             "\t",
             (
-                "Progress:", $vrlane->name, $before_counter, $after_counter, ( $before_counter - $after_counter ),
-                $total_files_deleted, int($disk_space_before/1000000), int($disk_space_after/1000000), int(($disk_space_before - $disk_space_after)/1000000), int($total_files_deleted/1000000),$bytes_per_base, "\n"
+                "Progress:",                          $vrlane->name,
+                $before_counter,                      $after_counter,
+                ( $before_counter - $after_counter ), $total_files_deleted,
+                int( $disk_space_before / 1000000 ),  int( $disk_space_after / 1000000 ),
+                int( ( $disk_space_before - $disk_space_after ) / 1000000 ), int( $total_files_deleted / 1000000 ),
+                $bytes_per_base, "\n"
             )
         );
 
