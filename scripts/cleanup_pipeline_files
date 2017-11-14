@@ -94,7 +94,7 @@ while (<>) {
 
             for my $file (
                 '_import_done',
-				'_import_bams.done'
+				'_import_bams.done',
                 '_cram_to_fastq_done',
                 '_get_files.jids',
                 $vrlane->name . '.cram',
@@ -170,7 +170,7 @@ while (<>) {
 
                 for my $file (qw(pool_fastqs)) {
                     foreach my $suffix (qw(o e pl jids)) {
-                        push( $lanedir . $prefix . $file . '.' . $suffix );
+                        push( @files_to_delete, $lanedir . $prefix . $file . '.' . $suffix );
                     }
                 }
 
@@ -182,7 +182,7 @@ while (<>) {
 
                     for my $file (qw(optimise_parameters assembly_improvement map_back iva_qc)) {
                         foreach my $suffix (qw(o e pl jids)) {
-                            push( $lanedir . $prefix . $assembler . $file . '.' . $suffix );
+                            push( @files_to_delete, $lanedir . $prefix . $assembler . $file . '.' . $suffix );
                         }
                     }
 
@@ -385,7 +385,7 @@ while (<>) {
 		
 		# disk space after
 		my $disk_space_after = du(qw/$lanedir/);
-		$total_files_deleted += ($disk_space_before - $disk_space_after)
+		$total_files_deleted += ($disk_space_before - $disk_space_after);
 
         my $after_counter = 0;
         find( sub { $after_counter++; }, $lanedir );
