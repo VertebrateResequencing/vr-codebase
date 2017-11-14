@@ -43,7 +43,7 @@ unless ($vrtrack) {
     die "Can't connect to tracking database\n";
 }
 my $total_files_deleted = 0;
-my $total_disk_deleted    = 0;
+my $total_disk_deleted  = 0;
 print join(
     "\t",
     (
@@ -341,7 +341,11 @@ while (<>) {
         }
 
         # global globs
-        my @globbed_files = glob( "$lanedir.*archive $lanedir.*previous " . $lanedir . "hs_err_pid*.log" );
+        my $glob_string = "";
+        for my $p ( '.*archive', '.*previous', '*archive', '*previous', 'hs_err_pid*.log' ) {
+            $glob_string .= $lanedir . $p . " ";
+        }
+        my @globbed_files = glob($glob_string);
         for my $file (@globbed_files) {
             push( @files_to_delete, $file );
         }
