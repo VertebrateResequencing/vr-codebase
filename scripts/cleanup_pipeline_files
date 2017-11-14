@@ -258,12 +258,12 @@ while (<>) {
                 my $mapstats_id    = $mapping_obj->id();
 
                 for my $file (
-                    "${mapping_prefix}split_pe_${mapstats_id}", "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam",
-                    "${mapping_prefix}merge_pe_${mapstats_id}", "${mapping_prefix}mark_duplicates_pe_${mapstats_id}",
+                    "split_pe_${mapstats_id}", "statistics_${mapstats_id}.pe.raw.sorted.bam",
+                    "merge_pe_${mapstats_id}", "mark_duplicates_pe_${mapstats_id}",
                   )
                 {
                     foreach my $suffix (qw(o e pl jids)) {
-                        push( @files_to_delete, $lanedir . $prefix . $file . '.' . $suffix );
+                        push( @files_to_delete, $lanedir . $mapping_prefix . $file . '.' . $suffix );
                     }
                 }
 
