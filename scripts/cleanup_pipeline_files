@@ -200,6 +200,7 @@ while (<>) {
                         push( @files_to_delete, $lanedir . $prefix . $assembler . $file );
                     }
 
+					# Log
                     for my $file (
                         qw/
                         before_rr.fasta
@@ -213,7 +214,6 @@ while (<>) {
                         scaffolded.summaryfile.txt
                         forward.fastq
                         reverse.fastq
-                        Log
                         assembly_graph.fastg
                         corrected
                         mismatch_corrector
