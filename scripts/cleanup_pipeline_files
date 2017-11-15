@@ -187,20 +187,20 @@ while (<>) {
 
                     for my $file (qw(optimise_parameters assembly_improvement map_back iva_qc)) {
                         foreach my $suffix (qw(o e pl jids)) {
-                            push( @files_to_delete, $lanedir . $prefix . $assembler .'_'. $file . '.' . $suffix );
+                            push( @files_to_delete, $lanedir . $prefix . $assembler . '_' . $file . '.' . $suffix );
                         }
                     }
 
                     for my $file (
                         '_map_back_done',             '_optimise_parameters_done',
                         '_assembly_improvement_done', '_iva_qc_done',
-                        '_pool_fastqs_done',          '_pool_fastq_tmp_files'
+                        '_pool_fastqs_done',          '_pool_fastq_tmp_files', 
                       )
                     {
                         push( @files_to_delete, $lanedir . $prefix . $assembler . $file );
                     }
 
-					# Log
+                    # Log
                     for my $file (
                         qw/
                         before_rr.fasta
@@ -220,6 +220,7 @@ while (<>) {
                         scaffolds.paths
                         _velvet_optimise_parameters_done
                         _spades_optimise_parameters_done
+						_velvet_velvet_map_back_done
                         assembly_graph.gfa
                         qc_graphs
                         /
@@ -250,26 +251,33 @@ while (<>) {
                 for my $file ( 'annotate_update_db_done', 'annotate_assembly_done' ) {
                     push( @files_to_delete, $lanedir . $prefix . $file );
                 }
-            }
-			
-			for my $assembler ( 'velvet', 'spades', 'iva', 'pacbio' ) {
-				my $assembly_directory = $lanedir .$assembler."_assembly/";
-				next unless (-e $assembly_directory);
 				
-				# annotation can leave tens of thousands of temp files sometimes.
-		        for my $pattern (
-		            '*.hmmsearchresult','*pos.fsa','*neg.fsa'
-		          )
-		        {
-		            my $find_command = "find $assembly_directory -name '$pattern'";
-		            my $find_output  = `$find_command`;
-		            my @files        = split( /\n/, $find_output );
-		            for my $file (@files) {
-		                push( @files_to_delete, $file );
-		            }
-		        }
-			}
-		
+            }
+
+            for my $assembler ( 'velvet', 'spades', 'iva', 'pacbio' ) {
+                my $assembly_directory = $lanedir . $assembler . "_assembly/";
+                next unless ( -e $assembly_directory );
+
+                # annotation can leave tens of thousands of temp files sometimes.
+                for my $pattern ( '*.hmmsearchresult', '*pos.fsa', '*neg.fsa' ) {
+                    my $find_command = "find $assembly_directory -name '$pattern'";
+                    my $find_output  = `$find_command`;
+                    my @files        = split( /\n/, $find_output );
+                    for my $file (@files) {
+                        push( @files_to_delete, $file );
+                    }
+                }
+				
+				# delete files within the annotation directory itself
+                my $annotation_directory = $assembly_directory . "annotation/";
+                next unless ( -e $annotation_directory );
+	            for my $file (
+	                $vrlane->name . '.tbl', $vrlane->name . '.err', $vrlane->name .'.gbk', $vrlane->name .'.fsa'
+					)
+					{push( @files_to_delete, $file );}
+				
+            }
+
         }
 
         # mapping
