@@ -406,7 +406,12 @@ while (<>) {
                       . $snp_dir
                       . "*_pseudo_genome.jids "
                       . $snp_dir
-                      . "*_job_status " );
+                      . "*_job_status "
+                      . $snp_dir
+                      . "*.previous "
+                      . $snp_dir
+                      . "*.archive "
+					   );
                 for my $file (@globbed_files) {
                     push( @files_to_delete, $file );
                 }
