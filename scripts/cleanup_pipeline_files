@@ -119,9 +119,9 @@ while (<>) {
             {
                 push( @files_to_delete, $lanedir . $file );
             }
-			
-			# Pacbio RSII md5 files
-            my @globbed_files = glob( $lanedir."*.h5.md5");
+
+            # Pacbio RSII md5 files
+            my @globbed_files = glob( $lanedir . "*.h5.md5" );
             for my $file (@globbed_files) {
                 push( @files_to_delete, $file );
             }
@@ -194,9 +194,12 @@ while (<>) {
             next unless ( -e $lanedir . $prefix . "assembly_update_db_done" );
             my $assembler_directory = $lanedir . 'pacbio_assembly/';
 
-            for my $file ( ".seeds.m4.filter", ".sentinel_reference_uploader_completed", "original_hgap_assembly_files", "circularised/quiver", "contigs.fa.fai"
-			
-			 ) {
+            for my $file (
+                ".seeds.m4.filter", ".sentinel_reference_uploader_completed", "original_hgap_assembly_files", "circularised/quiver",
+                "contigs.fa.fai"
+
+              )
+            {
                 push( @files_to_delete, $assembler_directory . $file );
             }
         }
@@ -259,8 +262,8 @@ while (<>) {
                         _velvet_velvet_map_back_done
                         assembly_graph.gfa
                         qc_graphs
-						contigs.fa.fai
-						contigs.fa.gc
+                        contigs.fa.fai
+                        contigs.fa.gc
                         /
                       )
                     {
@@ -481,7 +484,10 @@ while (<>) {
         # disk space after
         my $disk_space_after = du($lanedir);
         $total_disk_deleted += ( $disk_space_before - $disk_space_after );
-        my $bytes_per_base = $disk_space_after / ( $vrlane->raw_bases );
+        my $raw_bases = $vrlane->raw_bases;
+
+        my $bytes_per_base = 0;
+        if ( defined($raw_bases) && $raw_bases > 0 ) { $bytes_per_base = $disk_space_after / ($raw_bases); }
 
         my $after_counter = 0;
         find( sub { $after_counter++; }, $lanedir );
