@@ -298,7 +298,7 @@ while (<>) {
                         push( @files_to_delete, $lanedir . $mapping_prefix . $file . '.' . $suffix );
                     }
                 }
-
+.207372.pe.raw.sorted.bam.checked
                 for my $file (
                     "${mapstats_id}.pe.raw.sorted.bam_graphs",   "${mapstats_id}.pe.raw.sorted.bam.cover",
                     "${mapstats_id}.pe.raw.sorted.bam.bc",       "${mapstats_id}.pe.raw.sorted.bam.bas",
@@ -306,6 +306,7 @@ while (<>) {
                     "${mapstats_id}.pe.raw.sorted.bam.bad",      "${mapstats_id}.pe.raw.sorted.bam.checked",
                     "${mapping_prefix}job_status",               "${mapping_prefix}split.jids",
                     ".mapping_complete_pe_${mapstats_id}",       ".split_complete_pe_${mapstats_id}",
+					".${mapstats_id}.pe.raw.sorted.bam.checked",
                     "split_pe_${mapstats_id}"
                   )
                 {
@@ -348,7 +349,9 @@ while (<>) {
                       . $snp_dir
                       . "*_pseudo_genome.o "
                       . $snp_dir
-                      . "*_pseudo_genome.jids" );
+                      . "*_pseudo_genome.jids "
+                      . $snp_dir
+                      . "*_job_status " );
                 for my $file (@globbed_files) {
                     push( @files_to_delete, $file );
                 }
