@@ -209,6 +209,7 @@ while (<>) {
 
             # new style assembly cleanup file
             system( "touch " . $lanedir . $prefix . "assembly_cleanup_done" );
+			$before_counter++;
 
             for my $file (
                 qw/
@@ -431,8 +432,7 @@ while (<>) {
                       . $snp_dir
                       . "*_pseudo_genome.jids "
                       . $snp_dir
-                      . "*_job_status "
-                      . $snp_dir );
+                      . "*_job_status ");
                 for my $file (@globbed_files) {
                     push( @files_to_delete, $file );
                 }
