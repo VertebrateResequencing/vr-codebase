@@ -298,7 +298,7 @@ while (<>) {
                         push( @files_to_delete, $lanedir . $mapping_prefix . $file . '.' . $suffix );
                     }
                 }
-.207372.pe.raw.sorted.bam.checked
+
                 for my $file (
                     "${mapstats_id}.pe.raw.sorted.bam_graphs",   "${mapstats_id}.pe.raw.sorted.bam.cover",
                     "${mapstats_id}.pe.raw.sorted.bam.bc",       "${mapstats_id}.pe.raw.sorted.bam.bas",
