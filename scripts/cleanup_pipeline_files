@@ -221,7 +221,7 @@ while (<>) {
                 /
               )
             {
-                push( @files_to_delete, $assembler_directory . $file );
+                push( @files_to_delete, $lanedir . $file );
             }
         }
 
