@@ -290,6 +290,12 @@ while (<>) {
                     {
                         push( @files_to_delete, $assembler_directory . $file );
                     }
+					
+					# Sometimes interim files from an assembly hang around and are extremely large
+	                my @globbed_files = glob( $assembler_directory . "velvet_assembly_data_* K*");
+	                for my $file (@globbed_files) {
+	                    push( @files_to_delete, $file );
+	                }
 
                     # IVA QC
                     my $iva_qc_dir = $assembler_directory . 'iva_qc/';
