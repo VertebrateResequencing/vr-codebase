@@ -258,7 +258,7 @@ while (<>) {
 				
 				# annotation can leave tens of thousands of temp files sometimes.
 		        for my $pattern (
-		            '*pos.fsa.hmmsearchresult','*neg.fsa.hmmsearchresult','*pos.fsa','*neg.fsa'
+		            '*.hmmsearchresult','*pos.fsa','*neg.fsa'
 		          )
 		        {
 		            my $find_command = "find $assembly_directory -name '$pattern'";
