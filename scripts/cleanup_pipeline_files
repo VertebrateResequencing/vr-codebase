@@ -251,6 +251,25 @@ while (<>) {
                     push( @files_to_delete, $lanedir . $prefix . $file );
                 }
             }
+			
+			for my $assembler ( 'velvet', 'spades', 'iva', 'pacbio' ) {
+				my $assembly_directory = $lanedir .$assembler."_assembly/";
+				next unless (-e $assembly_directory);
+				
+				# annotation can leave tens of thousands of temp files sometimes.
+		        for my $pattern (
+		            '*pos.fsa.hmmsearchresult','*neg.fsa.hmmsearchresult','*pos.fsa','*neg.fsa'
+		          )
+		        {
+		            my $find_command = "find $assembly_directory -name '$pattern'";
+		            my $find_output  = `$find_command`;
+		            my @files        = split( /\n/, $find_output );
+		            for my $file (@files) {
+		                push( @files_to_delete, $file );
+		            }
+		        }
+			}
+		
         }
 
         # mapping
