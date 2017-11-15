@@ -167,7 +167,20 @@ while (<>) {
             }
         }
 
-        # Assembly
+        ## Assembly
+		
+		# If the assembled DB flag isnt set, but the cleanup file is there, then fix the DB
+		for my $prefix ( '_assembly_', '_spades_', '_velvet_', '_iva_' ) {
+			if( (! $vrlane->is_processed('assembled')) && (-e  $lanedir . $prefix . "assembly_cleanup_done"))
+			{
+		        $vrtrack->transaction_start();
+		        $vrlane->is_processed('assembled', 1);
+		        $vrlane->update();
+		        $vrtrack->transaction_commit();
+				print "Fixing assembly processed flag:\t" .  $lanedir . "\n";
+			}
+		}
+		
         if ( $vrlane->is_processed('assembled') ) {
 
             for my $prefix ( '_assembly_', '_spades_', '_velvet_', '_iva_' ) {
