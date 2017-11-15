@@ -189,9 +189,8 @@ while (<>) {
         }
 
         #Pacbio
-        if ( $vrlane->is_processed('assembled') ) {
-            my $prefix = '_pacbio_';
-            next unless ( -e $lanedir . $prefix . "assembly_update_db_done" );
+        if ( $vrlane->is_processed('assembled')  && (-e $lanedir . "_pacbio_assembly_update_db_done" )) {
+
             my $assembler_directory = $lanedir . 'pacbio_assembly/';
 
             for my $file (
@@ -205,8 +204,7 @@ while (<>) {
         }
 
         # Fix early velvet assemblies
-        if ( $vrlane->is_processed('assembled') ) {
-            next unless ( -e $lanedir . '_assembly_cleanup_done' );
+        if ( $vrlane->is_processed('assembled') &&  -e $lanedir . '_assembly_cleanup_done') {
             my $prefix = '_velvet_';
 
             # new style assembly cleanup file
