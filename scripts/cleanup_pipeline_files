@@ -204,6 +204,27 @@ while (<>) {
             }
         }
 
+        # Fix early velvet assemblies
+        if ( $vrlane->is_processed('assembled') ) {
+            next unless ( -e $lanedir . '_assembly_cleanup_done' );
+            my $prefix = '_velvet_';
+
+            # new style assembly cleanup file
+            system( "touch " . $lanedir . $prefix . "assembly_cleanup_done" );
+
+            for my $file (
+                qw/
+                _pool_fastqs_done
+                _annotate_annotate_cleanup_done
+                _velvet_assembly_improvement_done
+                _assembly_cleanup_done
+                /
+              )
+            {
+                push( @files_to_delete, $assembler_directory . $file );
+            }
+        }
+
         # velvet, spades, IVA
         if ( $vrlane->is_processed('assembled') ) {
 
@@ -455,7 +476,7 @@ while (<>) {
         for my $pattern (
             'split_pe_*',                 '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*',        '_job_status',
             '_sga_error_corrected.fastq', '_sga_preprocessed.bwt',   '_sga_preprocessed.sai', '_sga_preprocessed.fastq',
-            '*archive',                   '*previous'
+            '*archive',                   '*previous',               'kraken.report.lock'
           )
         {
             my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
