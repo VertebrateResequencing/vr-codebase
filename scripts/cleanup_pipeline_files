@@ -457,6 +457,36 @@ while (<>) {
 
             # mpileup directory can have vast numbers of files. Also in fsu exists database table
         }
+		
+		
+        # RNA seq
+        if ( $vrlane->is_processed('rna_seq_expression') ) {
+			#sometimes there is a temp directory left over with lots of bam files & pileups, 
+			# temp dir is random,however it always contains one subdirectory called 'pm' 
+	        my $find_command = "find $lanedir -mtime +365 -name 'pm'";
+	        my $find_output  = `$find_command`;
+	        my @pm_files        = split( /\n/, $find_output );
+	        for my $pm_dir (@pm_files) {
+				push( @files_to_delete, $pm_dir );
+				
+				my $base_temp_dir = $pm_dir.'/../';
+				next unless(-d $base_temp_dir);
+				
+				next if(abs_path($base_temp_dir) eq abs_path($lanedir));
+				
+				# now lookup individual files
+		        for my $pattern ('*.bam', '*.bam.bai', '*.bam.filtered.mpileup')
+		        {
+		            $find_command = "find $base_temp_dir -mtime +365 -name '$pattern'";
+		            $find_output  = `$find_command`;
+		            my @files        = split( /\n/, $find_output );
+		            for my $file (@files) {
+		                push( @files_to_delete, $file );
+		            }
+		        }
+	        }
+        }
+		
 
         # global deletes - these files should always go
         for my $file (qw(store_nfs)) {
