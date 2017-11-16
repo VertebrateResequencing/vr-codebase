@@ -342,7 +342,7 @@ while (<>) {
 
             for my $assembler ( 'velvet', 'spades', 'iva', 'pacbio' ) {
                 my $assembly_directory = $lanedir . $assembler . "_assembly/";
-                next unless ( -e $assembly_directory );
+                next unless ( -d $assembly_directory );
 
                 # annotation can leave tens of thousands of temp files sometimes.
                 for my $pattern ( '*.hmmsearchresult', '*pos.fsa', '*neg.fsa' ) {
@@ -356,9 +356,9 @@ while (<>) {
 
                 # delete files within the annotation directory itself
                 my $annotation_directory = $assembly_directory . "annotation/";
-                next unless ( -e $annotation_directory );
+                next unless ( -d $annotation_directory );
                 for my $file ( $vrlane->name . '.tbl', $vrlane->name . '.err', $vrlane->name . '.gbk', $vrlane->name . '.fsa' ) {
-                    push( @files_to_delete, $file );
+                    push( @files_to_delete, $annotation_directory . $file );
                 }
 
             }
