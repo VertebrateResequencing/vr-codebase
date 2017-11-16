@@ -117,14 +117,14 @@ while (<>) {
                 $vrlane->name . '_2.fastq.fastqcheck',
                 $vrlane->name . '_1.fastq_orphan.gz',
                 $vrlane->name . '_2.fastq_orphan.gz',
-				
+
               )
             {
                 push( @files_to_delete, $lanedir . $file );
             }
 
             # Pacbio RSII md5 files and some old intermediate files
-            my @globbed_files = glob( $lanedir . "*.h5.md5 ".$lanedir."bamtofastq_*" );
+            my @globbed_files = glob( $lanedir . "*.h5.md5 " . $lanedir . "bamtofastq_*" );
             for my $file (@globbed_files) {
                 push( @files_to_delete, $file );
             }
@@ -192,7 +192,7 @@ while (<>) {
         }
 
         #Pacbio
-        if ( $vrlane->is_processed('assembled')  && (-e $lanedir . "_pacbio_assembly_update_db_done" )) {
+        if ( $vrlane->is_processed('assembled') && ( -e $lanedir . "_pacbio_assembly_update_db_done" ) ) {
 
             my $assembler_directory = $lanedir . 'pacbio_assembly/';
 
@@ -207,12 +207,12 @@ while (<>) {
         }
 
         # Fix early velvet assemblies
-        if ( $vrlane->is_processed('assembled') &&  -e $lanedir . '_assembly_cleanup_done') {
+        if ( $vrlane->is_processed('assembled') && -e $lanedir . '_assembly_cleanup_done' ) {
             my $prefix = '_velvet_';
 
             # new style assembly cleanup file
             system( "touch " . $lanedir . $prefix . "assembly_cleanup_done" );
-			$before_counter++;
+            $before_counter++;
 
             for my $file (
                 qw/
@@ -239,7 +239,7 @@ while (<>) {
                     }
                 }
 
-                for my $file ('assembly_update_db_done', 'job_status') {
+                for my $file ( 'assembly_update_db_done', 'job_status') {
                     push( @files_to_delete, $lanedir . $prefix . $file );
                 }
 
@@ -247,7 +247,7 @@ while (<>) {
                     my $assembler_directory = $lanedir . $assembler . '_assembly/';
                     next unless ( -d $assembler_directory );
 
-                    for my $file (qw(optimise_parameters assembly_improvement map_back iva_qc)) {
+                    for my $file (qw(optimise_parameters assembly_improvement map_back iva_qc qc)) {
                         foreach my $suffix (qw(o e pl jids)) {
                             push( @files_to_delete, $lanedir . $prefix . $assembler . '_' . $file . '.' . $suffix );
                         }
@@ -256,7 +256,8 @@ while (<>) {
                     for my $file (
                         '_map_back_done',             '_optimise_parameters_done',
                         '_assembly_improvement_done', '_qc_done',
-                        '_pool_fastqs_done',          '_pool_fastq_tmp_files', '_qc_failed'
+                        '_pool_fastqs_done',          '_pool_fastq_tmp_files',
+                        '_qc_failed', 
                       )
                     {
                         push( @files_to_delete, $lanedir . $prefix . $assembler . $file );
@@ -281,8 +282,11 @@ while (<>) {
                         mismatch_corrector
                         scaffolds.paths
                         _velvet_optimise_parameters_done
-                        _spades_optimise_parameters_done
                         _velvet_velvet_map_back_done
+						_iva_optimise_parameters_done
+						_iva_iva_map_back_done
+						_spades_optimise_parameters_done
+						_spades_iva_map_back_done
                         assembly_graph.gfa
                         qc_graphs
                         contigs.fa.fai
@@ -292,12 +296,12 @@ while (<>) {
                     {
                         push( @files_to_delete, $assembler_directory . $file );
                     }
-					
-					# Sometimes interim files from an assembly hang around and are extremely large
-	                my @globbed_files = glob( $assembler_directory . "velvet_assembly_data_* K*");
-	                for my $file (@globbed_files) {
-	                    push( @files_to_delete, $file );
-	                }
+
+                    # Sometimes interim files from an assembly hang around and are extremely large
+                    my @globbed_files = glob( $assembler_directory . "velvet_assembly_data_* K*" );
+                    for my $file (@globbed_files) {
+                        push( @files_to_delete, $file );
+                    }
 
                     # IVA QC
                     my $iva_qc_dir = $assembler_directory . 'iva_qc/';
@@ -310,22 +314,21 @@ while (<>) {
                         iva_qc.reference.fa.fai
                         iva_qc.assembly_v_ref.act.sh
                         iva_qc.contig_placement.Rout
-						iva_qc.assembly.fasta
-						iva_qc.reference.gff
-						iva_qc.reference.fa.fai
-						iva_qc.reference.fa
-						iva_qc.stats.txt
+                        iva_qc.assembly.fasta
+                        iva_qc.reference.gff
+                        iva_qc.reference.fa.fai
+                        iva_qc.reference.fa
+                        iva_qc.stats.txt
                         /
                       )
                     {
                         push( @files_to_delete, $iva_qc_dir . $file );
                     }
-					
-					# If IVA QC fails theres are lots large files left on disk.
-					if( -e $lanedir . $prefix . $assembler .'_qc_failed')
-					{
-						push( @files_to_delete, $iva_qc_dir );
-					}
+
+                    # If IVA QC fails theres are lots large files left on disk.
+                    if ( -e $lanedir . $prefix . $assembler . '_qc_failed' ) {
+                        push( @files_to_delete, $iva_qc_dir );
+                    }
 
                     # Remove the tmp directory from lustre
                     push( @files_to_delete, $tmp_directory . $prefix . $assembler . '_' . $vrlane->name );
@@ -446,7 +449,7 @@ while (<>) {
                       . $snp_dir
                       . "*_pseudo_genome.jids "
                       . $snp_dir
-                      . "*_job_status ");
+                      . "*_job_status " );
                 for my $file (@globbed_files) {
                     push( @files_to_delete, $file );
                 }
