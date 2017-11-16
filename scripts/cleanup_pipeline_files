@@ -310,6 +310,11 @@ while (<>) {
                         iva_qc.reference.fa.fai
                         iva_qc.assembly_v_ref.act.sh
                         iva_qc.contig_placement.Rout
+						iva_qc.assembly.fasta
+						iva_qc.reference.gff
+						iva_qc.reference.fa.fai
+						iva_qc.reference.fa
+						iva_qc.stats.txt
                         /
                       )
                     {
