@@ -167,29 +167,16 @@ sub map_and_generate_stats
      }
    }
 
-   unless( -e "$output_directory/forward.fastq")
-   {
-     system("gzip -cd $forward_fastq  > $output_directory/forward.fastq") and $self->throw("Forward fastq not created");
-   }
-   unless(-e "$output_directory/reverse.fastq")
-   {
-     system("gzip -cd $reverse_fastq  > $output_directory/reverse.fastq") and $self->throw("Forward fastq not created");
-   }
-
    my $reference = $self->{reference} || "$directory/contigs.fa";
 
    my $mapper = VertRes::Wrapper::smalt->new();
    $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
 
-   my $retcode = system("smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq");
-   $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam" and $retcode == 0);
+   my $retcode = system("smalt map -x -i 3000 -f bam -y 0.95 -o $directory/contigs.mapped.bam $reference.small $forward_fastq $reverse_fastq");
+   $self->throw("BAM file not created") unless(-e "$directory/contigs.mapped.bam" and $retcode == 0);
 
    $retcode = system("samtools faidx $reference");
    $self->throw("Reference index file not created") unless(-e "$reference.fai" and $retcode == 0);
-
-   $retcode = system("samtools view -bt $reference.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam");
-   $self->throw("Couldn't convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam" and $retcode == 0);
-   unlink("$directory/contigs.mapped.sam") or $self->throw("Error deleting $directory/contigs.mapped.sam");
 
    $retcode = system("samtools sort -m 500000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted");
    $self->throw("Couldn't sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam" and $retcode == 0);
