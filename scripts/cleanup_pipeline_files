@@ -124,7 +124,7 @@ while (<>) {
             }
 
             # Pacbio RSII md5 files and some old intermediate files
-            my @globbed_files = glob( $lanedir . "*.h5.md5 ".$lanedir"bamtofastq_*" );
+            my @globbed_files = glob( $lanedir . "*.h5.md5 ".$lanedir."bamtofastq_*" );
             for my $file (@globbed_files) {
                 push( @files_to_delete, $file );
             }
@@ -239,7 +239,7 @@ while (<>) {
                     }
                 }
 
-                for my $file ('assembly_update_db_done') {
+                for my $file ('assembly_update_db_done', 'job_status') {
                     push( @files_to_delete, $lanedir . $prefix . $file );
                 }
 
