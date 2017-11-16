@@ -256,7 +256,7 @@ while (<>) {
                     for my $file (
                         '_map_back_done',             '_optimise_parameters_done',
                         '_assembly_improvement_done', '_qc_done',
-                        '_pool_fastqs_done',          '_pool_fastq_tmp_files',
+                        '_pool_fastqs_done',          '_pool_fastq_tmp_files', '_qc_failed'
                       )
                     {
                         push( @files_to_delete, $lanedir . $prefix . $assembler . $file );
@@ -320,6 +320,12 @@ while (<>) {
                     {
                         push( @files_to_delete, $iva_qc_dir . $file );
                     }
+					
+					# If IVA QC fails theres are lots large files left on disk.
+					if( -e $lanedir . $prefix . $assembler .'_qc_failed')
+					{
+						push( @files_to_delete, $iva_qc_dir );
+					}
 
                     # Remove the tmp directory from lustre
                     push( @files_to_delete, $tmp_directory . $prefix . $assembler . '_' . $vrlane->name );
