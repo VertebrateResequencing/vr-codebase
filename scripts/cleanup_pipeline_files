@@ -115,13 +115,16 @@ while (<>) {
                 $vrlane->name . '_2.fastq.md5',
                 $vrlane->name . '_1.fastq.fastqcheck',
                 $vrlane->name . '_2.fastq.fastqcheck',
+                $vrlane->name . '_1.fastq_orphan.gz',
+                $vrlane->name . '_2.fastq_orphan.gz',
+				
               )
             {
                 push( @files_to_delete, $lanedir . $file );
             }
 
-            # Pacbio RSII md5 files
-            my @globbed_files = glob( $lanedir . "*.h5.md5" );
+            # Pacbio RSII md5 files and some old intermediate files
+            my @globbed_files = glob( $lanedir . "*.h5.md5 ".$lanedir"bamtofastq_*" );
             for my $file (@globbed_files) {
                 push( @files_to_delete, $file );
             }
