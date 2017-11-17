@@ -186,7 +186,6 @@ sub annotate_assembly_provides {
     {
      unless(-e $final_file)
      {
-  	   push(@provided_files, $self->{lane_path}."/".$self->{prefix}."annotate_assembly_done");
 	   push(@provided_files, join( '.', ( $self->_annotation_base_name_with_path, 'gff' ) ) );
   	   return \@provided_files;
      }
@@ -364,6 +363,7 @@ sub cleanup_requires {
 
 sub cleanup_provides {
     my ($self) = @_;
+	
     return [$self->{lane_path}."/".$self->{prefix}."annotate_cleanup_done"];
 }
 
