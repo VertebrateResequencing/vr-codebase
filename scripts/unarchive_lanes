@@ -82,7 +82,7 @@ while (<>) {
         my $archived_path   = $vrlane->storage_path . '/';
         my $tmp_lustre_path = dirname($lanedir) . '/tmp_' . $vrlane->name;
 
-        my $rsync = File::Rsync->new( { archive => 1, compress => 1, checksum => 1, 'copy-unsafe-links' => 1 } );
+        my $rsync = File::Rsync->new( { archive => 1, checksum => 1, 'copy-unsafe-links' => 1 } );
 
         unless ( -d $tmp_lustre_path ) {
             File::Path::make_path($tmp_lustre_path) || die("Could not make destination directory '$tmp_lustre_path'");
