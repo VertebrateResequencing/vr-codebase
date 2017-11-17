@@ -15,6 +15,7 @@ use Filesys::DiskUsage qw/du/;
 # Todo: find all files first, then filter as you go along rather than running find multiple times and glob, then blindly testing for the existance of files.
 # Todo: tests
 # Todo: objects and proper software engineering
+# All these edge cases for historic data are adding up, though its a one off to clean them up.
 
 my ( $db, $root, $clean, $help, $verbose, $dry_run, $tmp_directory );
 
@@ -103,6 +104,7 @@ while (<>) {
             for my $file (
                 '_import_done',
                 '_import_bams.done',
+				'_bam_to_fastq_done',
                 '_cram_to_fastq_done',
                 '_get_files.jids',
                 $vrlane->name . '.cram',
@@ -143,7 +145,7 @@ while (<>) {
             for my $file (
                 '_assign_taxonomy_done',                     '.renamed.' . $vrlane->name . '_1.fastq.gz',
                 '.renamed.' . $vrlane->name . '_2.fastq.gz', '_heterozygous_snps_done',
-                '_assign_taxonomy.lock'
+                '_assign_taxonomy.lock','_subsample.jids'
               )
             {
                 push( @files_to_delete, $lanedir . $file );
@@ -220,6 +222,9 @@ while (<>) {
                 _annotate_annotate_cleanup_done
                 _velvet_assembly_improvement_done
                 _assembly_cleanup_done
+				_assembly_update_db_done
+				_velvet_map_back_done
+				_velvet_optimise_parameters_done
                 /
               )
             {
@@ -283,10 +288,13 @@ while (<>) {
                         scaffolds.paths
                         _velvet_optimise_parameters_done
                         _velvet_velvet_map_back_done
+						_velvet_map_back_done
 						_iva_optimise_parameters_done
 						_iva_iva_map_back_done
+						_iva_map_back_done
 						_spades_optimise_parameters_done
-						_spades_iva_map_back_done
+						_spades_spades_map_back_done
+						_spades_map_back_done
                         assembly_graph.gfa
                         qc_graphs
                         contigs.fa.fai
@@ -371,7 +379,7 @@ while (<>) {
                 # delete files within the annotation directory itself
                 my $annotation_directory = $assembly_directory . "annotation/";
                 next unless ( -d $annotation_directory );
-                for my $file ( $vrlane->name . '.tbl', $vrlane->name . '.err', $vrlane->name . '.gbk', $vrlane->name . '.fsa' ) {
+                for my $file ( $vrlane->name . '.tbl', $vrlane->name . '.err', $vrlane->name . '.gbk', $vrlane->name . '.fsa', $vrlane->name . '.sqn' ) {
                     push( @files_to_delete, $annotation_directory . $file );
                 }
 
@@ -462,8 +470,8 @@ while (<>) {
         # RNA seq
         if ( $vrlane->is_processed('rna_seq_expression') ) {
 			#sometimes there is a temp directory left over with lots of bam files & pileups, 
-			# temp dir is random,however it always contains one subdirectory called 'pm' 
-	        my $find_command = "find $lanedir -mtime +365 -name 'pm'";
+			# temp dir is random,however it sometimes contains one subdirectory called 'pm' 
+	        my $find_command = "find $lanedir -mtime +30 -name 'pm'";
 	        my $find_output  = `$find_command`;
 	        my @pm_files        = split( /\n/, $find_output );
 	        for my $pm_dir (@pm_files) {
@@ -477,7 +485,7 @@ while (<>) {
 				# now lookup individual files
 		        for my $pattern ('*.bam', '*.bam.bai', '*.bam.filtered.mpileup')
 		        {
-		            $find_command = "find $base_temp_dir -mtime +365 -name '$pattern'";
+		            $find_command = "find $base_temp_dir -mtime +30 -name '$pattern'";
 		            $find_output  = `$find_command`;
 		            my @files        = split( /\n/, $find_output );
 		            for my $file (@files) {
@@ -527,10 +535,10 @@ while (<>) {
         for my $pattern (
             'split_pe_*',                 '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*',        '_job_status',
             '_sga_error_corrected.fastq', '_sga_preprocessed.bwt',   '_sga_preprocessed.sai', '_sga_preprocessed.fastq',
-            '*archive',                   '*previous',               'kraken.report.lock'
+            '*archive',                   '*previous',               'kraken.report.lock', '*.bam_graphs'
           )
         {
-            my $find_command = "find $lanedir -mtime +365 -name '$pattern'";
+            my $find_command = "find $lanedir -mtime +30 -name '$pattern'";
             my $find_output  = `$find_command`;
             my @files        = split( /\n/, $find_output );
             for my $file (@files) {
