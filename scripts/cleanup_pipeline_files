@@ -219,7 +219,6 @@ while (<>) {
             for my $file (
                 qw/
                 _pool_fastqs_done
-                _annotate_annotate_cleanup_done
                 _velvet_assembly_improvement_done
                 _assembly_cleanup_done
 				_assembly_update_db_done
@@ -278,6 +277,7 @@ while (<>) {
                         tmp
                         contigs.fa.scaffolded.filtered
                         .RData
+						warnings.log
                         contigs.fa.png.Rout
                         scaffolded.summaryfile.txt
                         forward.fastq
