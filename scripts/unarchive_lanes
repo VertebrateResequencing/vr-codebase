@@ -1,0 +1,111 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Getopt::Long;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Lane;
+use VertRes::Utils::FileSystem;
+use File::Path qw(remove_tree);
+use File::Basename;
+use Cwd 'abs_path';
+use File::Find;
+use Filesys::DiskUsage qw/du/;
+
+# unarchive files
+
+my ( $db, $root, $clean, $help, $verbose, $dry_run );
+
+GetOptions(
+    'd|db=s'    => \$db,
+    'r|root=s'  => \$root,
+    'y|dry_run' => \$dry_run,
+    'v|verbose' => \$verbose,
+    'h|help'    => \$help,
+);
+
+( $db && !$help ) or die <<USAGE;
+Usage: $0 [options] <file of lanes to move>  
+  -d STR specify db name
+  -r STR root directory for the analyses
+  -y     dont delete anything
+  -v     verbose output
+  -h     this message
+USAGE
+
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(
+    database => $db,
+    mode     => 'rw'
+);
+unless ($vrtrack) {
+    die "Can't connect to tracking database\n";
+}
+
+my $total_files      = 0;
+my $total_disk_space = 0;
+
+# get lanes from file of lane names or stdin
+while (<>) {
+    my $lanename = $_;
+    chomp $lanename;
+
+    next if ( length($lanename) < 4 );
+
+    #Check lane actually exists or bail out
+    my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $lanename );
+    unless ($vrlane) {
+        print "Can't get lane $lanename\n";
+        next;
+    }
+    if (-d $root) {
+        my $lane_suffix_dir = $vrtrack->hierarchy_path_of_lane_name( $vrlane->name );
+
+        # If you dont check this exists then you end up deleting the root directory of the pipeline
+        next if ( !defined($lane_suffix_dir) || ( length($lane_suffix_dir) < 10 ) );
+        my $lanedir = $root . $lane_suffix_dir . '/';
+        next if ( !( -d $lanedir ) || abs_path($root) eq abs_path($lanedir) );
+
+        # lustre must be a symlink to an archived folder and it must exist
+        next unless ( -l $root . $lane_suffix_dir );
+        next unless ( $vrlane->is_processed('stored') );
+        next unless ( defined( $vrlane->storage_path ) );
+        next unless ( -d $vrlane->storage_path );
+
+        my $file_counter = 0;
+        find( sub { $file_counter++; }, $lanedir );
+        $total_files += $file_counter;
+
+        my $disk_space = du($lanedir);
+        $total_disk_space += $disk_space;
+
+        my $archived_path   = $vrlane->storage_path . '/';
+        my $tmp_lustre_path = dirname($lanedir) . '/tmp_' . $vrlane->name;
+
+        my $rsync = File::Rsync->new( { archive => 1, compress => 1, checksum => 1, 'copy-unsafe-links' => 1 } );
+
+        unless ( -d $tmp_lustre_path ) {
+            File::Path::make_path($tmp_lustre_path) || die("Could not make destination directory '$tmp_lustre_path'");
+        }
+
+        for ( 1 .. 3 ) {
+            my $success = $rsync->exec( { src => $archived_path, dest => $tmp_lustre_path } );
+            if ( $success && !$dry_run ) {
+                # delete the symlink
+                unlink( $root . $lane_suffix_dir );
+                File::Copy::move( $tmp_lustre_path, $lanedir ) || die("Failed to rename successfully copied file '$tmp_lustre_path' to '$lanedir'");
+				remove_tree($archived_path);
+				
+                $vrtrack->transaction_start();
+                $vrlane->is_processed( 'stored', 0 );
+				$vrlane->storage_path( $lanedir );
+                $vrlane->update();
+                $vrtrack->transaction_commit();
+            }
+        }
+	    print join( "\t", ( $vrlane->name, $file_counter, $total_files, ( $disk_space / 1000000 ), ( $total_disk_space / 1000000 ), "\n" ) );
+		
+    }
+
+}
+

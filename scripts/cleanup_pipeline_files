@@ -70,7 +70,7 @@ while (<>) {
         print "Can't get lane $lanename\n";
         next;
     }
-    if ($root) {
+    if (-d $root) {
         my $lane_suffix_dir = $vrtrack->hierarchy_path_of_lane_name( $vrlane->name );
 
         # If you dont check this exists then you end up deleting the root directory of the pipeline
