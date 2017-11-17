@@ -735,14 +735,7 @@ rename("${paired_name}.bam.part", "$paired_name.bam") or Utils::error("rename ${
     #   by map_sample_provides, everything looks good and it carries on to
     #   the next pipeline stages.
     if ( scalar @single_bams + scalar @paired > 1 ) {
-        my $bams = join( ' ', @single_bams );
-        if ($paired_name) { $bams .= " $paired_name.bam"; }
-
-        print $fh qq[
-Utils::CMD("$samtools merge x$name.bam $bams");
-if ( ! -s "x$name.bam" ) { Utils::error("The command ended with an error:\\n\\t$samtools merge x$name.bam $bams\\n"); }
-rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \$!");
-];
+		# do nothing
     }
     elsif ( scalar @single_bams == 1 && $single_bams[0] ne "$name.bam" ) {
         print $fh

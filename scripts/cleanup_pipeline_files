@@ -10,6 +10,12 @@ use VertRes::Utils::FileSystem;
 use File::Path qw(remove_tree);
 use Cwd 'abs_path';
 use File::Find;
+use Filesys::DiskUsage qw/du/;
+
+# Todo: find all files first, then filter as you go along rather than running find multiple times and glob, then blindly testing for the existance of files.
+# Todo: tests
+# Todo: objects and proper software engineering
+# All these edge cases for historic data are adding up, though its a one off to clean them up.
 
 my ( $db, $root, $clean, $help, $verbose, $dry_run, $tmp_directory );
 
@@ -42,7 +48,14 @@ unless ($vrtrack) {
     die "Can't connect to tracking database\n";
 }
 my $total_files_deleted = 0;
-print join( "\t", ( "Progress:", 'Lane', "NumBefore", "NumAfter", "Change", "TotalDeleted", "\n" ) );
+my $total_disk_deleted  = 0;
+print join(
+    "\t",
+    (
+        "Progress:",  'Lane',      "NumBefore",  "NumAfter",       "Change",       "TotalDeleted",
+        "DiskBefore", "DiskAfter", "DiskChange", "TotalDiskSaved", "BytesPerBase", "\n"
+    )
+);
 
 # get lanes from file of lane names or stdin
 while (<>) {
@@ -63,9 +76,13 @@ while (<>) {
         # If you dont check this exists then you end up deleting the root directory of the pipeline
         next if ( !defined($lane_suffix_dir) || ( length($lane_suffix_dir) < 10 ) );
         my $lanedir = $root . $lane_suffix_dir . '/';
+        next unless ( -d $lanedir );
 
         my $before_counter = 0;
         find( sub { $before_counter++; }, $lanedir );
+
+        # disk space before
+        my $disk_space_before = du($lanedir);
 
         #    import => 1,
         #	 qc => 2,
@@ -75,20 +92,21 @@ while (<>) {
         # rna_seq_expression => 512,
         # assembled  => 1024,
         # annotated  => 2048,
-        # methylation => 4096,
 
         my @files_to_delete = [];
         if ( $vrlane->is_processed('import') ) {
-            for my $file (qw(import_files convert_to_fastq )) {
-                foreach my $suffix (qw(o e pl)) {
+            for my $file (qw(import_files convert_to_fastq bam2fastq compressfastq import_bams)) {
+                foreach my $suffix (qw(o e pl jids)) {
                     push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
                 }
             }
 
             for my $file (
                 '_import_done',
+                '_import_bams.done',
+				'_bam_to_fastq_done',
                 '_cram_to_fastq_done',
-				'_get_files.jids',
+                '_get_files.jids',
                 $vrlane->name . '.cram',
                 $vrlane->name . '.cram.md5',
                 $vrlane->name . '.bam',
@@ -96,22 +114,38 @@ while (<>) {
                 $vrlane->name . '_1.fastq.gz.md5',
                 $vrlane->name . '_2.fastq.gz.md5',
                 $vrlane->name . '_1.fastq.md5',
-                $vrlane->name . '_2.fastq.md5'
+                $vrlane->name . '_2.fastq.md5',
+                $vrlane->name . '_1.fastq.fastqcheck',
+                $vrlane->name . '_2.fastq.fastqcheck',
+                $vrlane->name . '_1.fastq_orphan.gz',
+                $vrlane->name . '_2.fastq_orphan.gz',
+
               )
             {
                 push( @files_to_delete, $lanedir . $file );
+            }
+
+            # Pacbio RSII md5 files and some old intermediate files
+            my @globbed_files = glob( $lanedir . "*.h5.md5 " . $lanedir . "bamtofastq_*" );
+            for my $file (@globbed_files) {
+                push( @files_to_delete, $file );
             }
         }
 
         if ( $vrlane->is_processed('qc') ) {
             my $qc_lanedir = $lanedir . 'qc-sample/';
 
+            for my $file (qw(assign_taxonomy new_assign_taxonomy)) {
+                foreach my $suffix (qw(o e pl jids)) {
+                    push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
+                }
+            }
+
             # top level directory
             for my $file (
-                '_assign_taxonomy.o',                        '_assign_taxonomy.e',
-                '_assign_taxonomy.pl',                       '_assign_taxonomy_done',
-                '.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz',
-                '_heterozygous_snps_done',                   '_assign_taxonomy.lock'
+                '_assign_taxonomy_done',                     '.renamed.' . $vrlane->name . '_1.fastq.gz',
+                '.renamed.' . $vrlane->name . '_2.fastq.gz', '_heterozygous_snps_done',
+                '_assign_taxonomy.lock','_subsample.jids'
               )
             {
                 push( @files_to_delete, $lanedir . $file );
@@ -126,53 +160,115 @@ while (<>) {
 
             # within the sample directory
             for my $file (
-                $vrlane->name . '_1.fastq.gz',
-                $vrlane->name . '_2.fastq.gz',
-                $vrlane->name . '.bam',
-                $vrlane->name . '.glf',
-                $vrlane->name . '.bam.bai',
-                $vrlane->name . '_1.sai',
-                $vrlane->name . '_2.sai',
-                $vrlane->name . '.cover',
-                $vrlane->name . '_1.nadapters',
-                $vrlane->name . '_2.nadapters',
-                $vrlane->name . '.bam.rmdup.bc',
-                '_graphs.done',
-                'gc-depth.bindepth',
-                '_detailed-stats.txt',
-                'adapters.fa',
+                $vrlane->name . '_1.fastq.gz',   $vrlane->name . '_2.fastq.gz',
+                $vrlane->name . '.bam',          $vrlane->name . '.glf',
+                $vrlane->name . '.bam.bai',      $vrlane->name . '_1.sai',
+                $vrlane->name . '_2.sai',        $vrlane->name . '.cover',
+                $vrlane->name . '_1.nadapters',  $vrlane->name . '_2.nadapters',
+                $vrlane->name . '.bam.rmdup.bc', '_graphs.done',
+                'gc-depth.bindepth',             '_detailed-stats.txt',
+                'adapters.fa',                   $vrlane->name . '.gtype',
+                $vrlane->name . '.gtypex',       'Rplots.pdf',
+                '_stats.dump',                   'chrom-distrib.png.R',
+                'fastqcheck.png.R',              'fastqcheck_1.png.R',
+                'fastqcheck_2.png.R',            'gc-content.png.R',
+                'gc-depth.png-gcdepth.txt',      'gc-depth.png.R',
+                'insert-size.png.R',
               )
             {
                 push( @files_to_delete, $qc_lanedir . $file );
             }
         }
 
-        # Assembly
+        ## Assembly
+
+        # If the assembled DB flag isnt set, but the cleanup file is there, then fix the DB
+        for my $prefix ( '_assembly_', '_spades_', '_velvet_', '_iva_' ) {
+            if ( ( !$vrlane->is_processed('assembled') ) && ( -e $lanedir . $prefix . "assembly_cleanup_done" ) ) {
+                $vrtrack->transaction_start();
+                $vrlane->is_processed( 'assembled', 1 );
+                $vrlane->update();
+                $vrtrack->transaction_commit();
+                print "Fixing assembly processed flag:\t" . $lanedir . "\n";
+            }
+        }
+
+        #Pacbio
+        if ( $vrlane->is_processed('assembled') && ( -e $lanedir . "_pacbio_assembly_update_db_done" ) ) {
+
+            my $assembler_directory = $lanedir . 'pacbio_assembly/';
+
+            for my $file (
+                ".seeds.m4.filter", ".sentinel_reference_uploader_completed", "original_hgap_assembly_files", "circularised/quiver",
+                "contigs.fa.fai"
+
+              )
+            {
+                push( @files_to_delete, $assembler_directory . $file );
+            }
+        }
+
+        # Fix early velvet assemblies
+        if ( $vrlane->is_processed('assembled') && -e $lanedir . '_assembly_cleanup_done' ) {
+            my $prefix = '_velvet_';
+
+            # new style assembly cleanup file
+            system( "touch " . $lanedir . $prefix . "assembly_cleanup_done" );
+            $before_counter++;
+
+            for my $file (
+                qw/
+                _pool_fastqs_done
+                _annotate_annotate_cleanup_done
+                _velvet_assembly_improvement_done
+                _assembly_cleanup_done
+				_assembly_update_db_done
+				_velvet_map_back_done
+				_velvet_optimise_parameters_done
+                /
+              )
+            {
+                push( @files_to_delete, $lanedir . $file );
+            }
+        }
+
+        # velvet, spades, IVA
         if ( $vrlane->is_processed('assembled') ) {
 
-            for my $prefix ( '_assembly_', '_spades_', '_velvet_', '_iva_' ) {
+            for my $prefix ( '_assembly_', '_spades_', '_velvet_', '_iva_', '_assembly_iva_' ) {
                 next unless ( -e $lanedir . $prefix . "assembly_cleanup_done" );
 
-                for my $file ( 'assembly_update_db_done', 'pool_fastqs.o', 'pool_fastqs.e', 'pool_fastqs.pl' ) {
+                for my $file (qw(pool_fastqs)) {
+                    foreach my $suffix (qw(o e pl jids)) {
+                        push( @files_to_delete, $lanedir . $prefix . $file . '.' . $suffix );
+                    }
+                }
+
+                for my $file ( 'assembly_update_db_done', 'job_status') {
                     push( @files_to_delete, $lanedir . $prefix . $file );
                 }
 
                 for my $assembler ( 'velvet', 'spades', 'iva' ) {
+                    my $assembler_directory = $lanedir . $assembler . '_assembly/';
+                    next unless ( -d $assembler_directory );
+
+                    for my $file (qw(optimise_parameters assembly_improvement map_back iva_qc qc)) {
+                        foreach my $suffix (qw(o e pl jids)) {
+                            push( @files_to_delete, $lanedir . $prefix . $assembler . '_' . $file . '.' . $suffix );
+                        }
+                    }
+
                     for my $file (
                         '_map_back_done',             '_optimise_parameters_done',
-                        '_assembly_improvement_done', '_iva_qc_done',
+                        '_assembly_improvement_done', '_qc_done',
                         '_pool_fastqs_done',          '_pool_fastq_tmp_files',
-                        'optimise_parameters.o',      'optimise_parameters.e',
-                        'optimise_parameters.pl',     'assembly_improvement.o',
-                        'assembly_improvement.e',     'assembly_improvement.pl',
-                        'iva_qc.o',                   'iva_qc.e',
-                        'iva_qc.pl',                  'map_back.o',
-                        'map_back.e',                 'map_back.pl'
+                        '_qc_failed', 
                       )
                     {
                         push( @files_to_delete, $lanedir . $prefix . $assembler . $file );
                     }
 
+                    # Log
                     for my $file (
                         qw/
                         before_rr.fasta
@@ -186,24 +282,64 @@ while (<>) {
                         scaffolded.summaryfile.txt
                         forward.fastq
                         reverse.fastq
-                        Log
                         assembly_graph.fastg
                         corrected
                         mismatch_corrector
                         scaffolds.paths
                         _velvet_optimise_parameters_done
-                        _spades_optimise_parameters_done
+                        _velvet_velvet_map_back_done
+						_velvet_map_back_done
+						_iva_optimise_parameters_done
+						_iva_iva_map_back_done
+						_iva_map_back_done
+						_spades_optimise_parameters_done
+						_spades_spades_map_back_done
+						_spades_map_back_done
                         assembly_graph.gfa
                         qc_graphs
+                        contigs.fa.fai
+                        contigs.fa.gc
                         /
                       )
                     {
-                        push( @files_to_delete, $lanedir . $assembler . '_assembly/' . $file );
+                        push( @files_to_delete, $assembler_directory . $file );
+                    }
+
+                    # Sometimes interim files from an assembly hang around and are extremely large
+                    my @globbed_files = glob( $assembler_directory . "velvet_assembly_data_* K*" );
+                    for my $file (@globbed_files) {
+                        push( @files_to_delete, $file );
+                    }
+
+                    # IVA QC
+                    my $iva_qc_dir = $assembler_directory . 'iva_qc/';
+                    next unless ( -e $iva_qc_dir );
+                    for my $file (
+                        qw/
+                        .RData
+                        iva_qc.ratt
+                        iva_qc.assembly.fasta.fai
+                        iva_qc.reference.fa.fai
+                        iva_qc.assembly_v_ref.act.sh
+                        iva_qc.contig_placement.Rout
+                        iva_qc.assembly.fasta
+                        iva_qc.reference.gff
+                        iva_qc.reference.fa.fai
+                        iva_qc.reference.fa
+                        iva_qc.stats.txt
+                        /
+                      )
+                    {
+                        push( @files_to_delete, $iva_qc_dir . $file );
+                    }
+
+                    # If IVA QC fails theres are lots large files left on disk.
+                    if ( -e $lanedir . $prefix . $assembler . '_qc_failed' ) {
+                        push( @files_to_delete, $iva_qc_dir );
                     }
 
                     # Remove the tmp directory from lustre
                     push( @files_to_delete, $tmp_directory . $prefix . $assembler . '_' . $vrlane->name );
-
                 }
 
             }
@@ -214,14 +350,41 @@ while (<>) {
             for my $prefix ( '_annotate_', '_spades_ann_' ) {
                 next unless ( -e $lanedir . $prefix . "annotate_cleanup_done" );
 
-                for my $file (
-                    'annotate_assembly.o', 'annotate_assembly.e', 'annotate_assembly.pl', 'annotate_update_db_done',
-                    'annotate_assembly_done'
-                  )
-                {
+                for my $file (qw(annotate_assembly)) {
+                    foreach my $suffix (qw(o e pl jids)) {
+                        push( @files_to_delete, $lanedir . $prefix . $file . '.' . $suffix );
+                    }
+                }
+
+                for my $file ( 'annotate_update_db_done', 'annotate_assembly_done' ) {
                     push( @files_to_delete, $lanedir . $prefix . $file );
                 }
+
             }
+
+            for my $assembler ( 'velvet', 'spades', 'iva', 'pacbio' ) {
+                my $assembly_directory = $lanedir . $assembler . "_assembly/";
+                next unless ( -d $assembly_directory );
+
+                # annotation can leave tens of thousands of temp files sometimes.
+                for my $pattern ( '*.hmmsearchresult', '*pos.fsa', '*neg.fsa' ) {
+                    my $find_command = "find $assembly_directory -name '$pattern'";
+                    my $find_output  = `$find_command`;
+                    my @files        = split( /\n/, $find_output );
+                    for my $file (@files) {
+                        push( @files_to_delete, $file );
+                    }
+                }
+
+                # delete files within the annotation directory itself
+                my $annotation_directory = $assembly_directory . "annotation/";
+                next unless ( -d $annotation_directory );
+                for my $file ( $vrlane->name . '.tbl', $vrlane->name . '.err', $vrlane->name . '.gbk', $vrlane->name . '.fsa', $vrlane->name . '.sqn' ) {
+                    push( @files_to_delete, $annotation_directory . $file );
+                }
+
+            }
+
         }
 
         # mapping
@@ -234,99 +397,154 @@ while (<>) {
                 my $mapstats_id    = $mapping_obj->id();
 
                 for my $file (
-                    "${mapstats_id}.pe.raw.sorted.bam_graphs",
-                    "${mapstats_id}.pe.raw.sorted.bam.cover",
-                    "${mapstats_id}.pe.raw.sorted.bam.bc",
-                    "${mapstats_id}.pe.raw.sorted.bam.bas",
-                    "${mapstats_id}.pe.raw.sorted.bam.flagstat",
-                    "${mapstats_id}.pe.raw.sorted.bam.tmp",
-                    "${mapstats_id}.pe.raw.sorted.bam.bad",
-                    "${mapstats_id}.pe.raw.sorted.bam.checked",
-                    "${mapping_prefix}job_status",
-                    "${mapping_prefix}split.jids",
-                    ".mapping_complete_pe_${mapstats_id}",
-                    ".split_complete_pe_${mapstats_id}",
-                    "${mapping_prefix}split_pe_${mapstats_id}.o",
-                    "${mapping_prefix}split_pe_${mapstats_id}.e",
-                    "${mapping_prefix}split_pe_${mapstats_id}.pl",
-                    "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam.e",
-                    "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam.o",
-                    "${mapping_prefix}statistics_${mapstats_id}.pe.raw.sorted.bam.pl",
-                    "${mapping_prefix}merge_pe_${mapstats_id}.o",
-                    "${mapping_prefix}merge_pe_${mapstats_id}.e",
-                    "${mapping_prefix}merge_pe_${mapstats_id}.pl",
-                    "${mapping_prefix}mark_duplicates_pe_${mapstats_id}.o",
-                    "${mapping_prefix}mark_duplicates_pe_${mapstats_id}.e",
-                    "${mapping_prefix}mark_duplicates_pe_${mapstats_id}.pl",
-                    "split_pe_${mapstats_id}"
+                    "split_pe_${mapstats_id}", "statistics_${mapstats_id}.pe.raw.sorted.bam",
+                    "merge_pe_${mapstats_id}", "mark_duplicates_pe_${mapstats_id}",
                   )
                 {
-                    push( @files_to_delete, $lanedir .  $file );
+                    foreach my $suffix (qw(o e pl jids)) {
+                        push( @files_to_delete, $lanedir . $mapping_prefix . $file . '.' . $suffix );
+                    }
                 }
 
-				# mark dup was run so can safely delete raw.sorted.bam
-				if(-e  $lanedir ."${mapstats_id}.pe.markdup.bam")
-				{
-					push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam" );
-					push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam.bai" );
-				}
-				
+                for my $file (
+                    "${mapstats_id}.pe.raw.sorted.bam_graphs",   "${mapstats_id}.pe.raw.sorted.bam.cover",
+                    "${mapstats_id}.pe.raw.sorted.bam.bc",       "${mapstats_id}.pe.raw.sorted.bam.bas",
+                    "${mapstats_id}.pe.raw.sorted.bam.flagstat", "${mapstats_id}.pe.raw.sorted.bam.tmp",
+                    "${mapstats_id}.pe.raw.sorted.bam.bad",      "${mapstats_id}.pe.raw.sorted.bam.checked",
+                    "${mapping_prefix}job_status",               "${mapping_prefix}split.jids",
+                    ".mapping_complete_pe_${mapstats_id}",       ".split_complete_pe_${mapstats_id}",
+                    ".${mapstats_id}.pe.raw.sorted.bam.checked", "split_pe_${mapstats_id}"
+                  )
+                {
+                    push( @files_to_delete, $lanedir . $file );
+                }
+
+                # mark dup was run so can safely delete raw.sorted.bam
+                if ( -e $lanedir . "${mapstats_id}.pe.markdup.bam" ) {
+                    push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam" );
+                    push( @files_to_delete, $lanedir . "${mapstats_id}.pe.raw.sorted.bam.bai" );
+                }
+
                 #"${mapping_prefix}map_pe_${mapstats_id}_[0-9]+.[oe]",
             }
         }
-		
-		# snp calling
-		if ( $vrlane->is_processed('snp_called') ) 
-		{
+
+        # snp calling
+        if ( $vrlane->is_processed('snp_called') ) {
             for my $mapping_obj ( @{ $vrlane->mappings() } ) {
                 next if ( $mapping_obj->is_qc() == 1 );
                 next unless ( defined( $mapping_obj->bases_mapped() ) );
 
                 my $mapping_prefix = $mapping_obj->prefix();
                 my $mapstats_id    = $mapping_obj->id();
-			
-				my $snp_dir = $lanedir.${mapstats_id}.'.pe.markdup.snp/';
-				next unless(-e $snp_dir.'.snps_done');
 
-			    for my $file ('mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats', '.pseudo_genome.done')
-				{
-					push( @files_to_delete, $snp_dir.$file );
-				}
+                my $snp_dir = $lanedir . ${mapstats_id} . '.pe.markdup.snp/';
+                next unless ( -e $snp_dir . '.snps_done' );
+
+                for my $file ( 'mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats',
+                    '.pseudo_genome.done', 'mpileup/_done' )
+                {
+                    push( @files_to_delete, $snp_dir . $file );
+                }
 				
-		        my @globbed_files = glob($snp_dir."*_pseudo_genome.pl ".$snp_dir."*_pseudo_genome.e ".$snp_dir."*_pseudo_genome.o");
-		        for my $file (@globbed_files) {
-		            push( @files_to_delete, $file );
+                my @globbed_files =
+                  glob( $snp_dir
+                      . "*_pseudo_genome.pl "
+                      . $snp_dir
+                      . "*_pseudo_genome.e "
+                      . $snp_dir
+                      . "*_pseudo_genome.o "
+                      . $snp_dir
+                      . "*_pseudo_genome.jids "
+                      . $snp_dir
+                      . "*_job_status " );
+                for my $file (@globbed_files) {
+                    push( @files_to_delete, $file );
+                }
+            }
+
+            # mpileup directory can have vast numbers of files. Also in fsu exists database table
+        }
+		
+		
+        # RNA seq
+        if ( $vrlane->is_processed('rna_seq_expression') ) {
+			#sometimes there is a temp directory left over with lots of bam files & pileups, 
+			# temp dir is random,however it sometimes contains one subdirectory called 'pm' 
+	        my $find_command = "find $lanedir -mtime +30 -name 'pm'";
+	        my $find_output  = `$find_command`;
+	        my @pm_files        = split( /\n/, $find_output );
+	        for my $pm_dir (@pm_files) {
+				push( @files_to_delete, $pm_dir );
+				
+				my $base_temp_dir = $pm_dir.'/../';
+				next unless(-d $base_temp_dir);
+				
+				next if(abs_path($base_temp_dir) eq abs_path($lanedir));
+				
+				# now lookup individual files
+		        for my $pattern ('*.bam', '*.bam.bai', '*.bam.filtered.mpileup')
+		        {
+		            $find_command = "find $base_temp_dir -mtime +30 -name '$pattern'";
+		            $find_output  = `$find_command`;
+		            my @files        = split( /\n/, $find_output );
+		            for my $file (@files) {
+		                push( @files_to_delete, $file );
+		            }
 		        }
-			}
-		}
+	        }
+        }
 		
 
         # global deletes - these files should always go
         for my $file (qw(store_nfs)) {
-            for my $suffix (qw(o e pl)) {
+            for my $suffix (qw(o e pl jids)) {
                 push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
             }
         }
-        for my $file ('minikraken_20140104.kraken.report') {
+        for my $file ( 'minikraken_20140104.kraken.report', 'pool_1.fastq.gz', '_permissions_job_status' ) {
             push( @files_to_delete, $lanedir . $file );
         }
 
         # global globs
-        my @globbed_files = glob("$lanedir.*archive $lanedir.*previous");
+        my $glob_string = "";
+        for my $p ( '.*archive', '.*previous', 'hs_err_pid*.log' ) {
+            $glob_string .= $lanedir . $p . " ";
+        }
+        my @globbed_files = glob($glob_string);
         for my $file (@globbed_files) {
             push( @files_to_delete, $file );
         }
-		
-		
-		#### Failed QC pipeline cleanup
-		# If kraken ran, but the QC pipeline failed it can leave very large FASTQ files
-		if( -e $lanedir.'_assign_taxonomy_done')
-		{
-			  for my $file ('.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz', '_assign_taxonomy.pl', '_assign_taxonomy.o', '_assign_taxonomy.e')
-			  {
-			  	push( @files_to_delete, $lanedir . $file );
-			  }
-		}
+
+        #### Failed QC pipeline cleanup
+        # If kraken ran, but the QC pipeline failed it can leave very large FASTQ files
+        if ( -e $lanedir . '_assign_taxonomy_done' ) {
+
+            for my $file (qw(assign_taxonomy new_assign_taxonomy)) {
+                foreach my $suffix (qw(o e pl jids)) {
+                    push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
+                }
+            }
+
+            for my $file ( '.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz' ) {
+                push( @files_to_delete, $lanedir . $file );
+            }
+        }
+
+        ### Some directories can have vast numbers of files after they fail, cleanup older ones
+        for my $pattern (
+            'split_pe_*',                 '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*',        '_job_status',
+            '_sga_error_corrected.fastq', '_sga_preprocessed.bwt',   '_sga_preprocessed.sai', '_sga_preprocessed.fastq',
+            '*archive',                   '*previous',               'kraken.report.lock', '*.bam_graphs', 'velvet_assembly_data_*'
+          )
+        {
+            my $find_command = "find $lanedir -mtime +30 -name '$pattern'";
+            my $find_output  = `$find_command`;
+            my @files        = split( /\n/, $find_output );
+            for my $file (@files) {
+                push( @files_to_delete, $file );
+            }
+        }
 
         for my $file (@files_to_delete) {
 
@@ -334,17 +552,24 @@ while (<>) {
                 print "Delete directory:\t" . $file . "\n";
                 remove_tree($file) unless ($dry_run);
             }
-			elsif( -l $file)
-			{
+            elsif ( -l $file ) {
                 print "Delete link:\t" . $file . "\n";
                 unlink($file) unless ($dry_run);
-			}
+            }
             elsif ( -e $file ) {
                 print "Delete file:\t" . $file . "\n";
                 unlink($file) unless ($dry_run);
             }
-			
+
         }
+
+        # disk space after
+        my $disk_space_after = du($lanedir);
+        $total_disk_deleted += ( $disk_space_before - $disk_space_after );
+        my $raw_bases = $vrlane->raw_bases;
+
+        my $bytes_per_base = 0;
+        if ( defined($raw_bases) && $raw_bases > 0 ) { $bytes_per_base = $disk_space_after / ($raw_bases); }
 
         my $after_counter = 0;
         find( sub { $after_counter++; }, $lanedir );
@@ -353,8 +578,12 @@ while (<>) {
         print join(
             "\t",
             (
-                "Progress:", $vrlane->name, $before_counter, $after_counter, ( $before_counter - $after_counter ),
-                $total_files_deleted, "\n"
+                "Progress:",                          $vrlane->name,
+                $before_counter,                      $after_counter,
+                ( $before_counter - $after_counter ), $total_files_deleted,
+                int( $disk_space_before / 1000000 ),  int( $disk_space_after / 1000000 ),
+                int( ( $disk_space_before - $disk_space_after ) / 1000000 ), int( $total_disk_deleted / 1000000 ),
+                $bytes_per_base, "\n"
             )
         );
 
