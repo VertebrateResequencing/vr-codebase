@@ -95,7 +95,7 @@ while (<>) {
 
         my @files_to_delete = [];
         if ( $vrlane->is_processed('import') ) {
-            for my $file (qw(import_files convert_to_fastq bam2fastq compressfastq import_bams)) {
+            for my $file (qw(import_files import_fastqs convert_to_fastq bam2fastq compressfastq import_bams)) {
                 foreach my $suffix (qw(o e pl jids)) {
                     push( @files_to_delete, $lanedir . '_' . $file . '.' . $suffix );
                 }
