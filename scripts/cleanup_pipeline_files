@@ -535,7 +535,7 @@ while (<>) {
         for my $pattern (
             'split_pe_*',                 '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*',        '_job_status',
             '_sga_error_corrected.fastq', '_sga_preprocessed.bwt',   '_sga_preprocessed.sai', '_sga_preprocessed.fastq',
-            '*archive',                   '*previous',               'kraken.report.lock', '*.bam_graphs', 'velvet_assembly_data_*'
+            '*archive',                   '*previous',               'kraken.report.lock', '*.bam_graphs', 'velvet_assembly_data_*', 'gapfilled'
           )
         {
             my $find_command = "find $lanedir -mtime +30 -name '$pattern'";
