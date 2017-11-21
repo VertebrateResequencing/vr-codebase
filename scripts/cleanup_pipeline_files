@@ -200,7 +200,7 @@ while (<>) {
 
             for my $file (
                 ".seeds.m4.filter", ".sentinel_reference_uploader_completed", "original_hgap_assembly_files", "circularised/quiver",
-                "contigs.fa.fai"
+                "contigs.fa.fai", 'All_output'
 
               )
             {
