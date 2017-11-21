@@ -15,7 +15,7 @@ use Filesys::DiskUsage qw/du/;
 # Todo: find all files first, then filter as you go along rather than running find multiple times and glob, then blindly testing for the existance of files.
 # Todo: tests
 # Todo: objects and proper software engineering
-# All these edge cases for historic data are adding up, though its a one off to clean them up.
+# All these edge cases for historic data are adding up, though its a one off to clean them up, so doing a proper application is probably overkill.
 
 my ( $db, $root, $clean, $help, $verbose, $dry_run, $tmp_directory );
 
@@ -528,6 +528,20 @@ while (<>) {
 
             for my $file ( '.renamed.' . $vrlane->name . '_1.fastq.gz', '.renamed.' . $vrlane->name . '_2.fastq.gz' ) {
                 push( @files_to_delete, $lanedir . $file );
+            }
+        }
+		
+		
+        ### Files which might need manual deleting. Includes interleaved old fastq files (need to check single ended doesnt get deleted)
+        for my $pattern (
+            '*.sam',   '*.fastq', $vrlane->name . '.fastq.gz',
+          )
+        {
+            my $find_command = "find $lanedir -mtime +30 -name '$pattern'";
+            my $find_output  = `$find_command`;
+            my @files        = split( /\n/, $find_output );
+            for my $file (@files) {
+                print "Candidate for manual deletion:\t".$file."\n";
             }
         }
 
