@@ -144,6 +144,7 @@ sub pacbio_assembly {
   system("sed -i -e 's/|quiver\\\$//' $output_dir/contigs.fa"); # remove the |quiver from end of contig names
   system("mv $output_dir/All_output/data/aligned_reads.bam $output_dir/contigs.mapped.sorted.bam");
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
+  system("rm -rf $output_dir/All_output");
   system("gzip -f -9 $self->{lane_path}/$lane_name.corrected.fastq"); 
   
   # ~~~~~~ Circlator ~~~~~~~
