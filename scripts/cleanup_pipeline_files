@@ -471,7 +471,7 @@ while (<>) {
         if ( $vrlane->is_processed('rna_seq_expression') ) {
 			#sometimes there is a temp directory left over with lots of bam files & pileups, 
 			# temp dir is random,however it sometimes contains one subdirectory called 'pm' 
-	        my $find_command = "find $lanedir -mtime +30 -name 'pm'";
+	        my $find_command = "find $lanedir -mtime +90 -name 'pm'";
 	        my $find_output  = `$find_command`;
 	        my @pm_files        = split( /\n/, $find_output );
 	        for my $pm_dir (@pm_files) {
@@ -485,7 +485,7 @@ while (<>) {
 				# now lookup individual files
 		        for my $pattern ('*.bam', '*.bam.bai', '*.bam.filtered.mpileup')
 		        {
-		            $find_command = "find $base_temp_dir -mtime +30 -name '$pattern'";
+		            $find_command = "find $base_temp_dir -mtime +90 -name '$pattern'";
 		            $find_output  = `$find_command`;
 		            my @files        = split( /\n/, $find_output );
 		            for my $file (@files) {
@@ -537,7 +537,7 @@ while (<>) {
             '*.sam',   '*.fastq', $vrlane->name . '.fastq.gz',
           )
         {
-            my $find_command = "find $lanedir -mtime +30 -name '$pattern'";
+            my $find_command = "find $lanedir -mtime +90 -name '$pattern'";
             my $find_output  = `$find_command`;
             my @files        = split( /\n/, $find_output );
             for my $file (@files) {
@@ -549,10 +549,10 @@ while (<>) {
         for my $pattern (
             'split_pe_*',                 '*.pe.raw.sorted.bam.tmp', '_markdup_tmp_*',        '_job_status',
             '_sga_error_corrected.fastq', '_sga_preprocessed.bwt',   '_sga_preprocessed.sai', '_sga_preprocessed.fastq',
-            '*archive',                   '*previous',               'kraken.report.lock', '*.bam_graphs', 'velvet_assembly_data_*', 'gapfilled'
+            '*archive',                   '*previous',               'kraken.report.lock', '*.bam_graphs', 'velvet_assembly_data_*', 'gapfilled', '_Inline'
           )
         {
-            my $find_command = "find $lanedir -mtime +30 -name '$pattern'";
+            my $find_command = "find $lanedir -mtime +90 -name '$pattern'";
             my $find_output  = `$find_command`;
             my @files        = split( /\n/, $find_output );
             for my $file (@files) {
