@@ -208,20 +208,27 @@ while (<>) {
         if ( -d $file ) {
             print "Delete directory:\t" . $file . "\n";
             remove_tree($file) unless ($dry_run);
+			
+	        if ( !$dry_run ) {
+	            $fsu->file_exists( $file, recurse => 1, wipe_out => 1 );
+	        }
         }
         elsif ( -l $file ) {
             print "Delete link:\t" . $file . "\n";
             unlink($file) unless ($dry_run);
+			
+	        if ( !$dry_run ) {
+	            $fsu->file_exists( $file, wipe_out => 1 );
+	        }	
         }
         elsif ( -e $file ) {
             print "Delete file:\t" . $file . "\n";
             unlink($file) unless ($dry_run);
-        }
-
-        if ( !$dry_run ) {
-            $fsu->file_exists( $file, recurse => 1, wipe_out => 1 );
-        }
-
+			
+	        if ( !$dry_run ) {
+	            $fsu->file_exists( $file, wipe_out => 1 );
+	        }
+        } 
     }
 
     for my $mapping_obj ( @{ $vrlane->mappings() } ) {
