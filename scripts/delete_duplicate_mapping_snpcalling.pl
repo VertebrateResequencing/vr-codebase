@@ -47,7 +47,8 @@ unless ($vrtrack) {
 
 my $total_mappings_deleted    = 0;
 my $total_snp_calling_deleted = 0;
-print join( "\t", ( "Progress:", 'Lane', "MappingsDel", "TotalMappingsDel", "snpCallingDel", "TotalsnpCallingDel", "\n" ) );
+my $total_disk_deleted = 0;
+print join( "\t", ( "Progress:", 'Lane', "MappingsDel", "TotalMappingsDel", "snpCallingDel", "TotalsnpCallingDel","DiskSaved","DiskSavedTotal", "\n" ) );
 
 # get lanes from file of lane names or stdin
 while (<>) {
@@ -70,6 +71,10 @@ while (<>) {
     my $lanedir = $root . $lane_suffix_dir . '/';
     next unless ( -d $lanedir );
     next unless ( $vrlane->is_processed('mapped') );
+	
+
+    # disk space before
+    my $disk_space_before = du($lanedir);
 
     print "Working on lane:\t$lanename\n";
 
@@ -237,9 +242,13 @@ while (<>) {
 
     $total_mappings_deleted    += $mappings_deleted;
     $total_snp_calling_deleted += $snp_calling_deleted;
+	
+    # disk space after
+    my $disk_space_after = du($lanedir);
+    $total_disk_deleted += ( $disk_space_before - $disk_space_after );
 
     print join( "\t",
-        ( "Progress:", $vrlane->name, $mappings_deleted, $total_mappings_deleted, $snp_calling_deleted, $total_snp_calling_deleted, "\n" ) );
+        ( "Progress:", $vrlane->name, $mappings_deleted, $total_mappings_deleted, $snp_calling_deleted, $total_snp_calling_deleted,int( ($disk_space_before - $disk_space_after)/1000000 ) ,int($total_disk_deleted/1000000),"\n" ) );
 
 }
 
