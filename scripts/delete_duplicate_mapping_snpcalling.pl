@@ -71,10 +71,6 @@ while (<>) {
     my $lanedir = $root . $lane_suffix_dir . '/';
     next unless ( -d $lanedir );
     next unless ( $vrlane->is_processed('mapped') );
-	
-
-    # disk space before
-    my $disk_space_before = du($lanedir);
 
     print "Working on lane:\t$lanename\n";
 
@@ -145,10 +141,10 @@ while (<>) {
 
         for my $m (@sorted_mapstats) {
             if ( @snp_called_mapstats < 1 ) {
-                print "MappingOnly:\tKeep\t${mapstats_id_to_keep}\tDel\t$m\n";
+                print "MappingOnly:\t". $vrlane->name."\tKeep\t${mapstats_id_to_keep}\tDel\t$m\n";
             }
             else {
-                print "SNPandMapping:\tKeep\t${mapstats_id_to_keep}\tDel\t$m\n";
+                print "SNPandMapping:\t". $vrlane->name."\tKeep\t${mapstats_id_to_keep}\tDel\t$m\n";
             }
         }
     }
@@ -198,6 +194,9 @@ while (<>) {
         }
         $mappings_deleted++;
     }
+	
+    # disk space before
+    my $disk_space_before = du($lanedir);
 
     my $fsu = VertRes::Utils::FileSystem->new( reconnect_db => 1 );
     for my $file (@files_to_delete) {
