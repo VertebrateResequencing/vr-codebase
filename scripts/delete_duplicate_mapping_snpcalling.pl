@@ -111,6 +111,8 @@ while (<>) {
             delete( $ref_mapper_mapstat_ids{$mapper_ref} );
         }
     }
+	
+	next if(keys %ref_mapper_mapstat_ids < 1 );
 
     my @mapstats_to_keep;
     my @mapstats_to_delete;
@@ -141,10 +143,10 @@ while (<>) {
 
         for my $m (@sorted_mapstats) {
             if ( @snp_called_mapstats < 1 ) {
-                print "MappingOnly:\t". $vrlane->name."\tKeep\t${mapstats_id_to_keep}\tDel\t$m\n";
+                print "MappingOnly:\t". $vrlane->name."\tKeep\t${mapstats_id_to_keep}\tDel\t$m\t".$mapstats_to_prefix{$m}."\n";
             }
             else {
-                print "SNPandMapping:\t". $vrlane->name."\tKeep\t${mapstats_id_to_keep}\tDel\t$m\n";
+                print "SNPandMapping:\t". $vrlane->name."\tKeep\t${mapstats_id_to_keep}\tDel\t$m\t".$mapstats_to_prefix{$m}."\n";
             }
         }
     }
