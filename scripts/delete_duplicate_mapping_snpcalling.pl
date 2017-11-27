@@ -148,6 +148,8 @@ while (<>) {
             }
         }
     }
+	
+	next if(@mapstats_to_delete < 1);
 
     # snp calling
     if ( $vrlane->is_processed('snp_called') ) {
