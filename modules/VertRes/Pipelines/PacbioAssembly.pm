@@ -79,6 +79,8 @@ our $actions = [
 
 our %options = ( bsub_opts => '' ,
 				 circularise => 0,
+				 samtools_htslib_exec => '/software/pathogen/external/apps/usr/bin/samtools-1.6',
+				 bwa_mem_exec => '/software/pathogen/external/apps/usr/bin/bwa-0.7.10',
 				 circlator_exec => '/software/pathogen/external/bin/circlator', # move to config files?
 				 quiver_exec => '/software/pathogen/internal/prod/bin/pacbio_smrtanalysis');
 
@@ -250,6 +252,7 @@ sub hgap_4_0_assembly {
     my $genome_size_estimate = $self->{genome_size} || 8000000;
     my $files = join(' ', @{$self->hgap_4_0_assembly_requires()});
     my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
+	my $resequence_output_dir = $output_dir."/resequence";
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '8.0';
     my $target_coverage = $self->{target_coverage} || 25;
@@ -290,38 +293,22 @@ sub hgap_4_0_assembly {
        \$circlator->run();
        my \$circlator_final_file = qq[$output_dir/circularised/circlator.final.fasta];
     
-    # ~~~~~~ Quiver ~~~~~~~~~~
-	# This is the old version of Quiver which comes with the RSII software stack.
-    if(-e \$circlator_final_file) {
-	system("touch $self->{prefix}circularisation_done");
-        my \$quiver = Bio::AssemblyImprovement::Quiver::Main->new(
-    			'reference'           => \$circlator_final_file,
-    			'bax_files'           => qq[$self->{lane_path}].'/*.bax.h5',
-    			'working_directory'   => qq[$output_dir/circularised],	
-			'quiver_exec'         => qq[$self->{quiver_exec}],
-    			);
-    	\$quiver->run();
-    	
-    	my \$quiver_final_file = qq[$output_dir/circularised/quiver/quiver.final.fasta];
-    	my \$quiver_bam_file = qq[$output_dir/circularised/quiver/quiver.aligned_reads.bam];
-    	my \$quiver_bai_file = qq[$output_dir/circularised/quiver/quiver.aligned_reads.bam.bai];
-    	
-    	if(-e \$quiver_final_file){
-		system("touch $self->{prefix}quiver_done");
-    		system(qq[mv \$quiver_final_file $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa]); # rename final assembly
-                system("sed -i -e 's/|quiver\\\$//' $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa"); # remove the |quiver from ends of contig names
-    		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]); # rename original hgap assembly
-		system(qq[mv \$quiver_bam_file $output_dir/contigs.mapped.sorted.bam]); # copy over bam file
-		system(qq[rm -f \$quiver_bai_file]); # clean this file up - we generate our own later. Should we use it?
-		# create a symlink called contigs.fa pointing to the new quiverised fasta file so that *find scripts continue to work
-    		system(qq[ln -s $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa $output_dir/contigs.fa]);
-    	}#end quiver success   
-    }#end circlator success
+	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
+	if(-e \$circlator_final_file) {
+		system("pacbio_smrtpipe -t $threads -r \$circlator_final_file -o $resequence_output_dir resequence $files");
+		system("sed -i -e 's/|quiver\\\$//' $resequence_output_dir/contigs.fa");
+		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]);
+		system(qq[mv $resequence_output_dir/contigs.fa $output_dir/contigs.fa]);
+		system("rm -rf $resequence_output_dir");
+	}
   }#end if circularised
   
-  # ~~~~~~~ Bamcheck, assemblystats, cleanup ~~~~~~~~~
-  system("samtools index $output_dir/contigs.mapped.sorted.bam");
-  system("bamcheck -c 1,20000,5 -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
+  # map corrected reads to assembly
+  system("$self->{bwa_mem_exec} index $output_dir/contigs.fa");
+  system("$self->{bwa_mem_exec} mem -t $threads -x pacbio $output_dir/contigs.fa $lane_name.corrected.fastq.gz | $self->{samtools_htslib_exec} -o $output_dir/contigs.mapped.sorted.bam -");
+  system("$self->{samtools_htslib_exec} index $output_dir/contigs.mapped.sorted.bam");
+  system("$self->{samtools_htslib_exec} stats -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
+
   system("assembly-stats $output_dir/contigs.fa  > $output_dir/contigs.fa.stats");
   system("rm -f $output_dir/contigs.mapped.sorted.bam"); # delete BAM and BAI files to save space
   system("rm -f $output_dir/contigs.mapped.sorted.bam.bai");
