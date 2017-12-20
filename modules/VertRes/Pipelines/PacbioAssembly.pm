@@ -64,6 +64,12 @@ our $actions = [
         provides => \&pacbio_assembly_provides
     },
     {
+        name     => 'hgap_4_0_assembly',
+        action   => \&hgap_4_0_assembly,
+        requires => \&hgap_4_0_assembly_requires,
+        provides => \&hgap_4_0_assembly_provides
+    },
+    {
         name     => 'update_db',
         action   => \&update_db,
         requires => \&update_db_requires,
@@ -221,6 +227,129 @@ sub pacbio_assembly {
     return $self->{No};
 }
 
+
+sub hgap_4_0_assembly_provides {
+    my ($self) = @_;
+    return [$self->{lane_path}."/hgap_4_0_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."hgap_4_0_assembly_done"];
+}
+
+sub hgap_4_0_assembly_requires {
+    my ($self) = @_;
+    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+    my @files = glob( $file_regex);
+    die 'no files to assemble' if(@files == 0);
+    
+    return \@files;
+}
+
+sub hgap_4_0_assembly {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $memory_in_mb = $self->{memory} || 40000;
+    my $threads = $self->{threads} || 8;
+    my $genome_size_estimate = $self->{genome_size} || 8000000;
+    my $files = join(' ', @{$self->hgap_4_0_assembly_requires()});
+    my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
+    my $queue = $self->{queue}|| "normal";
+    my $pipeline_version = $self->{pipeline_version} || '8.0';
+    my $target_coverage = $self->{target_coverage} || 25;
+    my $umask    = $self->umask_str;
+    my $lane_name = $self->{vrlane}->name;
+    my $contigs_base_name = $self->generate_contig_base_name($lane_name);
+    
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."hgap_4_0_assembly.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
+  use strict;
+  use Bio::AssemblyImprovement::Circlator::Main;
+  use Bio::AssemblyImprovement::Quiver::Main;
+  use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+  $umask
+
+  # ~~~~~ Basic HGAP assembly ~~~~~~
+  system("rm -rf $output_dir");
+  system("pacbio_smrtpipe -t $threads --genome_size $genome_size_estimate --min_coverage $target_coverage -o $output_dir assembly $files");
+  
+  die "No assembly produced\n" unless( -e qq[$output_dir/contigs.fasta]);  
+  system("sed -i -e 's/|quiver\\\$//' $output_dir/contigs.fa"); # remove the |quiver from end of contig names
+  system("mv $output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.corrected.fastq.gz");
+  
+  # ~~~~~~ Circlator ~~~~~~~
+  if(defined($self->{circularise}) && $self->{circularise} == 1) {
+        # rename contigs here so that circlator logs have final contig names
+	Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(
+                                        input_assembly => qq[$output_dir/contigs.fa],
+                                        base_contig_name => qq[$contigs_base_name])->run();
+  
+  	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
+    			'assembly'	      => qq[$output_dir/contigs.fa],
+    			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fastq.gz',
+    			'circlator_exec'      => qq[$self->{circlator_exec}],
+    			'working_directory'   => qq[$output_dir],
+    			);
+       \$circlator->run();
+       my \$circlator_final_file = qq[$output_dir/circularised/circlator.final.fasta];
+    
+    # ~~~~~~ Quiver ~~~~~~~~~~
+	# This is the old version of Quiver which comes with the RSII software stack.
+    if(-e \$circlator_final_file) {
+	system("touch $self->{prefix}circularisation_done");
+        my \$quiver = Bio::AssemblyImprovement::Quiver::Main->new(
+    			'reference'           => \$circlator_final_file,
+    			'bax_files'           => qq[$self->{lane_path}].'/*.bax.h5',
+    			'working_directory'   => qq[$output_dir/circularised],	
+			'quiver_exec'         => qq[$self->{quiver_exec}],
+    			);
+    	\$quiver->run();
+    	
+    	my \$quiver_final_file = qq[$output_dir/circularised/quiver/quiver.final.fasta];
+    	my \$quiver_bam_file = qq[$output_dir/circularised/quiver/quiver.aligned_reads.bam];
+    	my \$quiver_bai_file = qq[$output_dir/circularised/quiver/quiver.aligned_reads.bam.bai];
+    	
+    	if(-e \$quiver_final_file){
+		system("touch $self->{prefix}quiver_done");
+    		system(qq[mv \$quiver_final_file $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa]); # rename final assembly
+                system("sed -i -e 's/|quiver\\\$//' $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa"); # remove the |quiver from ends of contig names
+    		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]); # rename original hgap assembly
+		system(qq[mv \$quiver_bam_file $output_dir/contigs.mapped.sorted.bam]); # copy over bam file
+		system(qq[rm -f \$quiver_bai_file]); # clean this file up - we generate our own later. Should we use it?
+		# create a symlink called contigs.fa pointing to the new quiverised fasta file so that *find scripts continue to work
+    		system(qq[ln -s $output_dir/circularised/quiver/hgap.circlator.quiver.contigs.fa $output_dir/contigs.fa]);
+    	}#end quiver success   
+    }#end circlator success
+  }#end if circularised
+  
+  # ~~~~~~~ Bamcheck, assemblystats, cleanup ~~~~~~~~~
+  system("samtools index $output_dir/contigs.mapped.sorted.bam");
+  system("bamcheck -c 1,20000,5 -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
+  system("assembly-stats $output_dir/contigs.fa  > $output_dir/contigs.fa.stats");
+  system("rm -f $output_dir/contigs.mapped.sorted.bam"); # delete BAM and BAI files to save space
+  system("rm -f $output_dir/contigs.mapped.sorted.bam.bai");
+  
+  if(not defined($self->{circularise}) || $self->{circularise} == 0) {
+	# If circularisation has not been done, rename here (i.e. after bamcheck so that there are no problems with contig
+	# names not matching the names in the BAM file generated by hgap)
+  	  Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(
+  					input_assembly => qq[$output_dir/contigs.fa],
+  					base_contig_name => qq[$contigs_base_name])->run();    		      
+  }
+  
+  # touch done file and pipeline_version_8
+  system("touch $output_dir/pipeline_version_$pipeline_version");
+  system("touch $self->{prefix}hgap_4_0_assembly_done");
+  exit;
+  };
+  close $scriptfh;
+ 
+  my $job_name = $self->{prefix}.'hgap_4_0_assembly';
+      
+    $self->delete_bsub_files($lane_path, $job_name);
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
+
+    return $self->{No};
+}
+
+
 =head2 generate_contig_base_name
 
  Title   : generate_contig_base_name
@@ -255,7 +384,8 @@ sub generate_contig_base_name
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    return $self->pacbio_assembly_provides();
+	my @all_assemblies = (@{$self->hgap_4_0_assembly_provides()}, @{$self->pacbio_assembly_provides()});
+    return \@all_assemblies;
 }
 
 =head2 update_db_provides
@@ -308,7 +438,7 @@ sub update_db {
     
     my $prefix = $self->{prefix};
     # remove job files
-    foreach my $file (qw(pacbio_assembly )) 
+    foreach my $file (qw(pacbio_assembly hgap_4_0_assembly )) 
       {
         foreach my $suffix (qw(o e pl)) 
         {
