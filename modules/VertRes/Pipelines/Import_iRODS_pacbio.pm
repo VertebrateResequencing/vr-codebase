@@ -168,7 +168,7 @@ sub _bas_h5_filenames {
 sub convert_to_fastq {
     my ( $self, $lane_path, $lock_file ) = @_;
     my $memory_in_mb = 2500;
-	my $threads = 3;
+	my $threads = 8;
 
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
@@ -212,7 +212,7 @@ sub convert_bax_to_fastq {
 			remove_tree('bax2fastq');
 		}
 		
-		system("pacbio_smrtpipe -o bax2fastq bax2fastq $filename*.bax.h5");
+		system("pacbio_smrtpipe -t 8 -o bax2fastq bax2fastq $filename*.bax.h5");
 		Utils::CMD(qq[mv bax2fastq/reads.fastq.gz $fastq]);
 		
 		if ( -e 'bax2fastq/subreads.bam')
