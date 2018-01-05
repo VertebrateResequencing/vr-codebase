@@ -257,6 +257,7 @@ sub hgap_4_0_assembly {
     my $files = join(' ', @{$self->hgap_4_0_assembly_requires()});
     my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
 	my $resequence_output_dir = $output_dir."/resequence";
+	my $modification_output_dir = $output_dir."/modification";
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '8.0';
     my $target_coverage = $self->{target_coverage} || 25;
@@ -299,6 +300,7 @@ sub hgap_4_0_assembly {
     
 	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
 	if(-e \$circlator_final_file) {
+		system("rm -f $resequence_output_dir");
 		system("pacbio_smrtpipe -t $threads -r \$circlator_final_file -o $resequence_output_dir resequence $files");
 		system("sed -i -e 's/|quiver\\\$//' $resequence_output_dir/contigs.fa");
 		system(qq[mv $output_dir/contigs.fa $output_dir/hgap.contigs.fa]);
@@ -306,6 +308,12 @@ sub hgap_4_0_assembly {
 		system("rm -rf $resequence_output_dir");
 	}
   }#end if circularised
+  
+  # modification
+  system("rm -f $modification_output_dir");
+  system("pacbio_smrtpipe -t $threads -r $output_dir/contigs.fa -o $modification_output_dir modification $files");
+  system(qq[mv $modification_output_dir/xxxx $output_dir/xxx]);
+  system("rm -rf $modification_output_dir");
   
   # map corrected reads to assembly
   system("$self->{bwa_mem_exec} index $output_dir/contigs.fa");
