@@ -317,7 +317,7 @@ sub hgap_4_0_assembly {
   
   # map corrected reads to assembly
   system("$self->{bwa_mem_exec} index $output_dir/contigs.fa");
-  system("$self->{bwa_mem_exec} mem -t $threads -x pacbio $output_dir/contigs.fa $lane_name.corrected.fastq.gz | $self->{samtools_htslib_exec} -o $output_dir/contigs.mapped.sorted.bam -");
+  system("$self->{bwa_mem_exec} mem -t $threads -x pacbio $output_dir/contigs.fa $lane_name.corrected.fastq.gz | $self->{samtools_htslib_exec} sort -o $output_dir/contigs.mapped.sorted.bam -");
   system("$self->{samtools_htslib_exec} index $output_dir/contigs.mapped.sorted.bam");
   system("$self->{samtools_htslib_exec} stats -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
 
