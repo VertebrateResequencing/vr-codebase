@@ -278,7 +278,7 @@ sub hgap_4_0_assembly {
   system("rm -rf $output_dir");
   system("pacbio_smrtpipe -t $threads --genome_size $genome_size_estimate --min_coverage $target_coverage -o $output_dir assembly $files");
   
-  die "No assembly produced\n" unless( -e qq[$output_dir/contigs.fasta]);  
+  die "No assembly produced\n" unless( -e qq[$output_dir/contigs.fa]);  
   system("sed -i -e 's/|quiver\\\$//' $output_dir/contigs.fa"); # remove the |quiver from end of contig names
   system("mv $output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.corrected.fastq.gz");
   
