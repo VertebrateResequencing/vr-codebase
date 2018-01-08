@@ -312,7 +312,7 @@ sub hgap_4_0_assembly {
   # modification
   system("rm -f $modification_output_dir");
   system("pacbio_smrtpipe -t $threads -r $output_dir/contigs.fa -o $modification_output_dir modification $files");
-  system(qq[mv $modification_output_dir/xxxx $output_dir/xxx]);
+  system(qq[mv $modification_output_dir/motifs.gff $output_dir/motifs.gff]);
   system("rm -rf $modification_output_dir");
   
   # map corrected reads to assembly
