@@ -82,7 +82,10 @@ our %options = ( bsub_opts => '' ,
 				 samtools_htslib_exec => '/software/pathogen/external/apps/usr/bin/samtools-1.6',
 				 bwa_mem_exec => '/software/pathogen/external/apps/usr/bin/bwa-0.7.10',
 				 circlator_exec => '/software/pathogen/external/bin/circlator', # move to config files?
-				 quiver_exec => '/software/pathogen/internal/prod/bin/pacbio_smrtanalysis');
+				 quiver_exec => '/software/pathogen/internal/prod/bin/pacbio_smrtanalysis',
+				 minimap2_exec => '/software/pathogen/external/apps/usr/bin/minimap2',
+				 );
+				 
 
 sub new {
     my ( $class, @args ) = @_;
@@ -248,12 +251,15 @@ sub hgap_4_0_assembly_requires {
     return \@files;
 }
 
+# TODO: refactor to remove all the logic from the script, split into multiple tasks
 sub hgap_4_0_assembly {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $memory_in_mb = $self->{memory} || 40000;
+	my $memory_in_gb = $memory_in_mb/1000;
     my $threads = $self->{threads} || 8;
     my $genome_size_estimate = $self->{genome_size} || 8000000;
+	my $genome_size_estimate_kb = $genome_size_estimate/1000;
     my $files = join(' ', @{$self->hgap_4_0_assembly_requires()});
     my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
 	my $resequence_output_dir = $output_dir."/resequence";
@@ -264,7 +270,8 @@ sub hgap_4_0_assembly {
     my $umask    = $self->umask_str;
     my $lane_name = $self->{vrlane}->name;
     my $contigs_base_name = $self->generate_contig_base_name($lane_name);
-    
+	my $correction_output_dir = $output_dir.'/correction';
+	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($self->hgap_4_0_assembly_requires()->[0]);
     my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."hgap_4_0_assembly.pl");
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
@@ -280,8 +287,13 @@ sub hgap_4_0_assembly {
   
   die "No assembly produced\n" unless( -e qq[$output_dir/contigs.fa]);  
   system("sed -i -e 's/|quiver\\\$//' $output_dir/contigs.fa"); # remove the |quiver from end of contig names
-  system("mv $output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.corrected.fastq.gz");
+  system("mv $correction_output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.hgap_4_0_corrected.fastq.gz");
   
+  # Generate corrected reads with CANU. HGAP corrected reads dont work with circlator
+  system("canu -correct -p corrected -d $correction_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-raw $uncorrected_fastq");
+  
+  system("mv $correction_output_dir/corrected.correctedReads.fasta.gz $self->{lane_path}/$lane_name.corrected.fasta.gz");
+    
   # ~~~~~~ Circlator ~~~~~~~
   if(defined($self->{circularise}) && $self->{circularise} == 1) {
         # rename contigs here so that circlator logs have final contig names
@@ -291,7 +303,7 @@ sub hgap_4_0_assembly {
   
   	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
     			'assembly'	      => qq[$output_dir/contigs.fa],
-    			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fastq.gz',
+    			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fasta.gz',
     			'circlator_exec'      => qq[$self->{circlator_exec}],
     			'working_directory'   => qq[$output_dir],
     			);
@@ -316,8 +328,7 @@ sub hgap_4_0_assembly {
   system("rm -rf $modification_output_dir");
   
   # map corrected reads to assembly
-  system("$self->{bwa_mem_exec} index $output_dir/contigs.fa");
-  system("$self->{bwa_mem_exec} mem -t $threads -x pacbio $output_dir/contigs.fa $lane_name.corrected.fastq.gz | $self->{samtools_htslib_exec} sort -o $output_dir/contigs.mapped.sorted.bam -");
+  system("$self->{minimap2_exec} -ax map-pb -t $threads $output_dir/contigs.fa $lane_name.corrected.fasta.gz | $self->{samtools_htslib_exec} sort -o $output_dir/contigs.mapped.sorted.bam -");
   system("$self->{samtools_htslib_exec} index $output_dir/contigs.mapped.sorted.bam");
   system("$self->{samtools_htslib_exec} stats -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
 
@@ -348,6 +359,13 @@ sub hgap_4_0_assembly {
     return $self->{No};
 }
 
+
+sub generate_fastq_filename_from_subreads_filename
+{
+	my ($self, $filename) = @_;
+	$filename =~ s!.subreads.bam!.fastq.gz!;
+	return $filename;
+}
 
 =head2 generate_contig_base_name
 
