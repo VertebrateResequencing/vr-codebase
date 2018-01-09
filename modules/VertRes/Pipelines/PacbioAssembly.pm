@@ -76,6 +76,12 @@ our $actions = [
         provides => \&hgap_4_0_assembly_provides
     },
     {
+        name     => 'modification',
+        action   => \&modification,
+        requires => \&modification_requires,
+        provides => \&modification_provides
+    },
+    {
         name     => 'update_db',
         action   => \&update_db,
         requires => \&update_db_requires,
@@ -280,8 +286,8 @@ sub correct_reads {
     print $scriptfh qq{
   use strict;
   $umask
-
-
+  
+  system("rm -rf $correction_output_dir");
   system("canu -correct -p corrected -d $correction_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-raw $uncorrected_fastq");
   system("mv $correction_output_dir/corrected.correctedReads.fasta.gz $self->{lane_path}/$lane_name.corrected.fasta.gz");
   system("rm -rf $correction_output_dir");
@@ -378,12 +384,6 @@ sub hgap_4_0_assembly {
 	}
   }#end if circularised
   
-  # modification
-  system("rm -f $modification_output_dir");
-  system("pacbio_smrtpipe -t $threads -r $output_dir/contigs.fa -o $modification_output_dir modification $files");
-  system(qq[mv $modification_output_dir/motifs.gff $output_dir/motifs.gff]);
-  system("rm -rf $modification_output_dir");
-  
   # map corrected reads to assembly
   system("$self->{minimap2_exec} -ax map-pb -t $threads $output_dir/contigs.fa $lane_name.corrected.fasta.gz | $self->{samtools_htslib_exec} sort -o $output_dir/contigs.mapped.sorted.bam -");
   system("$self->{samtools_htslib_exec} index $output_dir/contigs.mapped.sorted.bam");
@@ -409,6 +409,61 @@ sub hgap_4_0_assembly {
   close $scriptfh;
  
   my $job_name = $self->{prefix}.'hgap_4_0_assembly';
+      
+    $self->delete_bsub_files($lane_path, $job_name);
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
+
+    return $self->{No};
+}
+
+sub modification_provides {
+    my ($self) = @_;
+    return [$self->{lane_path}."/hgap_4_0_assembly/motifs.gff"];
+}
+
+sub modification_requires {
+    my ($self) = @_;
+    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+    my @files = glob( $file_regex);
+    die 'no input BAM files' if(@files == 0);
+	push(@files, $self->{lane_path}."/hgap_4_0_assembly/contigs.fa");
+	push(@files, "$self->{prefix}hgap_4_0_assembly_done");
+    
+    return \@files;
+}
+
+# Find modified bases (Methylation)
+sub modification {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $memory_in_mb = $self->{memory} || 40000;
+    my $threads = $self->{threads} || 8;
+    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+    my @subread_files = glob( $file_regex);
+	my $files = join(' ', @subread_files);
+    my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
+	my $modification_output_dir = $output_dir."/tmp_modification";
+    my $queue = $self->{queue}|| "normal";
+    my $umask    = $self->umask_str;
+    my $lane_name = $self->{vrlane}->name;
+
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."modification.pl");
+
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
+  use strict;
+  $umask
+
+  system("rm -rf $modification_output_dir");
+  system("pacbio_smrtpipe -t $threads -r $output_dir/contigs.fa -o $modification_output_dir modification $files");
+  system(qq[mv $modification_output_dir/motifs.gff $output_dir/motifs.gff]);
+  system("rm -rf $modification_output_dir");
+ 
+  exit;
+  };
+  close $scriptfh;
+ 
+  my $job_name = $self->{prefix}.'modification';
       
     $self->delete_bsub_files($lane_path, $job_name);
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
@@ -458,7 +513,7 @@ sub generate_contig_base_name
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-	my @all_assemblies = (@{$self->hgap_4_0_assembly_provides()}, @{$self->pacbio_assembly_provides()});
+	my @all_assemblies = (@{$self->hgap_4_0_assembly_provides()}, @{$self->pacbio_assembly_provides()}, @{$self->modification_provides()});
     return \@all_assemblies;
 }
 
@@ -512,7 +567,7 @@ sub update_db {
     
     my $prefix = $self->{prefix};
     # remove job files
-    foreach my $file (qw(pacbio_assembly hgap_4_0_assembly )) 
+    foreach my $file (qw(pacbio_assembly hgap_4_0_assembly correct_reads)) 
       {
         foreach my $suffix (qw(o e pl)) 
         {
