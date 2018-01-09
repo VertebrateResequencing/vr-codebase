@@ -70,10 +70,10 @@ our $actions = [
         provides => \&correct_reads_provides
     },
     {
-        name     => 'hgap_4_0_assembly',
-        action   => \&hgap_4_0_assembly,
-        requires => \&hgap_4_0_assembly_requires,
-        provides => \&hgap_4_0_assembly_provides
+        name     => 'hgap_assembly',
+        action   => \&hgap_assembly,
+        requires => \&hgap_assembly_requires,
+        provides => \&hgap_assembly_provides
     },
     {
         name     => 'modification',
@@ -96,6 +96,7 @@ our %options = ( bsub_opts => '' ,
 				 circlator_exec => '/software/pathogen/external/bin/circlator', # move to config files?
 				 quiver_exec => '/software/pathogen/internal/prod/bin/pacbio_smrtanalysis',
 				 minimap2_exec => '/software/pathogen/external/apps/usr/bin/minimap2',
+				 hgap_version_str => 'hgap_4_0',
 				 );
 				 
 
@@ -274,10 +275,10 @@ sub correct_reads {
 	
     my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
     my @files = glob( $file_regex);
-	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename(@files[0]);
+	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($files[0]);
 	
 	my $threads = $self->{threads} || 8;
-	my $memory_in_gb = 20;
+	my $memory_in_gb = 10;
 	my $memory_in_mb = $memory_in_gb*1000;
 	my $genome_size_estimate_kb = ($self->{genome_size} || 8000000)/1000;
 	my $correction_output_dir = $self->{lane_path}.'/tmp_correction';
@@ -304,12 +305,12 @@ sub correct_reads {
     return $self->{No};
 }
 
-sub hgap_4_0_assembly_provides {
+sub hgap_assembly_provides {
     my ($self) = @_;
-    return [$self->{lane_path}."/hgap_4_0_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."hgap_4_0_assembly_done"];
+    return [$self->{lane_path}."/".$self->{hgap_version_str}."_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."hgap_assembly_done"];
 }
 
-sub hgap_4_0_assembly_requires {
+sub hgap_assembly_requires {
     my ($self) = @_;
     my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
     my @files = glob( $file_regex);
@@ -320,7 +321,7 @@ sub hgap_4_0_assembly_requires {
 }
 
 # TODO: refactor to remove all the logic from the script, split into multiple tasks
-sub hgap_4_0_assembly {
+sub hgap_assembly {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $memory_in_mb = $self->{memory} || 40000;
@@ -328,19 +329,23 @@ sub hgap_4_0_assembly {
     my $threads = $self->{threads} || 8;
     my $genome_size_estimate = $self->{genome_size} || 8000000;
 	my $genome_size_estimate_kb = $genome_size_estimate/1000;
-    my $files = join(' ', @{$self->hgap_4_0_assembly_requires()});
-    my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
+
+    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+    my @files_glob = glob( $file_regex);
+    my $files = join(' ', @files_glob);
+	
+    my $output_dir= $self->{lane_path}."/".$self->{hgap_version_str}."_assembly";
 	my $resequence_output_dir = $output_dir."/resequence";
 	my $modification_output_dir = $output_dir."/modification";
     my $queue = $self->{queue}|| "normal";
-    my $pipeline_version = $self->{pipeline_version} || '8.0';
+    my $pipeline_version = '8.0';
     my $target_coverage = $self->{target_coverage} || 25;
     my $umask    = $self->umask_str;
     my $lane_name = $self->{vrlane}->name;
     my $contigs_base_name = $self->generate_contig_base_name($lane_name);
 	my $correction_output_dir = $output_dir.'/correction';
-	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($self->hgap_4_0_assembly_requires()->[0]);
-    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."hgap_4_0_assembly.pl");
+	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($self->hgap_assembly_requires()->[0]);
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."hgap_assembly.pl");
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
   use strict;
@@ -355,7 +360,7 @@ sub hgap_4_0_assembly {
   
   die "No assembly produced\n" unless( -e qq[$output_dir/contigs.fa]);  
   system("sed -i -e 's/|quiver\\\$//' $output_dir/contigs.fa"); # remove the |quiver from end of contig names
-  system("mv $correction_output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.hgap_4_0_corrected.fastq.gz");
+  system("mv $correction_output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.hgap_corrected.fastq.gz");
   
   # ~~~~~~ Circlator ~~~~~~~
   if(defined($self->{circularise}) && $self->{circularise} == 1) {
@@ -403,12 +408,12 @@ sub hgap_4_0_assembly {
   
   # touch done file and pipeline_version_8
   system("touch $output_dir/pipeline_version_$pipeline_version");
-  system("touch $self->{prefix}hgap_4_0_assembly_done");
+  system("touch $self->{prefix}hgap_assembly_done");
   exit;
   };
   close $scriptfh;
  
-  my $job_name = $self->{prefix}.'hgap_4_0_assembly';
+  my $job_name = $self->{prefix}.'hgap_assembly';
       
     $self->delete_bsub_files($lane_path, $job_name);
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
@@ -418,7 +423,7 @@ sub hgap_4_0_assembly {
 
 sub modification_provides {
     my ($self) = @_;
-    return [$self->{lane_path}."/hgap_4_0_assembly/motifs.gff"];
+    return [$self->{lane_path}."/".$self->{hgap_version_str}."_assembly/motifs.gff"];
 }
 
 sub modification_requires {
@@ -426,8 +431,11 @@ sub modification_requires {
     my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
     my @files = glob( $file_regex);
     die 'no input BAM files' if(@files == 0);
-	push(@files, $self->{lane_path}."/hgap_4_0_assembly/contigs.fa");
-	push(@files, "$self->{prefix}hgap_4_0_assembly_done");
+	push(@files, "$self->{prefix}hgap_assembly_done");
+	
+	my $assembly_file = $self->{lane_path}."/".$self->{hgap_version_str}."_assembly/contigs.fa";
+	die 'assembly file empty' if( -z $assembly_file);
+	push(@files, $assembly_file);
     
     return \@files;
 }
@@ -441,7 +449,7 @@ sub modification {
     my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
     my @subread_files = glob( $file_regex);
 	my $files = join(' ', @subread_files);
-    my $output_dir= $self->{lane_path}."/hgap_4_0_assembly";
+    my $output_dir= $self->{lane_path}."/".$self->{hgap_version_str}."_assembly";
 	my $modification_output_dir = $output_dir."/tmp_modification";
     my $queue = $self->{queue}|| "normal";
     my $umask    = $self->umask_str;
@@ -513,7 +521,7 @@ sub generate_contig_base_name
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-	my @all_assemblies = (@{$self->hgap_4_0_assembly_provides()}, @{$self->pacbio_assembly_provides()}, @{$self->modification_provides()});
+	my @all_assemblies = (@{$self->hgap_assembly_provides()}, @{$self->pacbio_assembly_provides()}, @{$self->modification_provides()});
     return \@all_assemblies;
 }
 
@@ -567,7 +575,7 @@ sub update_db {
     
     my $prefix = $self->{prefix};
     # remove job files
-    foreach my $file (qw(pacbio_assembly hgap_4_0_assembly correct_reads)) 
+    foreach my $file (qw(pacbio_assembly hgap_assembly correct_reads)) 
       {
         foreach my $suffix (qw(o e pl)) 
         {
