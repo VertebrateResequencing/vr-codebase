@@ -64,6 +64,12 @@ our $actions = [
         provides => \&pacbio_assembly_provides
     },
     {
+        name     => 'correct_reads',
+        action   => \&correct_reads,
+        requires => \&correct_reads_requires,
+        provides => \&correct_reads_provides
+    },
+    {
         name     => 'hgap_4_0_assembly',
         action   => \&hgap_4_0_assembly,
         requires => \&hgap_4_0_assembly_requires,
@@ -236,6 +242,60 @@ sub pacbio_assembly {
     return $self->{No};
 }
 
+sub correct_reads_provides {
+    my ($self) = @_;
+    return [$self->{lane_path}.'/'.$self->{vrlane}->name.'.corrected.fasta.gz'];
+}
+
+sub correct_reads_requires {
+    my ($self) = @_;
+    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+    my @files = glob( $file_regex);
+    die 'no files to correct' if(@files == 0);
+    
+    return \@files;
+}
+
+# Generate corrected reads with CANU. HGAP corrected reads dont work with circlator
+sub correct_reads {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    my $queue = $self->{queue}|| "normal";
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."correct_reads.pl");
+
+    my $umask    = $self->umask_str;
+    my $lane_name = $self->{vrlane}->name;
+	
+    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+    my @files = glob( $file_regex);
+	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename(@files[0]);
+	
+	my $threads = $self->{threads} || 8;
+	my $memory_in_gb = 20;
+	my $genome_size_estimate_kb = ($self->{genome_size} || 8000000)/1000;
+	my $correction_output_dir = $self->{lane_path}.'/tmp_correction';
+	
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
+  use strict;
+  $umask
+
+
+  system("canu -correct -p corrected -d $correction_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-raw $uncorrected_fastq");
+  system("mv $correction_output_dir/corrected.correctedReads.fasta.gz $self->{lane_path}/$lane_name.corrected.fasta.gz");
+  system("rm -rf $correction_output_dir");
+    
+  exit;
+  };
+  close $scriptfh;
+ 
+  my $job_name = $self->{prefix}.'correct_reads';
+      
+    $self->delete_bsub_files($lane_path, $job_name);
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
+
+    return $self->{No};
+}
 
 sub hgap_4_0_assembly_provides {
     my ($self) = @_;
@@ -248,6 +308,7 @@ sub hgap_4_0_assembly_requires {
     my @files = glob( $file_regex);
     die 'no files to assemble' if(@files == 0);
     
+	push(@files, $self->correct_reads_provides()->[0]);
     return \@files;
 }
 
@@ -289,11 +350,6 @@ sub hgap_4_0_assembly {
   system("sed -i -e 's/|quiver\\\$//' $output_dir/contigs.fa"); # remove the |quiver from end of contig names
   system("mv $correction_output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.hgap_4_0_corrected.fastq.gz");
   
-  # Generate corrected reads with CANU. HGAP corrected reads dont work with circlator
-  system("canu -correct -p corrected -d $correction_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-raw $uncorrected_fastq");
-  
-  system("mv $correction_output_dir/corrected.correctedReads.fasta.gz $self->{lane_path}/$lane_name.corrected.fasta.gz");
-    
   # ~~~~~~ Circlator ~~~~~~~
   if(defined($self->{circularise}) && $self->{circularise} == 1) {
         # rename contigs here so that circlator logs have final contig names
