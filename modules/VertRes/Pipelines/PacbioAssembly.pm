@@ -272,6 +272,7 @@ sub correct_reads {
 	
 	my $threads = $self->{threads} || 8;
 	my $memory_in_gb = 20;
+	my $memory_in_mb = $memory_in_gb*1000;
 	my $genome_size_estimate_kb = ($self->{genome_size} || 8000000)/1000;
 	my $correction_output_dir = $self->{lane_path}.'/tmp_correction';
 	
