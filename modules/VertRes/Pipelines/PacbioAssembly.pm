@@ -290,7 +290,7 @@ sub hgap_4_0_assembly {
   system("mv $correction_output_dir/corrected.fastq.gz $self->{lane_path}/$lane_name.hgap_4_0_corrected.fastq.gz");
   
   # Generate corrected reads with CANU. HGAP corrected reads dont work with circlator
-  system("canu -correct -p corrected -d $correction_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-raw $uncorrected_fastq")
+  system("canu -correct -p corrected -d $correction_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-raw $uncorrected_fastq");
   
   system("mv $correction_output_dir/corrected.correctedReads.fasta.gz $self->{lane_path}/$lane_name.corrected.fasta.gz");
     
