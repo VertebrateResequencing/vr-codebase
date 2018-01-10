@@ -575,7 +575,7 @@ sub update_db {
     
     my $prefix = $self->{prefix};
     # remove job files
-    foreach my $file (qw(pacbio_assembly hgap_assembly correct_reads)) 
+    foreach my $file (qw(pacbio_assembly hgap_assembly correct_reads modification)) 
       {
         foreach my $suffix (qw(o e pl)) 
         {
