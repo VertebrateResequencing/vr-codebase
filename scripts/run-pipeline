@@ -1802,6 +1802,8 @@ sub get_pacbio_assembly_jobs_from_vrtrack
             $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
         }
         next if $vrlane->is_withdrawn;
+		# PacBio software checks number of raw bases and expected coverage and fails if its not enough.
+		next if $vrlane->raw_bases < 9000000;
         $count++;
 
         my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
