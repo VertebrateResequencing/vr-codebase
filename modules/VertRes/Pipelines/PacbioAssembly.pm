@@ -277,7 +277,7 @@ sub correct_reads {
     my @files = glob( $file_regex);
 	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($files[0]);
 	
-	my $threads = $self->{threads} || 8;
+	my $threads = 4;
 	my $memory_in_gb = 10;
 	my $memory_in_mb = $memory_in_gb*1000;
 	my $genome_size_estimate_kb = ($self->{genome_size} || 8000000)/1000;
@@ -324,9 +324,9 @@ sub hgap_assembly_requires {
 sub hgap_assembly {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $memory_in_mb = $self->{memory} || 40000;
+    my $memory_in_mb = 40000;
 	my $memory_in_gb = $memory_in_mb/1000;
-    my $threads = $self->{threads} || 8;
+    my $threads = 12;
     my $genome_size_estimate = $self->{genome_size} || 8000000;
 	my $genome_size_estimate_kb = $genome_size_estimate/1000;
 
@@ -444,8 +444,8 @@ sub modification_requires {
 sub modification {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $memory_in_mb = $self->{memory} || 40000;
-    my $threads = $self->{threads} || 8;
+    my $memory_in_mb = 10000;
+    my $threads = 8;
     my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
     my @subread_files = glob( $file_regex);
 	my $files = join(' ', @subread_files);
