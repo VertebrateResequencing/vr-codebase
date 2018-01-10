@@ -280,7 +280,8 @@ sub correct_reads {
 	my $threads = 4;
 	my $memory_in_gb = 10;
 	my $memory_in_mb = $memory_in_gb*1000;
-	my $genome_size_estimate_kb = ($self->{genome_size} || 8000000)/1000;
+	# This can be hardcoded
+	my $genome_size_estimate_kb = 8000;
 	my $correction_output_dir = $self->{lane_path}.'/tmp_correction';
 	
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
