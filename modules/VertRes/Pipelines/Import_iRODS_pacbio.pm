@@ -157,8 +157,10 @@ sub _output_bam_filenames {
 sub _bas_h5_filenames {
     my ($self) = @_;
     my @output_files;
-    for my $file ( @{ $self->{files} } ) {
-        next unless ( $file =~ /\.bas\.h5$/ );
+    my $file_regex = $self->{lane_path}."/".'*.bas.h5';
+    my @files = glob( $file_regex);
+	
+    for my $file ( @files ) {
         my ( $filename, $dirs, $suffix ) = fileparse($file);
         push( @output_files, $filename );
     }
@@ -168,8 +170,11 @@ sub _bas_h5_filenames {
 sub _h5_filenames {
     my ($self) = @_;
     my @output_files;
-    for my $file ( @{ $self->{files} } ) {
-        next unless ( $file =~ /\.h5$/ );
+	
+    my $file_regex = $self->{lane_path}."/".'*.h5';
+    my @files = glob( $file_regex);
+	
+    for my $file ( @files ) {
         my ( $filename, $dirs, $suffix ) = fileparse($file);
         push( @output_files, $filename );
     }
@@ -357,15 +362,6 @@ sub update_db {
             unlink( $self->{fsu}->catfile( $lane_path, $prefix . $file . '.' . $suffix ) );
         }
     }
-	
-	# Delete the h5 files
-	for my $file (@{$self->_h5_filenames()})
-	{
-		if(defined($file) && -e $file )
-		{
-			unlink( $file );
-		}
-	}
 
     my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
     my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
@@ -379,7 +375,37 @@ sub update_db {
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
     }
+	
+	# Add the BAMs and FASTQ files to the file table	
+    for my $file ((@{$self->_output_bam_filenames()},@{$self->_output_fastq_filenames()}))
+    {
+        my $vrsfile = $vrlane->get_file_by_name($file);
+        if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
+        $vrfile->is_processed('import',1);
+        $vrfile->update();
+    }
+	
+	# Delete the h5 files
+	for my $file (@{$self->_h5_filenames()})
+	{
+		if(defined($file) && -e $file )
+		{
+			unlink( $file );
+		}
+	}
+	
+	# Remove the h5 files from the file table
+    for my $ifile ( @{ $$self{files} } ) {
+        next if ( $ifile =~ /\.bam/ );
+        my ( $filename, $dirs, $suffix ) = fileparse($ifile);
 
+        if ( $ifile =~ m!^/seq/! ) ) { 
+			my $vrfile = $vrlane->get_file_by_name($ifile);
+	        $vrfile->is_latest(0);
+	        $vrfile->update();
+		}
+	}
+	
     $vrlane->is_processed( 'import', 1 );
     $vrlane->is_withdrawn(0);
     $vrlane->raw_reads($rawreads);
