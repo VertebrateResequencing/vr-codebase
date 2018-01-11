@@ -165,6 +165,17 @@ sub _bas_h5_filenames {
     return \@output_files;
 }
 
+sub _h5_filenames {
+    my ($self) = @_;
+    my @output_files;
+    for my $file ( @{ $self->{files} } ) {
+        next unless ( $file =~ /\.h5$/ );
+        my ( $filename, $dirs, $suffix ) = fileparse($file);
+        push( @output_files, $filename );
+    }
+    return \@output_files;
+}
+
 sub convert_to_fastq {
     my ( $self, $lane_path, $lock_file ) = @_;
     my $memory_in_mb = 2500;
@@ -346,6 +357,15 @@ sub update_db {
             unlink( $self->{fsu}->catfile( $lane_path, $prefix . $file . '.' . $suffix ) );
         }
     }
+	
+	# Delete the h5 files
+	for my $file (@{$self->_h5_filenames()})
+	{
+		if(defined($file) && -e $file )
+		{
+			unlink( $file );
+		}
+	}
 
     my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
     my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
