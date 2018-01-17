@@ -386,11 +386,6 @@ sub update_db {
 		my($filename_base, $dirs, $suffix) = fileparse($file);
 		my $full_filename = $lane_path.'/'.$filename_base;
 		
-		if(! -e $full_filename.'.md5')
-		{
-			Utils::CMD(qq[md5sum $full_filename > $full_filename.md5]);
-		}
-		my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $full_filename.md5]);
 
 	    # The file may be absent from the database
 	    my $vrfile = $vrlane->get_file_by_name($filename_base);
@@ -399,7 +394,16 @@ sub update_db {
 	        $vrfile = $vrlane->add_file($filename_base); 
 	        $vrfile->hierarchy_name($filename_base);
 	    }
-		$vrfile->md5($md5);
+		
+		if(! defined($vrfile->md5() ))
+		{
+		    if(! -e $full_filename.'.md5')
+		    {
+		    	Utils::CMD(qq[md5sum $full_filename > $full_filename.md5]);
+		    }
+		    my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $full_filename.md5]);
+			$vrfile->md5($md5);
+		}
         $vrfile->is_processed('import',1);
         $vrfile->update();
 		Utils::CMD(qq[rm -rf $full_filename.md5]);
@@ -412,6 +416,12 @@ sub update_db {
 		if(defined($file) && -e $full_file_path )
 		{
 			unlink( $full_file_path );
+		}
+		
+		my $full_file_path_md5 =  $lane_path.'/'.$file.'.md5';
+		if(defined($file) && -e $full_file_path_md5 )
+		{
+			unlink( $full_file_path_md5 );
 		}
 	}
 	
