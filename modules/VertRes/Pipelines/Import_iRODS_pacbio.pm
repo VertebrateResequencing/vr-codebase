@@ -245,7 +245,7 @@ sub convert_bax_to_fastq {
 		{
 			remove_tree('bax2fastq');
 		}
-		
+
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
         $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
     }
@@ -379,12 +379,19 @@ sub update_db {
 	# Add the BAMs and FASTQ files to the file table	
     for my $file ((@{$self->_output_bam_filenames()},@{$self->_output_fastq_filenames()}))
     {
-        my $vrfile = $vrlane->get_file_by_name($file);
-        if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
+		my($filename_base, $dirs, $suffix) = fileparse($file);
+		
+	    # The file may be absent from the database
+	    my $vrfile = $vrlane->get_file_by_name($filename_base);
+	    if ( !$vrfile ) 
+	    { 
+	        $vrfile = $vrlane->add_file($filename_base); 
+	        $vrfile->hierarchy_name($filename_base);
+	    }
         $vrfile->is_processed('import',1);
         $vrfile->update();
     }
-	
+
 	# Delete the h5 files
 	for my $file (@{$self->_h5_filenames()})
 	{
