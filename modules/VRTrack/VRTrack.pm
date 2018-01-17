@@ -2092,7 +2092,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (20);
+insert into schema_version(schema_version) values (34);
 
 
 # Dump of table seq_centre
