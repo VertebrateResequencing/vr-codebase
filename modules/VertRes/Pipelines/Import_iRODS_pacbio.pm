@@ -408,9 +408,10 @@ sub update_db {
 	# Delete the h5 files
 	for my $file (@{$self->_h5_filenames()})
 	{
-		if(defined($file) && -e $file )
+		my $full_file_path =  $lane_path.'/'.$file;
+		if(defined($file) && -e $full_file_path )
 		{
-			unlink( $file );
+			unlink( $full_file_path );
 		}
 	}
 	
