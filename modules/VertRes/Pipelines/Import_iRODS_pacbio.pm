@@ -379,7 +379,7 @@ sub update_db {
 	# Add the BAMs and FASTQ files to the file table	
     for my $file ((@{$self->_output_bam_filenames()},@{$self->_output_fastq_filenames()}))
     {
-        my $vrsfile = $vrlane->get_file_by_name($file);
+        my $vrfile = $vrlane->get_file_by_name($file);
         if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
         $vrfile->is_processed('import',1);
         $vrfile->update();
@@ -399,7 +399,7 @@ sub update_db {
         next if ( $ifile =~ /\.bam/ );
         my ( $filename, $dirs, $suffix ) = fileparse($ifile);
 
-        if ( $ifile =~ m!^/seq/! ) ) { 
+        if ( $ifile =~ m!^/seq/! ) { 
 			my $vrfile = $vrlane->get_file_by_name($ifile);
 	        $vrfile->is_latest(0);
 	        $vrfile->update();
