@@ -245,6 +245,10 @@ sub convert_bax_to_fastq {
 		{
 			remove_tree('bax2fastq');
 		}
+		
+		Utils::CMD(qq[md5sum $scraps_bam > $scraps_bam.md5]);
+		Utils::CMD(qq[md5sum $subreads_bam > $subreads_bam.md5]);
+		Utils::CMD(qq[md5sum $fastq > $fastq.md5]);
 
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
         $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
@@ -382,10 +386,12 @@ sub update_db {
 		my($filename_base, $dirs, $suffix) = fileparse($file);
 		my $full_filename = $lane_path.'/'.$filename_base;
 		
-		Utils::CMD(qq[md5sum $full_filename > $full_filename.md5]);
-		my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $full_filename]);
-		Utils::CMD(qq[rm -rf $full_filename.md5]);
-		
+		if(! -e $full_filename.'.md5')
+		{
+			Utils::CMD(qq[md5sum $full_filename > $full_filename.md5]);
+		}
+		my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $full_filename.md5]);
+
 	    # The file may be absent from the database
 	    my $vrfile = $vrlane->get_file_by_name($filename_base);
 	    if ( !$vrfile ) 
@@ -396,6 +402,7 @@ sub update_db {
 		$vrfile->md5($md5);
         $vrfile->is_processed('import',1);
         $vrfile->update();
+		Utils::CMD(qq[rm -rf $full_filename.md5]);
     }
 
 	# Delete the h5 files
