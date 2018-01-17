@@ -381,6 +381,10 @@ sub update_db {
     {
 		my($filename_base, $dirs, $suffix) = fileparse($file);
 		
+		Utils::CMD(qq[md5sum $file > $file.md5]);
+		my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $file]);
+		Utils::CMD(qq[rm -rf $file.md5]);
+		
 	    # The file may be absent from the database
 	    my $vrfile = $vrlane->get_file_by_name($filename_base);
 	    if ( !$vrfile ) 
@@ -388,6 +392,7 @@ sub update_db {
 	        $vrfile = $vrlane->add_file($filename_base); 
 	        $vrfile->hierarchy_name($filename_base);
 	    }
+		$vrfile->md5($md5);
         $vrfile->is_processed('import',1);
         $vrfile->update();
     }
