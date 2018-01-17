@@ -380,10 +380,11 @@ sub update_db {
     for my $file ((@{$self->_output_bam_filenames()},@{$self->_output_fastq_filenames()}))
     {
 		my($filename_base, $dirs, $suffix) = fileparse($file);
+		my $full_filename = $lane_path.'/'.$filename_base;
 		
-		Utils::CMD(qq[md5sum $file > $file.md5]);
-		my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $file]);
-		Utils::CMD(qq[rm -rf $file.md5]);
+		Utils::CMD(qq[md5sum $full_filename > $full_filename.md5]);
+		my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $full_filename]);
+		Utils::CMD(qq[rm -rf $full_filename.md5]);
 		
 	    # The file may be absent from the database
 	    my $vrfile = $vrlane->get_file_by_name($filename_base);
