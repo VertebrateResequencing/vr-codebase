@@ -190,6 +190,8 @@ sub hgap_assembly {
     my $contigs_base_name = $self->generate_contig_base_name($lane_name);
 	my $correction_output_dir = $output_dir.'/correction';
 	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($self->hgap_assembly_requires()->[0]);
+	my $corrected_reads = $self->{lane_path}."/$lane_name.corrected.fasta.gz";
+	
     my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."hgap_assembly.pl");
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
@@ -214,14 +216,8 @@ sub hgap_assembly {
                                         input_assembly => qq[$output_dir/contigs.fa],
                                         base_contig_name => qq[$contigs_base_name])->run();
   
-  	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
-    			'assembly'	      => qq[$output_dir/contigs.fa],
-    			'corrected_reads'     => qq[$self->{lane_path}].'/$lane_name.corrected.fasta.gz',
-    			'circlator_exec'      => qq[$self->{circlator_exec}],
-    			'working_directory'   => qq[$output_dir],
-    			);
-       \$circlator->run();
-       my \$circlator_final_file = qq[$output_dir/circularised/circlator.final.fasta];
+       system(qq[$self->{circlator_exec} --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
+       my \$circlator_final_file = qq[$output_dir/circularised/06.fixstart.fasta];
     
 	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
 	if(-e \$circlator_final_file) {
