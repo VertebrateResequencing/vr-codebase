@@ -86,13 +86,11 @@ our $actions = [
 our %options = ( bsub_opts => '' ,
 				 circularise => 0,
 				 samtools_htslib_exec => '/software/pathogen/external/apps/usr/bin/samtools-1.6',
-				 bwa_mem_exec => '/software/pathogen/external/apps/usr/bin/bwa-0.7.10',
 				 circlator_exec => '/software/pathogen/external/bin/circlator', # move to config files?
 				 minimap2_exec => '/software/pathogen/external/apps/usr/bin/minimap2',
 				 hgap_version_str => 'hgap_4_0',
 				 );
 				 
-
 sub new {
     my ( $class, @args ) = @_;
 
@@ -105,7 +103,6 @@ sub new {
     return $self;
 }
 
-
 sub correct_reads_provides {
     my ($self) = @_;
     return [$self->{lane_path}.'/'.$self->{vrlane}->name.'.corrected.fasta.gz'];
@@ -113,11 +110,7 @@ sub correct_reads_provides {
 
 sub correct_reads_requires {
     my ($self) = @_;
-    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
-    my @files = glob( $file_regex);
-    die 'no files to correct' if(@files == 0);
-    
-    return \@files;
+    return $self->get_subreads_bams();
 }
 
 # Generate corrected reads with CANU. HGAP corrected reads dont work with circlator
@@ -130,8 +123,7 @@ sub correct_reads {
     my $umask    = $self->umask_str;
     my $lane_name = $self->{vrlane}->name;
 	
-    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
-    my @files = glob( $file_regex);
+    my @files = @{$self->get_subreads_bams()};
 	my $uncorrected_fastq = $self->generate_fastq_filename_from_subreads_filename($files[0]);
 	
 	my $threads = 4;
@@ -170,10 +162,7 @@ sub hgap_assembly_provides {
 
 sub hgap_assembly_requires {
     my ($self) = @_;
-    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
-    my @files = glob( $file_regex);
-    die 'no files to assemble' if(@files == 0);
-    
+	my @files = @{$self->get_subreads_bams()};
 	push(@files, $self->correct_reads_provides()->[0]);
     return \@files;
 }
@@ -188,9 +177,7 @@ sub hgap_assembly {
     my $genome_size_estimate = $self->{genome_size} || 8000000;
 	my $genome_size_estimate_kb = $genome_size_estimate/1000;
 
-    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
-    my @files_glob = glob( $file_regex);
-    my $files = join(' ', @files_glob);
+    my $files = join(' ', @{$self->get_subreads_bams()});
 	
     my $output_dir= $self->{lane_path}."/".$self->{hgap_version_str}."_assembly";
 	my $resequence_output_dir = $output_dir."/resequence";
@@ -286,9 +273,7 @@ sub modification_provides {
 
 sub modification_requires {
     my ($self) = @_;
-    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
-    my @files = glob( $file_regex);
-    die 'no input BAM files' if(@files == 0);
+    my @files = @{$self->get_subreads_bams()};
 	push(@files, "$self->{prefix}hgap_assembly_done");
 	
 	my $assembly_file = $self->{lane_path}."/".$self->{hgap_version_str}."_assembly/contigs.fa";
@@ -304,9 +289,7 @@ sub modification {
     
     my $memory_in_mb = 10000;
     my $threads = 8;
-    my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
-    my @subread_files = glob( $file_regex);
-	my $files = join(' ', @subread_files);
+	my $files = join(' ', @{$self->get_subreads_bams()});
     my $output_dir= $self->{lane_path}."/".$self->{hgap_version_str}."_assembly";
 	my $modification_output_dir = $output_dir."/tmp_modification";
     my $queue = $self->{queue}|| "normal";
@@ -367,6 +350,15 @@ sub generate_contig_base_name
 }
 
 
+sub get_subreads_bams
+{
+	my ($self) = @_;
+	my $file_regex = $self->{lane_path}."/".'*.subreads.bam';
+	my @files = glob( $file_regex);
+	die 'no input BAM files' if(@files == 0);
+	return \@files;
+}
+
 =head2 update_db_requires
 
  Title   : update_db_requires
@@ -426,10 +418,8 @@ sub update_db {
       $vrtrack->transaction_commit();
     }
 
-    
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    
     
     my $prefix = $self->{prefix};
     # remove job files
