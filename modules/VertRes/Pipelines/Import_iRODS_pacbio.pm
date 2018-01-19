@@ -157,8 +157,24 @@ sub _output_bam_filenames {
 sub _bas_h5_filenames {
     my ($self) = @_;
     my @output_files;
-    for my $file ( @{ $self->{files} } ) {
-        next unless ( $file =~ /\.bas\.h5$/ );
+    my $file_regex = $self->{lane_path}."/".'*.bas.h5';
+    my @files = glob( $file_regex);
+	
+    for my $file ( @files ) {
+        my ( $filename, $dirs, $suffix ) = fileparse($file);
+        push( @output_files, $filename );
+    }
+    return \@output_files;
+}
+
+sub _h5_filenames {
+    my ($self) = @_;
+    my @output_files;
+	
+    my $file_regex = $self->{lane_path}."/".'*.h5';
+    my @files = glob( $file_regex);
+	
+    for my $file ( @files ) {
         my ( $filename, $dirs, $suffix ) = fileparse($file);
         push( @output_files, $filename );
     }
@@ -230,6 +246,10 @@ sub convert_bax_to_fastq {
 			remove_tree('bax2fastq');
 		}
 		
+		Utils::CMD(qq[md5sum $scraps_bam > $scraps_bam.md5]);
+		Utils::CMD(qq[md5sum $subreads_bam > $subreads_bam.md5]);
+		Utils::CMD(qq[md5sum $fastq > $fastq.md5]);
+
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
         $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
     }
@@ -359,7 +379,64 @@ sub update_db {
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
     }
+	
+	# Add the BAMs and FASTQ files to the file table	
+    for my $file ((@{$self->_output_bam_filenames()},@{$self->_output_fastq_filenames()}))
+    {
+		my($filename_base, $dirs, $suffix) = fileparse($file);
+		my $full_filename = $lane_path.'/'.$filename_base;
+		
 
+	    # The file may be absent from the database
+	    my $vrfile = $vrlane->get_file_by_name($filename_base);
+	    if ( !$vrfile ) 
+	    { 
+	        $vrfile = $vrlane->add_file($filename_base); 
+	        $vrfile->hierarchy_name($filename_base);
+	    }
+		
+		if(! defined($vrfile->md5() ))
+		{
+		    if(! -e $full_filename.'.md5')
+		    {
+		    	Utils::CMD(qq[md5sum $full_filename > $full_filename.md5]);
+		    }
+		    my ($md5) = Utils::CMD(qq[awk '{printf "%s",\$1}' $full_filename.md5]);
+			$vrfile->md5($md5);
+		}
+        $vrfile->is_processed('import',1);
+        $vrfile->update();
+		Utils::CMD(qq[rm -rf $full_filename.md5]);
+    }
+
+	# Delete the h5 files
+	for my $file (@{$self->_h5_filenames()})
+	{
+		my $full_file_path =  $lane_path.'/'.$file;
+		if(defined($file) && -e $full_file_path )
+		{
+			unlink( $full_file_path );
+		}
+		
+		my $full_file_path_md5 =  $lane_path.'/'.$file.'.md5';
+		if(defined($file) && -e $full_file_path_md5 )
+		{
+			unlink( $full_file_path_md5 );
+		}
+	}
+	
+	# Remove the h5 files from the file table
+    for my $ifile ( @{ $$self{files} } ) {
+        next if ( $ifile =~ /\.bam/ );
+        my ( $filename, $dirs, $suffix ) = fileparse($ifile);
+
+        if ( $ifile =~ m!^/seq/! ) { 
+			my $vrfile = $vrlane->get_file_by_name($ifile);
+	        $vrfile->is_latest(0);
+	        $vrfile->update();
+		}
+	}
+	
     $vrlane->is_processed( 'import', 1 );
     $vrlane->is_withdrawn(0);
     $vrlane->raw_reads($rawreads);

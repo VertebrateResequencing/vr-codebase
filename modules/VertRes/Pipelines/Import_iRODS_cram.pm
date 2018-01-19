@@ -524,7 +524,6 @@ sub update_db_master
         $vrfile->update();
     }
 
-
     # Update the lane stats
     my $read_len=0;
     my $raw_reads=0;
@@ -538,7 +537,6 @@ sub update_db_master
     $vrlane->raw_reads($raw_reads);
     $vrlane->raw_bases($raw_bases);
     $vrlane->read_len($read_len);
-
 
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.
