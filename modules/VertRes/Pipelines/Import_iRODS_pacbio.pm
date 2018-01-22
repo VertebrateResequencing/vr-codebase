@@ -265,7 +265,14 @@ sub get_files_requires {
 
 sub get_files_provides {
     my ( $self, $lane_path ) = @_;
-    return $self->_bas_h5_filenames;
+	
+	my @output_files;
+	for my $file ( @{ $self->{files} } ) {
+	    next unless ( $file =~ /\.bas\.h5$/ );
+	    my ( $filename, $dirs, $suffix ) = fileparse($file);
+	    push( @output_files, $filename );
+	}
+	return \@output_files;
 }
 
 sub get_files {
