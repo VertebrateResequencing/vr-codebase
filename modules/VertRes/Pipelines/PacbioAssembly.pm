@@ -70,6 +70,12 @@ our $actions = [
         provides => \&hgap_assembly_provides
     },
     {
+        name     => 'canu_assembly',
+        action   => \&canu_assembly,
+        requires => \&canu_assembly_requires,
+        provides => \&canu_assembly_provides
+    },
+    {
         name     => 'modification',
         action   => \&modification,
         requires => \&modification_requires,
@@ -89,6 +95,7 @@ our %options = ( bsub_opts => '' ,
 				 circlator_exec => '/software/pathogen/external/bin/circlator', # move to config files?
 				 minimap2_exec => '/software/pathogen/external/apps/usr/bin/minimap2',
 				 hgap_version_str => 'hgap_4_0',
+				 canu_version_str => 'canu_1_6',
 				 );
 				 
 sub new {
@@ -154,6 +161,111 @@ sub correct_reads {
 
     return $self->{No};
 }
+
+sub canu_assembly_provides {
+    my ($self) = @_;
+     return [$self->{lane_path}."/".$self->{canu_version_str}."_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."canu_assembly_done"];
+}
+
+sub canu_assembly_requires {
+    my ($self) = @_;
+	my @files = @{$self->get_subreads_bams()};
+	push(@files, $self->{lane_path}.'/'.$self->{vrlane}->name.'.corrected.fasta.gz');
+	
+    return \@files;
+}
+
+# Assemble with CANU
+sub canu_assembly {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $memory_in_mb = 30000;
+	my $memory_in_gb = $memory_in_mb/1000;
+    my $threads = 8;
+    my $genome_size_estimate = 8000000;
+	my $genome_size_estimate_kb = $genome_size_estimate/1000;
+	my $canu_output_dir = $self->{lane_path}.'/tmp_canu';
+
+    my $files = join(' ', @{$self->get_subreads_bams()});
+	
+    my $output_dir= $self->{lane_path}.'/canu_1_6_assembly';
+	my $resequence_output_dir = $output_dir."/resequence";
+    my $queue = $self->{queue}|| "normal";
+    my $pipeline_version = '9.0';
+    my $target_coverage = $self->{target_coverage} || 25;
+    my $umask    = $self->umask_str;
+    my $lane_name = $self->{vrlane}->name;
+    my $contigs_base_name = $self->generate_contig_base_name($lane_name);
+	my $correction_output_dir = $output_dir.'/correction';
+	my $corrected_reads = $self->{lane_path}."/$lane_name.corrected.fasta.gz";
+	
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."canu_assembly.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
+  use strict;
+  use Bio::AssemblyImprovement::Circlator::Main;
+  use Bio::AssemblyImprovement::Quiver::Main;
+  use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+  $umask
+
+  # ~~~~~ Basic HGAP assembly ~~~~~~
+  system("rm -rf $canu_output_dir");
+  system("canu -p canu -d $canu_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-corrected $corrected_fasta");
+  system("mv $canu_output_dir/canu.unitigs.fasta $self->{lane_path}/$output_dir/contigs.fa");
+  system("rm -rf $canu_output_dir");
+  
+  # ~~~~~~ Circlator ~~~~~~~
+  if(defined($self->{circularise}) && $self->{circularise} == 1) {
+        # rename contigs here so that circlator logs have final contig names
+	Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(
+                                        input_assembly => qq[$output_dir/contigs.fa],
+                                        base_contig_name => qq[$contigs_base_name])->run();
+  
+       system(qq[$self->{circlator_exec} --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
+       my \$circlator_final_file = qq[$output_dir/circularised/06.fixstart.fasta];
+    
+	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
+	if(-e \$circlator_final_file) {
+		system("rm -f $resequence_output_dir");
+		system("pacbio_smrtpipe -t $threads -r \$circlator_final_file -o $resequence_output_dir resequence $files");
+		system("sed -i -e 's/|quiver\\\$//' $resequence_output_dir/contigs.fa");
+		system(qq[mv $output_dir/contigs.fa $output_dir/canu.contigs.fa]);
+		system(qq[mv $resequence_output_dir/contigs.fa $output_dir/contigs.fa]);
+		system("rm -rf $resequence_output_dir");
+	}
+  }#end if circularised
+  
+  # map corrected reads to assembly
+  system("$self->{minimap2_exec} -ax map-pb -t $threads $output_dir/contigs.fa $lane_name.corrected.fasta.gz | $self->{samtools_htslib_exec} sort -o $output_dir/contigs.mapped.sorted.bam -");
+  system("$self->{samtools_htslib_exec} index $output_dir/contigs.mapped.sorted.bam");
+  system("$self->{samtools_htslib_exec} stats -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
+
+  system("assembly-stats $output_dir/contigs.fa  > $output_dir/contigs.fa.stats");
+  system("rm -f $output_dir/contigs.mapped.sorted.bam"); # delete BAM and BAI files to save space
+  system("rm -f $output_dir/contigs.mapped.sorted.bam.bai");
+  
+  if(not defined($self->{circularise}) || $self->{circularise} == 0) {
+	# If circularisation has not been done, rename here
+  	  Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(
+  					input_assembly => qq[$output_dir/contigs.fa],
+  					base_contig_name => qq[$contigs_base_name])->run();    		      
+  }
+  
+  # touch done file and pipeline_version_9
+  system("touch $output_dir/pipeline_version_$pipeline_version");
+  system("touch $self->{prefix}canu_assembly_done");
+  exit;
+  };
+  close $scriptfh;
+ 
+  my $job_name = $self->{prefix}.'canu_assembly';
+      
+    $self->delete_bsub_files($lane_path, $job_name);
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n$threads -q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb] span[hosts=1]'"}, qq{perl -w $script_name});
+
+    return $self->{No};
+}
+
 
 sub hgap_assembly_provides {
     my ($self) = @_;
@@ -367,7 +479,7 @@ sub get_subreads_bams
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-	my @all_assemblies = (@{$self->hgap_assembly_provides()}, @{$self->modification_provides()});
+	my @all_assemblies = (@{$self->hgap_assembly_provides()},@{$self->canu_assembly_provides()},  @{$self->modification_provides()});
     return \@all_assemblies;
 }
 
@@ -419,7 +531,7 @@ sub update_db {
     
     my $prefix = $self->{prefix};
     # remove job files
-    foreach my $file (qw( hgap_assembly correct_reads modification)) 
+    foreach my $file (qw( hgap_assembly canu_assembly correct_reads modification)) 
       {
         foreach my $suffix (qw(o e pl)) 
         {
