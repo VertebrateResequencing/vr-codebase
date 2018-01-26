@@ -64,16 +64,16 @@ our $actions = [
         provides => \&correct_reads_provides
     },
     {
-        name     => 'hgap_assembly',
-        action   => \&hgap_assembly,
-        requires => \&hgap_assembly_requires,
-        provides => \&hgap_assembly_provides
-    },
-    {
         name     => 'canu_assembly',
         action   => \&canu_assembly,
         requires => \&canu_assembly_requires,
         provides => \&canu_assembly_provides
+    },
+    {
+        name     => 'hgap_assembly',
+        action   => \&hgap_assembly,
+        requires => \&hgap_assembly_requires,
+        provides => \&hgap_assembly_provides
     },
     {
         name     => 'modification',
