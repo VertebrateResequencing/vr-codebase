@@ -210,7 +210,7 @@ sub canu_assembly {
 
   # ~~~~~ Basic HGAP assembly ~~~~~~
   system("rm -rf $canu_output_dir");
-  system("canu -p canu -d $canu_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-corrected $corrected_fasta");
+  system("canu -p canu -d $canu_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-corrected $corrected_reads");
   system("mv $canu_output_dir/canu.unitigs.fasta $self->{lane_path}/$output_dir/contigs.fa");
   system("rm -rf $canu_output_dir");
   
