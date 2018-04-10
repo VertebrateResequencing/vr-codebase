@@ -28,6 +28,19 @@ vr-codebase has the following dependencies:
 ### Required dependencies
 
  * samtools
+ * Filesys::DfPortable
+ * Filesys::DiskUsage
+ * File::Fetch
+ * File::Rsync
+ * File::Temp
+ * Net::FTP::Robust
+ * Time::Format
+ * IO::Capture::Stderr
+ * Math::Random
+ * Bio::Assembly::Improvement
+ * Bio::AutomatedAnnotation
+ * Bio::RNASeq
+ * Bio::VertRes::Permissions
 
 ### Optional dependencies
 
