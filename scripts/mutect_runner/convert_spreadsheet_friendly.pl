@@ -23,7 +23,7 @@ END
 my $f = shift @ARGV or die $help;
 
 
-my @text = ( 'ID','ID_orig','Cosmic','Cosmic_annot','SITES','TUM_TYPE','REF','ALT','MUTECT_FILTER','DP4T','TumourAltBases (Ref,Alt)','NormalAltBases (Ref,Alt)','ENS_GENEID','GENE_SYMBOL','CONSEQUENCE','AA_CHANGE','TRANSCRIPTS','TRANS_BIOTYPE','ENS_ID','Cell_line','Sample');
+my @text = ( 'ID','ID_orig','Cosmic','Cosmic_annot','SITES','TUM_TYPE','REF','ALT','MUTECT_FILTER','DP4T','TumourAltBases (Ref,Alt)','NormalAltBases (Ref,Alt)','ENS_GENEID','GENE_SYMBOL','CONSEQUENCE','AA_CHANGE','CANONICAL:','PICK','TRANSCRIPTS','TRANS_BIOTYPE','ENS_ID','Cell_line','Sample');
 my %text = map {$_=>1} @text;
 my @ind;
 open F, $f or die $!;

@@ -120,8 +120,10 @@ sub new {
 			# Other VEP options, eg --pick, --most_severe; USE WITH CAUTION, not all options
 			# are compatible with this mutect runner pipeline, eg: --tab
 			# The hard-coded options are: -t SO --format vcf --force_overwrite --buffer 20000 --offline --symbol --biotype --vcf --sift s 
-			#vep_opt => '--pick' 
+			#vep_opt => '--flag_pick_allele --canonical' 
 			chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 X Y) ],
+			# a file listing sample names to replace in the output VEP and downstream file; format: old[tab]new
+			rename => 'sanger2cgp.list',
 			##--------------------------------------------------------------------##
 
 
@@ -176,7 +178,6 @@ sub parse_args {
 	my ($self) = @_;
 	my @required = (
 		'add_DP4T',
-		'add_hgvs',
 		'bams',
 		'bcftools',
 		'bychrom',
@@ -201,7 +202,6 @@ sub parse_args {
 		'add_DP4T',
 		'remove_fail',
 		'summary_table',
-		'add_hgvs',
 	);
 	my @files = (
 		'bams',
@@ -221,7 +221,9 @@ sub parse_args {
 		'cosmic',
 		'bedtools',
 		'assembly',
-		'vep_opt'
+		'vep_opt',
+		'rename',
+		'add_hgvs',
 	);
 
     while (defined(my $arg=shift(@ARGV))) {
@@ -261,7 +263,7 @@ sub parse_args {
 		$$self{bedtools} = 'bedtools';
 	}
 	foreach my $o (@optional) {
-		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly' && $o ne 'vep_opt') {
+		if ($$self{$o} && $o ne 'biotype_filter' && $o ne 'bedtools' && $o ne 'mutect_opt' && $o ne 'assembly' && $o ne 'vep_opt' && $o ne 'add_hgvs') {
 			if ( ! -e $$self{$o} ) {
 				$self->throw("No such file $$self{$o}");
 			}
@@ -279,8 +281,11 @@ sub parse_args {
 	# add the required paths to ensembl vep modules
 	my $apidir = $$self{ensembl_api};
 	$$self{ensembl_api} .= " ";
-	foreach my $path ("/ensembl/modules/","/ensembl-compara/modules/","/ensembl-variation/modules/","/ensembl-funcgen/modules/") {
+	foreach my $path ("/ensembl/modules/","/ensembl-io/modules/","/ensembl-compara/modules/","/ensembl-variation/modules/","/ensembl-funcgen/modules/") {
 		$$self{ensembl_api} .= "-I $apidir"."$path ";
+	}
+	if (!$$self{rename}) {
+		$$self{rename} = "NA";
 	}
 
 }
@@ -344,7 +349,8 @@ sub main {
 
 
 	# optional: parse out DP4 info from mutect text output and add to vcf; remove reject calls, optional
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    # $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef ); # queue now obsolete
+    $self->set_limits( memory=>1_000, runtime=>25 );
 	if ($$self{add_DP4T} eq 'y') {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample/$sample";
@@ -401,7 +407,8 @@ sub main {
 		}
 	}
 	$self->wait;
-    $self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+    #$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef ); # queue obsolete
+    $self->set_limits( memory=>3_000, runtime=>450 );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
         for my $chr (@{$$self{chroms}}) {
@@ -411,7 +418,8 @@ sub main {
 	$self->wait;
 	# check for missing chrom files (eg: if no chrY snps, vep does not output a file!
 	# make bgzip and tabix
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    #$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    $self->set_limits( memory=>1_000, runtime=>15 );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
         for my $chr (@{$$self{chroms}}) {
@@ -420,7 +428,8 @@ sub main {
 	}
 	$self->wait;
 	# merge annotated VCFs (unfiltered)
-    $self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    #$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+    $self->set_limits( memory=>1_000, runtime=>30 );
 	foreach my $sample (sort keys %samples) {
 		my $out = "$outdir/$sample";
 		$self->spawn('concat_vcfs',"$out/all.cons.merged.vcf.gz",$out);
@@ -436,7 +445,7 @@ sub main {
 	elsif (!$$self{biotype} && $$self{conseq_list} ne 'all' && $$self{output} ne 'vcf' ) {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample";
-			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list});
+			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list},$$self{rename});
 		}
 		$self->wait;
 	}
@@ -444,7 +453,7 @@ sub main {
 	else {
 		foreach my $sample (sort keys %samples) {
 			my $out = "$outdir/$sample";
-			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list},$$self{biotype_filter});
+			$self->spawn('reformat_vcf',"$out/reformat.done","$out/all.cons.merged.vcf.gz",$$self{output},$out,$$self{add_DP4T},$$self{conseq_list},$$self{rename},$$self{biotype_filter});
 		}
 		$self->wait;
 	}
@@ -464,10 +473,12 @@ sub main {
 		#close L;
 		$self->spawn('mutectlist',$list,@mutect_list);
 		$self->wait;
-		$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+		#$self->set_limits( queue=>'normal', memory=>3_000, runtime=>undef );
+		$self->set_limits( memory=>3_000, runtime=>60 );
 		$self->spawn('summary_table_sites',"$$self{outdir}/all_sites.annot",$$self{add_DP4T},$list);
 		$self->wait;
-		$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+		#$self->set_limits( queue=>'small', memory=>1_000, runtime=>undef );
+		$self->set_limits( memory=>1_000, runtime=>25 );
         for my $chr (@{$$self{chroms}}) {
 			$self->spawn('summary_table',"$$self{outdir}/mutect_summary.$chr.txt",$chr,"$$self{outdir}/all_sites.annot",$list);
 		}
@@ -636,11 +647,11 @@ sub add_dp4 {
 	my $cmd;
 	if ($remove_reject eq 'n') {
 		# different format for version 1.1.7
-		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && bcftools annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
+		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && $$self{bcftools} annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
 	}
 	else {
 		# different format for version 1.1.7
-		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && bcftools annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin |  awk '/^#/ || \$7!~/REJECT/' | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
+		$cmd = "cut -f $contig,$pos,$strandcounts $statfile | grep -v ^contig | grep -v ^#  | sed 's/(//; s/)//' > $prefix/DP4T.annot.tab && bgzip -f $prefix/DP4T.annot.tab && tabix -f -s 1 -b 2 -e 2 $prefix/DP4T.annot.tab.gz && $$self{bcftools} annotate -a $prefix/DP4T.annot.tab.gz -c CHROM,POS,DP4T  -h $prefix/dp4header $vcfin |  awk '/^#/ || \$7!~/REJECT/' | bgzip -fc > $vcfout.tmp && tabix -f -p vcf $vcfout.tmp && rm -f $prefix/dp4header $prefix/DP4T.annot.tab*";
 	}
 	$self->cmd($cmd);
 	rename("$vcfout.tmp.tbi","$vcfout.tbi") or $self->throw("rename $vcfout.tmp.tbi $vcfout.tbi: $!"); 
@@ -681,8 +692,8 @@ sub run_vep {
 	$cmd .= "--no_stats " if $$self{vep_stats} eq 'no' || $$self{vep_stats} eq 'n' ;
 	$cmd .= "--assembly $$self{assembly} " if $$self{assembly};
 	$cmd .= " $$self{vep_opt} " if $$self{vep_opt};
-	$cmd .= "--hgvs --shift_hgvs 1 " if $$self{add_hgvs};
-	if ( $$self{vep_fasta} ) { $cmd .= " --fasta $$self{reference}"; }
+	$cmd .= "--hgvs --shift_hgvs 1 " if $$self{add_hgvs} && $$self{add_hgvs} =~ /^y/g;
+	if ( $$self{vep_fasta} ) { $cmd .= " --fasta $$self{vep_fasta}"; }
 	$self->cmd($cmd);
 	if ( -e "$vcfout.tmp") {
 		rename("$vcfout.tmp",$vcfout) or $self->throw("rename $vcfout.tmp $vcfout: $!"); 
@@ -697,7 +708,7 @@ sub check_vep {
 		system($cmd) == 0 || die "$cmd failed : $!";
 		system("touch $donefile") == 0 || die "touch $donefile failed : $!";
 	}
-	my $cmd2 = "bgzip $infile && tabix -p vcf $infile.gz";
+	my $cmd2 = "bgzip -f $infile && tabix -f -p vcf $infile.gz";
 	$self->cmd($cmd2);
 	$self->cmd("touch $outfile");
 
@@ -720,11 +731,14 @@ sub concat_vcfs {
 }
 
 sub reformat_vcf {
-	my ($self,$outfile,$vcfin,$outputformats,$outdir,$which,$conseq,$biotype) = @_;
+	my ($self,$outfile,$vcfin,$outputformats,$outdir,$which,$conseq,$rename,$biotype) = @_;
 	$which = $which eq 'y' ? 'extended' : 'default';
 	my $cmd = "zcat $vcfin | $$self{reformat_vcf} -f $conseq -m $which -o $outputformats -d $outdir ";
 	if ($biotype) {
-		$cmd .= "-b $biotype";
+		$cmd .= "-b $biotype ";
+	}
+	if ($rename ne 'NA') {
+		$cmd .= "-r $rename ";
 	}
 	$self->cmd($cmd);
 	$self->cmd("touch $outfile");
@@ -732,14 +746,21 @@ sub reformat_vcf {
 
 sub summary_table_sites {
 	my ($self,$outfile,$dp4,$list) = @_;
-	my $header = "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT";
+	#check to see if PICK added
+	my $pickcmd = "for f in `cat $list | head -n1`; do grep ^#CHR \$f | grep -w PICK; done";
+	my $canoncmd = "for f in `cat $list | head -n1`; do grep ^#CHR \$f | grep -w CANONICAL; done";
+	my $pick = `$pickcmd`;
+	my $canon = `$canoncmd`;
+	my $header = "#CHROM\tPOS\tID\tREF\tALT\tENS_ID\tGENE_SYMBOL\tCONSEQUENCE\tCDS_POS\tPROT_POS\tAA_CHANGE\tTRANSCRIPTS\tTRANS_BIOTYPE\tSIFT" ;
+	$header =~ s/AA_CHANGE/AA_CHANGE\tPICK/ if $pick;
+	$header =~ s/AA_CHANGE/AA_CHANGE\tCANONICAL/ if $canon;
 	my $cmd;
 	if ($dp4 eq 'n') {
-		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,11- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
+#		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,11- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 		$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && xargs cat < $list | grep -v ^# | cut -f 1-5,11- | sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 	}
 	else {
-		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,12- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
+#		#$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && for f in `cat $list`; do cut -f 1-5,12- \$f | grep -v ^# ; done |  sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 		$cmd = "echo -e \"$header\" > $$self{outdir}/all_sites.annot.tmp && xargs cat < $list | grep -v ^# | cut -f 1-5,12- | sort -uV >> $$self{outdir}/all_sites.annot.tmp";
 	}
 	$self->cmd($cmd);

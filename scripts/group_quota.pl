@@ -5,6 +5,7 @@ use warnings;
 use Carp;
 use Path::Class;
 use Getopt::Long;
+use POSIX;
 
 my $default_groups_file = file($ENV{CONF}, 'vertres_unix_groups.conf')->stringify;
 
@@ -27,18 +28,20 @@ sub error
         "About: Print lustre group quotas.\n",
         "Usage: group_quota.pl [OPTIONS] <lustre_disk> [...]\n",
         "Options:\n",
-        "   -g, --groups <file>              File listing unix groups for which to check quotas [$default_groups_file].\n",
-        "   -h, -?, --help                   This help message.\n",
+        "   -g, --groups <file>      File listing unix groups for which to check quotas [$default_groups_file].\n",
+        "   -u, --usage-sort <file>  Sort by disk_used rather than by percentage of disk or files used.\n",
+        "   -h, -?, --help           This help message.\n",
         "\n";
 }
 
 sub parse_params
 {
-    my $opts = {};
+    my $opts = { usage_sort => 0 };
     $$opts{groups} = file($ENV{CONF}, 'vertres_unix_groups.conf')->stringify;
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-g' || $arg eq '--groups' ) { $$opts{groups} = shift(@ARGV); next }
+        if ( $arg eq '-u' || $arg eq '--usage-sort' ) { $$opts{usage_sort} = 1; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         push @{$$opts{disks}}, $arg;
     }
@@ -80,14 +83,14 @@ sub print_quotas {
             my (undef,undef,undef,$disk_used,undef,$disk_limit,undef,undef,$files,undef,$file_limit,undef) = split /\s+/, $res;
             next unless $disk_used;
             if ($disk_limit eq "unlimited" || $file_limit eq "unlimited") {
-                $result{$group} = sprintf ("%-20s %-15s %10s       unlimited %10d       unlimited\n", $disk, $group, displayK($disk_used), $files);
-                $usage{$group} = 1000;
+                $result{$group} = sprintf ("%-20s %-16s %10s       unlimited %10d       unlimited\n", $disk, $group, displayK($disk_used), $files);
+                $usage{$group} = LONG_MAX;
             }
             else {
                 my $disk_pct = $disk_limit ? ($disk_used/$disk_limit) * 100 : 0;
                 my $file_pct = $file_limit ? ($files/$file_limit) * 100 : 0;
-                $result{$group} = sprintf ("%-20s %-15s %10s %10s %3.0f%% %10d %10d %3.0f%%\n", $disk, $group, displayK($disk_used), displayK($disk_limit), $disk_pct, $files, $file_limit, $file_pct);
-                $usage{$group} = $disk_pct > $file_pct ? $disk_pct : $file_pct;
+                $result{$group} = sprintf ("%-20s %-16s %10s %10s %3.0f%% %10d %10d %3.0f%%\n", $disk, $group, displayK($disk_used), displayK($disk_limit), $disk_pct, $files, $file_limit, $file_pct);
+                $usage{$group} = $$self{usage_sort} ? $disk_used : $disk_pct > $file_pct ? $disk_pct : $file_pct;
             }
             $disk_used_total += $disk_used;
             $disk_limit_total += $disk_limit unless ($disk_limit eq "unlimited");
@@ -100,7 +103,7 @@ sub print_quotas {
         my $disk_pct_total = $disk_limit_total ? ($disk_used_total/$disk_limit_total) * 100 : 0;
         my $file_pct_total = $file_limit_total ? ($files_total/$file_limit_total) * 100 : 0;
         print "------------------------------------------------------------------------------------------\n";
-        printf ("%-20s %-15s %10s %10s %3.0f%% %10d %10d %3.0f%%\n\n", "", "TOTAL", displayK($disk_used_total), displayK($disk_limit_total), $disk_pct_total, $files_total, $file_limit_total, $file_pct_total);
+        printf ("%-20s %-16s %10s %10s %3.0f%% %10d %10d %3.0f%%\n\n", "", "TOTAL", displayK($disk_used_total), displayK($disk_limit_total), $disk_pct_total, $files_total, $file_limit_total, $file_pct_total);
     }
 }
 
