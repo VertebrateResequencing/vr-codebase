@@ -136,8 +136,8 @@ sub correct_reads {
 	my $threads = 4;
 	my $memory_in_gb = 10;
 	my $memory_in_mb = $memory_in_gb*1000;
-	# This can be hardcoded
-	my $genome_size_estimate_kb = 8000;
+	my $genome_size_estimate = $self->{genome_size} || 4500000;
+  my $genome_size_estimate_kb = $genome_size_estimate/1000;
 	my $correction_output_dir = $self->{lane_path}.'/tmp_correction';
 	
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -182,8 +182,8 @@ sub canu_assembly {
     my $memory_in_mb = 30000;
 	my $memory_in_gb = $memory_in_mb/1000;
     my $threads = 8;
-    my $genome_size_estimate = 8000000;
-	my $genome_size_estimate_kb = $genome_size_estimate/1000;
+  my $genome_size_estimate = $self->{genome_size} || 4500000;
+  my $genome_size_estimate_kb = $genome_size_estimate/1000;
 	my $canu_output_dir = $self->{lane_path}.'/tmp_canu';
 
     my $files = join(' ', @{$self->get_subreads_bams()});
@@ -287,7 +287,7 @@ sub hgap_assembly {
     my $memory_in_mb = 40000;
 	my $memory_in_gb = $memory_in_mb/1000;
     my $threads = 12;
-    my $genome_size_estimate = $self->{genome_size} || 8000000;
+  my $genome_size_estimate = $self->{genome_size} || 4500000;
 	my $genome_size_estimate_kb = $genome_size_estimate/1000;
 
     my $files = join(' ', @{$self->get_subreads_bams()});
