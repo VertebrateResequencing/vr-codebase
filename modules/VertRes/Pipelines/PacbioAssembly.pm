@@ -222,7 +222,7 @@ sub canu_assembly {
                                         input_assembly => qq[$output_dir/contigs.fa],
                                         base_contig_name => qq[$contigs_base_name])->run();
   
-       system(qq[$self->{circlator_exec} --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
+       system(qq[$self->{circlator_exec} all --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
        my \$circlator_final_file = qq[$output_dir/circularised/06.fixstart.fasta];
     
 	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
@@ -329,7 +329,7 @@ sub hgap_assembly {
                                         input_assembly => qq[$output_dir/contigs.fa],
                                         base_contig_name => qq[$contigs_base_name])->run();
   
-       system(qq[$self->{circlator_exec} --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
+       system(qq[$self->{circlator_exec} all --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
        my \$circlator_final_file = qq[$output_dir/circularised/06.fixstart.fasta];
     
 	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
