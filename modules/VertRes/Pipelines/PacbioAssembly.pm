@@ -212,7 +212,11 @@ sub canu_assembly {
   system("rm -rf $canu_output_dir");
   system("canu -p canu -d $canu_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-corrected $corrected_reads");
   system("mkdir $output_dir");
-  system("mv $canu_output_dir/canu.unitigs.fasta $output_dir/contigs.fa");
+  system("mv $canu_output_dir/canu.contigs.fasta $output_dir/contigs.fa");
+  system("mv $canu_output_dir/canu.contigs.gfa $output_dir/contigs.gfa");
+  system("mv $canu_output_dir/canu.unitigs.fasta $output_dir/unitigs.fa");
+  system("mv $canu_output_dir/canu.unitigs.gfa $output_dir/unitigs.gfa");
+  system("mv $canu_output_dir/canu.unitigs.bed $output_dir/unitigs.bed");
   system("rm -rf $canu_output_dir");
   
   # ~~~~~~ Circlator ~~~~~~~
