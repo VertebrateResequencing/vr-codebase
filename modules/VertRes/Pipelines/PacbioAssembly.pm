@@ -136,8 +136,8 @@ sub correct_reads {
 	my $threads = 4;
 	my $memory_in_gb = 10;
 	my $memory_in_mb = $memory_in_gb*1000;
-	# This can be hardcoded
-	my $genome_size_estimate_kb = 8000;
+	my $genome_size_estimate = $self->{genome_size} || 4500000;
+  my $genome_size_estimate_kb = $genome_size_estimate/1000;
 	my $correction_output_dir = $self->{lane_path}.'/tmp_correction';
 	
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -182,8 +182,8 @@ sub canu_assembly {
     my $memory_in_mb = 30000;
 	my $memory_in_gb = $memory_in_mb/1000;
     my $threads = 8;
-    my $genome_size_estimate = 8000000;
-	my $genome_size_estimate_kb = $genome_size_estimate/1000;
+  my $genome_size_estimate = $self->{genome_size} || 4500000;
+  my $genome_size_estimate_kb = $genome_size_estimate/1000;
 	my $canu_output_dir = $self->{lane_path}.'/tmp_canu';
 
     my $files = join(' ', @{$self->get_subreads_bams()});
@@ -212,7 +212,12 @@ sub canu_assembly {
   system("rm -rf $canu_output_dir");
   system("canu -p canu -d $canu_output_dir genomeSize=${genome_size_estimate_kb}k maxMemory=${memory_in_gb}g maxThreads=${threads} -pacbio-corrected $corrected_reads");
   system("mkdir $output_dir");
-  system("mv $canu_output_dir/canu.unitigs.fasta $output_dir/contigs.fa");
+  system("mv $canu_output_dir/canu.contigs.fasta $output_dir/contigs.fa");
+  system("mv $canu_output_dir/canu.contigs.gfa $output_dir/canu.contigs.gfa");
+  system("mv $canu_output_dir/canu.unitigs.fasta $output_dir/canu.unitigs.fa");
+  system("mv $canu_output_dir/canu.unitigs.gfa $output_dir/canu.unitigs.gfa");
+  system("mv $canu_output_dir/canu.unitigs.bed $output_dir/canu.unitigs.bed");
+  system("mv $canu_output_dir/canu.unassembled.fasta $output_dir/canu.unassembled.fa");
   system("rm -rf $canu_output_dir");
   
   # ~~~~~~ Circlator ~~~~~~~
@@ -222,7 +227,7 @@ sub canu_assembly {
                                         input_assembly => qq[$output_dir/contigs.fa],
                                         base_contig_name => qq[$contigs_base_name])->run();
   
-       system(qq[$self->{circlator_exec} --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
+       system(qq[$self->{circlator_exec} all --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
        my \$circlator_final_file = qq[$output_dir/circularised/06.fixstart.fasta];
     
 	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
@@ -287,7 +292,7 @@ sub hgap_assembly {
     my $memory_in_mb = 40000;
 	my $memory_in_gb = $memory_in_mb/1000;
     my $threads = 12;
-    my $genome_size_estimate = $self->{genome_size} || 8000000;
+  my $genome_size_estimate = $self->{genome_size} || 4500000;
 	my $genome_size_estimate_kb = $genome_size_estimate/1000;
 
     my $files = join(' ', @{$self->get_subreads_bams()});
@@ -329,7 +334,7 @@ sub hgap_assembly {
                                         input_assembly => qq[$output_dir/contigs.fa],
                                         base_contig_name => qq[$contigs_base_name])->run();
   
-       system(qq[$self->{circlator_exec} --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
+       system(qq[$self->{circlator_exec} all --assembler canu $output_dir/contigs.fa $corrected_reads $output_dir/circularised]);
        my \$circlator_final_file = qq[$output_dir/circularised/06.fixstart.fasta];
     
 	# ~~~~~~ Quiver/Resequencing ~~~~~~~~~~
