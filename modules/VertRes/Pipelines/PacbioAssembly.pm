@@ -217,6 +217,7 @@ sub canu_assembly {
   system("mv $canu_output_dir/canu.unitigs.fasta $output_dir/canu.unitigs.fa");
   system("mv $canu_output_dir/canu.unitigs.gfa $output_dir/canu.unitigs.gfa");
   system("mv $canu_output_dir/canu.unitigs.bed $output_dir/canu.unitigs.bed");
+  system("mv $canu_output_dir/canu.unassembled.fasta $output_dir/canu.unassembled.fa");
   system("rm -rf $canu_output_dir");
   
   # ~~~~~~ Circlator ~~~~~~~
