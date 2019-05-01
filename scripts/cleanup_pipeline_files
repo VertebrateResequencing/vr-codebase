@@ -441,8 +441,7 @@ while (<>) {
                 my $snp_dir = $lanedir . ${mapstats_id} . '.pe.markdup.snp/';
                 next unless ( -e $snp_dir . '.snps_done' );
 
-                for my $file ( 'mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats',
-                    '.pseudo_genome.done', 'mpileup/_done' )
+                for my $file ( 'mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz.stats', '.pseudo_genome.done', 'mpileup/_done' )
                 {
                     push( @files_to_delete, $snp_dir . $file );
                 }
