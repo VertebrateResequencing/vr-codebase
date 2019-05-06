@@ -1609,7 +1609,7 @@ sub cleanup {
         Utils::CMD("rm $job_status") if (-e $job_status);
     }
 
-    for my $file ('mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz', 'mpileup.vcf.gz.tbi', 'mpileup.vcf.gz.stats', '.pseudo_genome.done')
+    for my $file ('mpileup.unfilt.vcf.gz.stats', 'mpileup.vcf.gz.stats', '.pseudo_genome.done')
 	{
 		unlink($lane_path.'/'.$file) if(-e $lane_path.'/'.$file);
 	}
