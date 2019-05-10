@@ -95,10 +95,11 @@ vrtracking_tool
               -r,   --root      <root directory for the analyses>          
                         ----------- 
               -s,   --stage     <stage of pipeline to be restarted>
-              -v,   --verbose   [be extra verbose about what it is doing, writes to log file if specified in the config file]
-              -del, --delete    [use this flag to delete database entries rather than resetting flags]
+              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
+              -del, --delete    <use this flag to delete database entries rather than resetting flags>
               -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
-              -t,   --test      [use this flag to try the tool without performing any delete/resetting operations]
+              -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
+              -t,   --test      <use this flag to try the tool without performing any delete/resetting operations>
               -h,   --help      <this message>
               
     To quit the tool, type quit (or q) on the command line.
@@ -174,8 +175,9 @@ my $reset_stage = $reset_stages{$stage};
              -s,   --stage     <stage of pipeline to be restarted>
              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
-             -f, --filter      <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
-             -p, --prefix      <filter mappings/snp_calling to this mapstats prefix>
+             -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
+             -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
+             -t,   --test      <use this flag to try the tool without performing any delete/resetting operations>
              -h,   --help      <this message>
 
   This tool is able to perform the following operations:
@@ -355,6 +357,7 @@ while (<>) {
                 {
                     $annotation_regex = 'annotate';
                 }
+                my $assemblydir = $vrdirectory . '/' . $assembler_regex . '_assembly/';
 
                 my %files_deleted = (
                     import   => [],
@@ -450,46 +453,54 @@ while (<>) {
                         "^_${annotation_regex}_annotate\_cleanup\_done\$",
                         "^_${annotation_regex}_annotate\_update\_db\_done\$",
                         "^_${annotation_regex}_annotate\_assembly\_done\$",
-                        "^${assembler_regex}_assembly\/annotation\$"
+                        "^annotation\$"
                     ],
                 );
 
                 my @files_del = $entity_op ? @{ $files_deleted{$reset_stage} } : @{ $files_deleted{$stage} };
                 my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
+                my @file_dirs = ( $file_dir );
+                if ( stage eq 'annotated' )
+                {
+                    push @file_dirs, $assemblydir;
+                }
 
                 my %allowed_processed_flags = $vrobject->allowed_processed_flags();
                 my @reset_flags             = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
                 my @reset_objects           = ($vrobject);
                 push @reset_objects, get_reset_flag_objects( $vrtrack, $reset_stage, $vrobject );
 
-                opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
-                my @current_files = readdir DIR;
-                closedir DIR;
+                foreach my $file_dir (@file_dirs)
+                {
+                    opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
+                    my @current_files = readdir DIR;
+                    closedir DIR;
 
-                #delete files on disk if found in @files_del
-                foreach my $file (@current_files) {
-                    if ( grep { $file =~ m{$_} } @files_del ) {
-                        my $filepath = File::Spec->catfile( $file_dir, $file );
-                        if ( -d $filepath ) {
-                            unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
+                    #delete files on disk if found in @files_del
+                    foreach my $file (@current_files) {
+                        if ( grep { $file =~ m{$_} } @files_del ) {
+                            my $filepath = File::Spec->catfile( $file_dir, $file );
+                            if ( -d $filepath ) {
+                                unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
 
-                            if ( $fsu->file_exists($filepath) ) {
-                                unless ($test) {
-                                    $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
-                                      or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                if ( $fsu->file_exists($filepath) ) {
+                                    unless ($test) {
+                                        $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
+                                          or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                    }
                                 }
+                                $logger->info( "Removed directory: ", $filepath );
                             }
-                            $logger->info( "Removed directory: ", $filepath );
-                        }
-                        elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
-                            unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
-                            if ( $fsu->file_exists($filepath) ) {
-                                unless ($test) {
-                                    $fsu->file_exists( $filepath, wipe_out => 1 )
-                                      or die "Unable to delete $filepath from fsu database, error = $!\n";
+                            elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
+                                unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
+                                if ( $fsu->file_exists($filepath) ) {
+                                    unless ($test) {
+                                        $fsu->file_exists( $filepath, wipe_out => 1 )
+                                          or die "Unable to delete $filepath from fsu database, error = $!\n";
+                                    }
                                 }
+                                $logger->info( "Deleted: ", $filepath );
                             }
-                            $logger->info( "Deleted: ", $filepath );
                         }
                     }
                 }
