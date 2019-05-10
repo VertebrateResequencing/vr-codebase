@@ -97,7 +97,8 @@ vrtracking_tool
               -s,   --stage     <stage of pipeline to be restarted>
               -v,   --verbose   [be extra verbose about what it is doing, writes to log file if specified in the config file]
               -del, --delete    [use this flag to delete database entries rather than resetting flags]
-              -t,   --test    [use this flag to try the tool without performing any delete/resetting operations]
+              -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
+              -t,   --test      [use this flag to try the tool without performing any delete/resetting operations]
               -h,   --help      <this message>
               
     To quit the tool, type quit (or q) on the command line.
@@ -349,6 +350,11 @@ while (<>) {
                 next if ( defined($prefix) && $prefix ne $mapping_prefix );
 
                 my $assembler_regex = $assembler || "[\\w]*";
+                my $annotation_regex = $assembler_regex . '_ann';
+                if ($assembler_regex eq 'velvet')
+                {
+                    $annotation_regex = 'annotate';
+                }
 
                 my %files_deleted = (
                     import   => [],
@@ -440,9 +446,11 @@ while (<>) {
                     ],
 
                     annotated => [
-                        "annotate\_assembly\.(e|o|pl)\$", "annotate\_cleanup\_done\$",
-                        "annotate\_update\_db\_done\$",   "annotate\_assembly\_done\$",
-                        "^${assembler_regex}_assembly\/annotation\$",
+                        "^_${annotation_regex}_annotate\_assembly\.(e|o|pl|jids)\$",
+                        "^_${annotation_regex}_annotate\_cleanup\_done\$",
+                        "^_${annotation_regex}_annotate\_update\_db\_done\$",
+                        "^_${annotation_regex}_annotate\_assembly\_done\$",
+                        "^${assembler_regex}_assembly\/annotation\$"
                     ],
                 );
 
