@@ -460,7 +460,7 @@ while (<>) {
                 my @files_del = $entity_op ? @{ $files_deleted{$reset_stage} } : @{ $files_deleted{$stage} };
                 my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
                 my @file_dirs = ( $file_dir );
-                if ( stage eq 'annotated' )
+                if ( $stage eq 'annotated' )
                 {
                     push @file_dirs, $assemblydir;
                 }
