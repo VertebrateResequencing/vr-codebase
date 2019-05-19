@@ -479,7 +479,7 @@ while (<>) {
                 foreach my $file (@current_files) {
                     $logger->info( "Checking file: ", $file );
 
-                    my $filepath = File::Spec->catfile( $file_dir, $file );
+                    my $filepath = File::Spec->catfile( $vrdirectory, $file );
                     if ( grep { $file =~ m{$_} } @files_del ) {
                         if ( -d $filepath ) {
                             unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
