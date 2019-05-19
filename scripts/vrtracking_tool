@@ -478,11 +478,15 @@ while (<>) {
                     if ( -d $filepath ) {
 
                         # Read files in this subdirectory
+                        if ($file eq "." || $file eq "..")
+                        {
+                            next;
+                        }
                         opendir DIR, $filepath or croak "cannot open dir $filepath: $!";
                         my @most_current_files = readdir DIR;
                         foreach my $most_current_file (@most_current_files)
                         {
-                            unless ($most_current_file eq '..' || $most_current_file eq '.')
+                            unless ($most_current_file eq "." || $most_current_file eq "..")
                             {
                                 push(@current_files, $file . "/" . $most_current_file);
                             }
