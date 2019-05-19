@@ -457,6 +457,7 @@ while (<>) {
                         "^_${annotation_regex}_annotate\_cleanup\_done\$",
                         "^_${annotation_regex}_annotate\_update\_db\_done\$",
                         "^_${annotation_regex}_annotate\_assembly\_done\$",
+                        "^_${annotation_regex}_job_status\$",
                         "^${assembler_regex}_assembly\/annotation\$"
                     ],
                 );
