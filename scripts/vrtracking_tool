@@ -351,9 +351,10 @@ while (<>) {
                 }
                 next if ( defined($prefix) && $prefix ne $mapping_prefix );
 
+                my $default_assembler = 'velvet'
                 my $assembler_regex = $assembler || "[\\w]*";
                 my $annotation_regex = $assembler_regex . '_ann';
-                if ($assembler_regex eq 'velvet')
+                if ($assembler_regex eq $default_assembler)
                 {
                     $annotation_regex = 'annotate';
                 }
@@ -453,54 +454,61 @@ while (<>) {
                         "^_${annotation_regex}_annotate\_cleanup\_done\$",
                         "^_${annotation_regex}_annotate\_update\_db\_done\$",
                         "^_${annotation_regex}_annotate\_assembly\_done\$",
-                        "^annotation\$"
+                        "^${assembler_regex}_assembly\/annotation\$"
                     ],
                 );
 
                 my @files_del = $entity_op ? @{ $files_deleted{$reset_stage} } : @{ $files_deleted{$stage} };
                 my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
-                my @file_dirs = ( $file_dir );
-                if ( $stage eq 'annotated' )
-                {
-                    push @file_dirs, $assemblydir;
-                }
 
                 my %allowed_processed_flags = $vrobject->allowed_processed_flags();
                 my @reset_flags             = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
                 my @reset_objects           = ($vrobject);
                 push @reset_objects, get_reset_flag_objects( $vrtrack, $reset_stage, $vrobject );
 
-                foreach my $file_dir (@file_dirs)
-                {
-                    opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
-                    my @current_files = readdir DIR;
-                    closedir DIR;
+                # Read files in top level directory
+                opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
+                my @current_files = readdir DIR;
+                closedir DIR;
 
-                    #delete files on disk if found in @files_del
-                    foreach my $file (@current_files) {
-                        if ( grep { $file =~ m{$_} } @files_del ) {
-                            my $filepath = File::Spec->catfile( $file_dir, $file );
-                            if ( -d $filepath ) {
-                                unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
+                #delete files on disk if found in @files_del
+                foreach my $file (@current_files) {
+                    $logger->info( "Checking file: ", $file );
+                    my $filepath = File::Spec->catfile( $file_dir, $file );
+                    if ( -d $filepath ) {
 
-                                if ( $fsu->file_exists($filepath) ) {
-                                    unless ($test) {
-                                        $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
-                                          or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
-                                    }
+                        # Read files in this subdirectory
+                        opendir DIR, $filepath or croak "cannot open dir $filepath: $!";
+                        my @most_current_files = readdir DIR;
+                        foreach my $most_current_file (@most_current_files)
+                        {
+                            push(@current_files, $file . "/" . $most_current_file);
+                        }
+                        closedir DIR;
+                    }
+
+                    if ( grep { $file =~ m{$_} } @files_del ) {
+                        if ( -d $filepath ) {
+
+                            unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
+
+                            if ( $fsu->file_exists($filepath) ) {
+                                unless ($test) {
+                                    $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
+                                      or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
                                 }
-                                $logger->info( "Removed directory: ", $filepath );
                             }
-                            elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
-                                unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
-                                if ( $fsu->file_exists($filepath) ) {
-                                    unless ($test) {
-                                        $fsu->file_exists( $filepath, wipe_out => 1 )
-                                          or die "Unable to delete $filepath from fsu database, error = $!\n";
-                                    }
+                            $logger->info( "Removed directory: ", $filepath );
+                        }
+                        elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
+                            unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
+                            if ( $fsu->file_exists($filepath) ) {
+                                unless ($test) {
+                                    $fsu->file_exists( $filepath, wipe_out => 1 )
+                                      or die "Unable to delete $filepath from fsu database, error = $!\n";
                                 }
-                                $logger->info( "Deleted: ", $filepath );
                             }
+                            $logger->info( "Deleted: ", $filepath );
                         }
                     }
                 }
