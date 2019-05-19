@@ -411,36 +411,35 @@ while (<>) {
                     all => ["^[\\w]+"],
 
                     assembled => [    #Files from pool fastqs stage
-                        "_${assembler_regex}_pool_fastqs_done",
-                        "_${assembler_regex}_pool_fastqs\.(e|o|pl)",
+                        "^_${assembler_regex}_pool_fastqs_done\$",
+                        "^_${assembler_regex}_pool_fastqs\.(e|o|pl)\$",
                         "^pool_1\.fastq\.gz\$",
-                        "_${assembler_regex}_pool_fastq_tmp_files",
+                        "^_${assembler_regex}_pool_fastq_tmp_files\$",
 
                         #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
-                        "_${assembler_regex}_optimise_parameters\.(e|o|pl)",
-                        "_${assembler_regex}_optimise_parameters_done",
-                        "${assembler_regex}_assembly_logfile\.txt\$",
-                        "optimise_parameters\.jids\$",
-                        "${assembler_regex}_assembly",
+                        "^_${assembler_regex}_optimise_parameters\.(e|o|pl|jids)\$",
+                        "^_${assembler_regex}_optimise_parameters_done\$",
+                        "^${assembler_regex}_assembly_logfile\.txt\$",
+                        "^${assembler_regex}_assembly\$",
                         "^forward\.fastq\$",
                         "^reverse\.fastq\$",
 
                         #Files from map back stage
-                        "${assembler_regex}_map_back\.(e|o|pl|jids)",
-                        "${assembler_regex}_map_back_done",
+                        "^${assembler_regex}_map_back\.(e|o|pl|jids)\$",
+                        "^${assembler_regex}_map_back_done\$",
 
                         #Files from update db and clean up stages
-                        "${assembler_regex}_assembly_cleanup_done\$",
-                        "${assembler_regex}_assembly_update_db_done\$",
+                        "^${assembler_regex}_assembly_cleanup_done\$",
+                        "^${assembler_regex}_assembly_update_db_done\$",
                         "^_assembly_job_status\$",
-                        "_${assembler_regex}_job_status\$",
+                        "^_${assembler_regex}_job_status\$",
 
                         # Done/failed files from circularisation & pacbio assembly
                         "${assembler_regex}_circlator_failed\$",
                         "${assembler_regex}_quiver_failed\$",
                         "${assembler_regex}_circularise_done\$",
                         "${assembler_regex}_pacbio_assembly_done\$",
-                        "${assembler_regex}_pacbio_assembly\.(e|o|pl|jids)",
+                        "${assembler_regex}_pacbio_assembly\.(e|o|pl|jids)\$",
 
                         # Done/failed files from iva_qc
                         "${assembler_regex}_iva_qc_failed\$",
@@ -477,7 +476,6 @@ while (<>) {
 
                 #delete files on disk if found in @files_del
                 foreach my $file (@current_files) {
-                    $logger->info( "Checking file: ", $file );
 
                     my $filepath = File::Spec->catfile( $vrdirectory, $file );
                     if ( grep { $file =~ m{$_} } @files_del ) {
