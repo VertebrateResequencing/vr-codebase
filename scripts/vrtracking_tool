@@ -431,8 +431,7 @@ while (<>) {
                         #Files from update db and clean up stages
                         "^_${assembler_regex}_assembly_cleanup_done\$",
                         "^_${assembler_regex}_assembly_update_db_done\$",
-                        "^_assembly_job_status\$",
-                        "^_${assembler_regex}_job_status\$",
+                        "^_${assembler_regex}_assembly_job_status\$",
 
                         # Done/failed files from circularisation & pacbio assembly
                         "${assembler_regex}_circlator_failed\$",
