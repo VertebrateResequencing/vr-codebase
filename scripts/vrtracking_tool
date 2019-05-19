@@ -351,7 +351,7 @@ while (<>) {
                 }
                 next if ( defined($prefix) && $prefix ne $mapping_prefix );
 
-                my $default_assembler = 'velvet'
+                my $default_assembler = 'velvet';
                 my $assembler_regex = $assembler || "[\\w]*";
                 my $annotation_regex = $assembler_regex . '_ann';
                 if ($assembler_regex eq $default_assembler)
