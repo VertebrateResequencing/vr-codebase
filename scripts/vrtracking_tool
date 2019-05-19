@@ -353,19 +353,24 @@ while (<>) {
 
                 my $default_assembler = 'velvet';
                 my $assembler_regex = $assembler || "[\\w]*";
-                my $annotation_regex = $assembler_regex . '_ann';
+                my $annotation_regex = "([\\w]*_ann|annotate)";
                 if ($assembler_regex eq $default_assembler)
                 {
                     $annotation_regex = 'annotate';
                 }
-                my $assemblydir = $vrdirectory . '/' . $assembler_regex . '_assembly/';
+                elsif ($assembler)
+                {
+                    $annotation_regex = $assembler_regex . '_ann';
+                }
 
                 my %files_deleted = (
                     import   => [],
                     qc       => ["^qc-sample\$"],
                     genotype => [
-                        "^$vrinput\.gtype\$",   "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$",
-                        "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"
+                        "^$qcdir\/$vrinput\.gtype\$",
+                        "^$qcdir\/$vrinput\.gtype(x|y)\$",
+                        "^$qcdir\/$vrinput\.glf\$",
+                        "^$qcdir\/_$vrinput\_glf\.(o|e)\$"
                     ],
                     improved => [
                         "^${mapstats_id}\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$",
@@ -459,7 +464,6 @@ while (<>) {
                 );
 
                 my @files_del = $entity_op ? @{ $files_deleted{$reset_stage} } : @{ $files_deleted{$stage} };
-                my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
 
                 my %allowed_processed_flags = $vrobject->allowed_processed_flags();
                 my @reset_flags             = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
@@ -467,36 +471,17 @@ while (<>) {
                 push @reset_objects, get_reset_flag_objects( $vrtrack, $reset_stage, $vrobject );
 
                 # Read files in top level directory
-                opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
+                opendir DIR, $vrdirectory or croak "cannot open dir $vrdirectory: $!";
                 my @current_files = readdir DIR;
                 closedir DIR;
 
                 #delete files on disk if found in @files_del
                 foreach my $file (@current_files) {
                     $logger->info( "Checking file: ", $file );
+
                     my $filepath = File::Spec->catfile( $file_dir, $file );
-                    if ( -d $filepath ) {
-
-                        # Read files in this subdirectory
-                        if ($file eq "." || $file eq "..")
-                        {
-                            next;
-                        }
-                        opendir DIR, $filepath or croak "cannot open dir $filepath: $!";
-                        my @most_current_files = readdir DIR;
-                        foreach my $most_current_file (@most_current_files)
-                        {
-                            unless ($most_current_file eq "." || $most_current_file eq "..")
-                            {
-                                push(@current_files, $file . "/" . $most_current_file);
-                            }
-                        }
-                        closedir DIR;
-                    }
-
                     if ( grep { $file =~ m{$_} } @files_del ) {
                         if ( -d $filepath ) {
-
                             unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
 
                             if ( $fsu->file_exists($filepath) ) {
@@ -517,6 +502,25 @@ while (<>) {
                             }
                             $logger->info( "Deleted: ", $filepath );
                         }
+                    }
+
+                    if ( -d $filepath ) {
+
+                        # Read files in this subdirectory and add them to the list
+                        if ($file eq "." || $file eq "..")
+                        {
+                            next;
+                        }
+                        opendir DIR, $filepath or croak "cannot open dir $filepath: $!";
+                        my @most_current_files = readdir DIR;
+                        foreach my $most_current_file (@most_current_files)
+                        {
+                            unless ($most_current_file eq "." || $most_current_file eq "..")
+                            {
+                                push(@current_files, $file . "/" . $most_current_file);
+                            }
+                        }
+                        closedir DIR;
                     }
                 }
 
