@@ -472,7 +472,7 @@ while (<>) {
                 # Read files in top level directory
                 opendir DIR, $vrdirectory or croak "cannot open dir $vrdirectory: $!";
                 my @current_files = readdir DIR;
-                closedir DIR;
+                closedir DIR || die "error whilst reading $vrdirectory: S!";
 
                 #delete files on disk if found in @files_del
                 foreach my $file (@current_files) {
@@ -518,7 +518,7 @@ while (<>) {
                                 push(@current_files, $file . "/" . $most_current_file);
                             }
                         }
-                        closedir DIR;
+                        closedir DIR || die "error whilst reading $filepath: S!";
                     }
                 }
 
