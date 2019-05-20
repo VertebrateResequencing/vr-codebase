@@ -411,14 +411,14 @@ while (<>) {
                     all => ["^[\\w]+"],
 
                     assembled => [    #Files from pool fastqs stage
-                        "^_${assembler_regex}_pool_fastqs_done\$",
-                        "^_${assembler_regex}_pool_fastqs\.(e|o|pl)\$",
+                        "^(_${assembler_regex})+_pool_fastqs_done\$",
+                        "^(_${assembler_regex})+_pool_fastqs\.(e|o|pl)\$",
                         "^pool_1\.fastq\.gz\$",
-                        "^_${assembler_regex}_pool_fastq_tmp_files\$",
+                        "^(_${assembler_regex})+_pool_fastq_tmp_files\$",
 
                         #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
-                        "^_${assembler_regex}_optimise_parameters\.(e|o|pl|jids)\$",
-                        "^_${assembler_regex}_optimise_parameters_done\$",
+                        "^(_${assembler_regex})+_optimise_parameters\.(e|o|pl|jids)\$",
+                        "^(_${assembler_regex})+_optimise_parameters_done\$",
                         "^${assembler_regex}_assembly_logfile\.txt\$",
                         "^${assembler_regex}_assembly\$",
                         "^forward\.fastq\$",
