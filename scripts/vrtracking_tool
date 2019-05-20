@@ -432,6 +432,7 @@ while (<>) {
                         "^_${assembler_regex}_assembly_cleanup_done\$",
                         "^_${assembler_regex}_assembly_update_db_done\$",
                         "^_${assembler_regex}_assembly_job_status\$",
+                        "^_${assembler_regex}_job_status\$",
 
                         # Done/failed files from circularisation & pacbio assembly
                         "${assembler_regex}_circlator_failed\$",
