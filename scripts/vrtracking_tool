@@ -95,9 +95,11 @@ vrtracking_tool
               -r,   --root      <root directory for the analyses>          
                         ----------- 
               -s,   --stage     <stage of pipeline to be restarted>
-              -v,   --verbose   [be extra verbose about what it is doing, writes to log file if specified in the config file]
-              -del, --delete    [use this flag to delete database entries rather than resetting flags]
-              -t,   --test    [use this flag to try the tool without performing any delete/resetting operations]
+              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
+              -del, --delete    <use this flag to delete database entries rather than resetting flags>
+              -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
+              -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
+              -t,   --test      <use this flag to try the tool without performing any delete/resetting operations>
               -h,   --help      <this message>
               
     To quit the tool, type quit (or q) on the command line.
@@ -173,8 +175,9 @@ my $reset_stage = $reset_stages{$stage};
              -s,   --stage     <stage of pipeline to be restarted>
              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
-             -f, --filter      <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
-             -p, --prefix      <filter mappings/snp_calling to this mapstats prefix>
+             -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
+             -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
+             -t,   --test      <use this flag to try the tool without performing any delete/resetting operations>
              -h,   --help      <this message>
 
   This tool is able to perform the following operations:
@@ -348,14 +351,26 @@ while (<>) {
                 }
                 next if ( defined($prefix) && $prefix ne $mapping_prefix );
 
-                my $assembler_regex = $assembler || "[\\w]*";
+                my $default_assembler = 'velvet';
+                my $assembler_regex = $assembler || "[[:alpha:]]*";
+                my $annotation_regex = "([[:alpha:]]*_ann|annotate)";
+                if ($assembler_regex eq $default_assembler)
+                {
+                    $annotation_regex = 'annotate';
+                }
+                elsif ($assembler)
+                {
+                    $annotation_regex = $assembler_regex . '_ann';
+                }
 
                 my %files_deleted = (
                     import   => [],
                     qc       => ["^qc-sample\$"],
                     genotype => [
-                        "^$vrinput\.gtype\$",   "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$",
-                        "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"
+                        "^$qcdir\/$vrinput\.gtype\$",
+                        "^$qcdir\/$vrinput\.gtype(x|y)\$",
+                        "^$qcdir\/$vrinput\.glf\$",
+                        "^$qcdir\/_$vrinput\_glf\.(o|e)\$"
                     ],
                     improved => [
                         "^${mapstats_id}\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$",
@@ -396,36 +411,34 @@ while (<>) {
                     all => ["^[\\w]+"],
 
                     assembled => [    #Files from pool fastqs stage
-                        "_${assembler_regex}_pool_fastqs_done",
-                        "_${assembler_regex}_pool_fastqs\.(e|o|pl)",
+                        "^_${assembler_regex}_pool_fastqs_done\$",
+                        "^_${assembler_regex}_pool_fastqs\.(e|o|pl)\$",
                         "^pool_1\.fastq\.gz\$",
-                        "_${assembler_regex}_pool_fastq_tmp_files",
+                        "^_${assembler_regex}_pool_fastq_tmp_files\$",
 
                         #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
-                        "_${assembler_regex}_optimise_parameters\.(e|o|pl)",
-                        "_${assembler_regex}_optimise_parameters_done",
-                        "${assembler_regex}_assembly_logfile\.txt\$",
-                        "optimise_parameters\.jids\$",
-                        "${assembler_regex}_assembly",
+                        "^_${assembler_regex}_optimise_parameters\.(e|o|pl|jids)\$",
+                        "^_${assembler_regex}_optimise_parameters_done\$",
+                        "^${assembler_regex}_assembly_logfile\.txt\$",
+                        "^${assembler_regex}_assembly\$",
                         "^forward\.fastq\$",
                         "^reverse\.fastq\$",
 
                         #Files from map back stage
-                        "${assembler_regex}_map_back\.(e|o|pl|jids)",
-                        "${assembler_regex}_map_back_done",
+                        "^${assembler_regex}_map_back\.(e|o|pl|jids)\$",
+                        "^${assembler_regex}_map_back_done\$",
 
                         #Files from update db and clean up stages
-                        "${assembler_regex}_assembly_cleanup_done\$",
-                        "${assembler_regex}_assembly_update_db_done\$",
-                        "^_assembly_job_status\$",
-                        "_${assembler_regex}_job_status\$",
+                        "^_${assembler_regex}_assembly_cleanup_done\$",
+                        "^_${assembler_regex}_assembly_update_db_done\$",
+                        "^_${assembler_regex}_assembly_job_status\$",
 
                         # Done/failed files from circularisation & pacbio assembly
                         "${assembler_regex}_circlator_failed\$",
                         "${assembler_regex}_quiver_failed\$",
                         "${assembler_regex}_circularise_done\$",
                         "${assembler_regex}_pacbio_assembly_done\$",
-                        "${assembler_regex}_pacbio_assembly\.(e|o|pl|jids)",
+                        "${assembler_regex}_pacbio_assembly\.(e|o|pl|jids)\$",
 
                         # Done/failed files from iva_qc
                         "${assembler_regex}_iva_qc_failed\$",
@@ -440,28 +453,32 @@ while (<>) {
                     ],
 
                     annotated => [
-                        "annotate\_assembly\.(e|o|pl)\$", "annotate\_cleanup\_done\$",
-                        "annotate\_update\_db\_done\$",   "annotate\_assembly\_done\$",
-                        "^${assembler_regex}_assembly\/annotation\$",
+                        "^_${annotation_regex}_annotate\_assembly\.(e|o|pl|jids)\$",
+                        "^_${annotation_regex}_annotate\_cleanup\_done\$",
+                        "^_${annotation_regex}_annotate\_update\_db\_done\$",
+                        "^_${annotation_regex}_annotate\_assembly\_done\$",
+                        "^_${annotation_regex}_job_status\$",
+                        "^${assembler_regex}_assembly\/annotation\$"
                     ],
                 );
 
                 my @files_del = $entity_op ? @{ $files_deleted{$reset_stage} } : @{ $files_deleted{$stage} };
-                my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
 
                 my %allowed_processed_flags = $vrobject->allowed_processed_flags();
                 my @reset_flags             = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
                 my @reset_objects           = ($vrobject);
                 push @reset_objects, get_reset_flag_objects( $vrtrack, $reset_stage, $vrobject );
 
-                opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
+                # Read files in top level directory
+                opendir DIR, $vrdirectory or croak "cannot open dir $vrdirectory: $!";
                 my @current_files = readdir DIR;
-                closedir DIR;
+                closedir DIR || die "error whilst reading $vrdirectory: S!";
 
                 #delete files on disk if found in @files_del
                 foreach my $file (@current_files) {
+
+                    my $filepath = File::Spec->catfile( $vrdirectory, $file );
                     if ( grep { $file =~ m{$_} } @files_del ) {
-                        my $filepath = File::Spec->catfile( $file_dir, $file );
                         if ( -d $filepath ) {
                             unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
 
@@ -483,6 +500,25 @@ while (<>) {
                             }
                             $logger->info( "Deleted: ", $filepath );
                         }
+                    }
+
+                    if ( -d $filepath ) {
+
+                        # Read files in this subdirectory and add them to the list
+                        if ($file eq "." || $file eq "..")
+                        {
+                            next;
+                        }
+                        opendir DIR, $filepath or croak "cannot open dir $filepath: $!";
+                        my @most_current_files = readdir DIR;
+                        foreach my $most_current_file (@most_current_files)
+                        {
+                            unless ($most_current_file eq "." || $most_current_file eq "..")
+                            {
+                                push(@current_files, $file . "/" . $most_current_file);
+                            }
+                        }
+                        closedir DIR || die "error whilst reading $filepath: S!";
                     }
                 }
 
