@@ -484,8 +484,10 @@ while (<>) {
 
                             if ( $fsu->file_exists($filepath) ) {
                                 unless ($test) {
-                                    $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
-                                      or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                    if ($fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 ) != 0)
+                                    {
+                                        die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                    }
                                 }
                             }
                             $logger->info( "Removed directory: ", $filepath );
@@ -494,8 +496,10 @@ while (<>) {
                             unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
                             if ( $fsu->file_exists($filepath) ) {
                                 unless ($test) {
-                                    $fsu->file_exists( $filepath, wipe_out => 1 )
-                                      or die "Unable to delete $filepath from fsu database, error = $!\n";
+                                    if ($fsu->file_exists( $filepath, wipe_out => 1 ) != 0)
+                                    {
+                                        die "Unable to delete $filepath from fsu database, error = $!\n";
+                                    }
                                 }
                             }
                             $logger->info( "Deleted: ", $filepath );
