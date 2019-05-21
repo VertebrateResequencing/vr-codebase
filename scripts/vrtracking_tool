@@ -411,14 +411,14 @@ while (<>) {
                     all => ["^[\\w]+"],
 
                     assembled => [    #Files from pool fastqs stage
-                        "^_${assembler_regex}_pool_fastqs_done\$",
-                        "^_${assembler_regex}_pool_fastqs\.(e|o|pl)\$",
+                        "^(_${assembler_regex})+_pool_fastqs_done\$",
+                        "^(_${assembler_regex})+_pool_fastqs\.(e|o|pl)\$",
                         "^pool_1\.fastq\.gz\$",
-                        "^_${assembler_regex}_pool_fastq_tmp_files\$",
+                        "^(_${assembler_regex})+_pool_fastq_tmp_files\$",
 
                         #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
-                        "^_${assembler_regex}_optimise_parameters\.(e|o|pl|jids)\$",
-                        "^_${assembler_regex}_optimise_parameters_done\$",
+                        "^(_${assembler_regex})+_optimise_parameters\.(e|o|pl|jids)\$",
+                        "^(_${assembler_regex})+_optimise_parameters_done\$",
                         "^${assembler_regex}_assembly_logfile\.txt\$",
                         "^${assembler_regex}_assembly\$",
                         "^forward\.fastq\$",
@@ -432,6 +432,7 @@ while (<>) {
                         "^_${assembler_regex}_assembly_cleanup_done\$",
                         "^_${assembler_regex}_assembly_update_db_done\$",
                         "^_${assembler_regex}_assembly_job_status\$",
+                        "^_${assembler_regex}_job_status\$",
 
                         # Done/failed files from circularisation & pacbio assembly
                         "${assembler_regex}_circlator_failed\$",
@@ -484,8 +485,10 @@ while (<>) {
 
                             if ( $fsu->file_exists($filepath) ) {
                                 unless ($test) {
-                                    $fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 )
-                                      or die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                    if ($fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 ) != 0)
+                                    {
+                                        die "Unable to delete the directory $filepath from fsu database, error = $!\n";
+                                    }
                                 }
                             }
                             $logger->info( "Removed directory: ", $filepath );
@@ -494,8 +497,10 @@ while (<>) {
                             unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
                             if ( $fsu->file_exists($filepath) ) {
                                 unless ($test) {
-                                    $fsu->file_exists( $filepath, wipe_out => 1 )
-                                      or die "Unable to delete $filepath from fsu database, error = $!\n";
+                                    if ($fsu->file_exists( $filepath, wipe_out => 1 ) != 0)
+                                    {
+                                        die "Unable to delete $filepath from fsu database, error = $!\n";
+                                    }
                                 }
                             }
                             $logger->info( "Deleted: ", $filepath );
