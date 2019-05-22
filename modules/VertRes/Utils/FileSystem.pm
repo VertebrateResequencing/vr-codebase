@@ -784,11 +784,16 @@ sub file_exists {
     
     if ($opts{wipe_out}) {
         if ($opts{recurse}) {
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/.*'});
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/?\$'});
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path LIKE '$file/%'});
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path = '$file'});
         }
         else {
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash=? AND path=?},undef,$md5,$file);
+            if ($opts{check_path}) {
+                $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path = ?},undef,$file);
+            }
+            else {
+                $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash = ? AND path = ?},undef,$md5,$file);
+            }
         }
         if ( $$self{reconnect_db} )
         {
@@ -805,8 +810,14 @@ sub file_exists {
     
     # check the db
     unless ($opts{force_check}) {
-        my $sql = qq{select * from `file_status` where `hash` = ?};
-        my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
+        if ($opts{check_path}) {
+            my $sql = qq{select * from `file_status` where `path` = ?};
+            my @row = $file_exists_dbh->selectrow_array($sql, undef, $file);
+        }
+        else {
+            my $sql = qq{select * from `file_status` where `hash` = ?};
+            my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
+        }
         if (@row) {
             if ($row[2] && $row[2] == 1) {
                 if ( $$self{reconnect_db} )
