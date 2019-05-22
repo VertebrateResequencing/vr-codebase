@@ -345,12 +345,8 @@ while (<>) {
             }
 
             for my $mapstats_id (@mapping_ids) {
-                my $mapping_prefix = '[0-9_]+';
-                if ( defined( $mapstats_id_to_obj{$mapstats_id} ) ) {
-                    $mapping_prefix = $mapstats_id_to_obj{$mapstats_id}->prefix;
-                }
-                next if ( defined($prefix) && $prefix ne $mapping_prefix );
 
+                my $mapping_prefix = $prefix || '[0-9_]+';
                 my $default_assembler = 'velvet';
                 my $assembler_regex = $assembler || "[[:alpha:]]*";
                 my $annotation_regex = "([[:alpha:]]*_ann|annotate)";
