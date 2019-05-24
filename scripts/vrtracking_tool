@@ -485,7 +485,7 @@ while (<>) {
 
                             if ( $fsu->file_exists($filepath, check_path => 1) ) {
                                 unless ($test) {
-                                    if ($fsu->file_exists( $filepath, recurse => 1, wipe_out => 1, check_path => 1 ) != 0)
+                                    if ($fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 ) != 0)
                                     {
                                         die "Unable to delete the directory $filepath from fsu database, error = $!\n";
                                     }
@@ -497,7 +497,7 @@ while (<>) {
                             unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
                             if ( $fsu->file_exists($filepath, check_path => 1) ) {
                                 unless ($test) {
-                                    if ($fsu->file_exists( $filepath, wipe_out => 1, check_path => 1 ) != 0)
+                                    if ($fsu->file_exists( $filepath, wipe_out => 1 ) != 0)
                                     {
                                         die "Unable to delete $filepath from fsu database, error = $!\n";
                                     }
