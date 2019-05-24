@@ -73,7 +73,7 @@ vrtracking_tool
                root    => '/lustre/scratch101/sanger/jm23/TRACKING/',
                db      => 'vrtrack_jm23_neuro',
                [log     => '/lustre/scratch105/log/vrtracking_tool-jm23_neuro.log',] -> optional
-    (If the -v or --verbose flag is used, the information concerning the files/directories deleted and the 
+    (Unless the -q or --quiet flag is used, the information concerning the files/directories deleted and the 
     database objects deleted/flags reset will be written to the log file if specified in the config file.)
  
   NOTE- the tool currently uses names for lanes and studies, hierarchy names for libraries, but only id numbers for samples, 
@@ -95,7 +95,7 @@ vrtracking_tool
               -r,   --root      <root directory for the analyses>          
                         ----------- 
               -s,   --stage     <stage of pipeline to be restarted>
-              -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
+              -q,   --quiet     <suppress output to stdout/logfile>
               -del, --delete    <use this flag to delete database entries rather than resetting flags>
               -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
               -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
@@ -124,7 +124,7 @@ use VRTrack::Lane;
 use Carp;
 use VertRes::Utils::FileSystem;
 
-my ( $config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test, $reference, $prefix, $assembler, $filter );
+my ( $config, $config_data, $stage, $help, $delete, $quiet, $root, $db, $test, $reference, $prefix, $assembler, $filter );
 
 #values for $stage that involve *resetting* db flags and file deletion
 my @stages = ( 'import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped', 'rna_seq_expression', 'annotated' );
@@ -147,7 +147,7 @@ GetOptions(
     'r|root=s'   => \$root,
     's|stage=s'  => \$stage,
     'del|delete' => \$delete,
-    'v|verbose'  => \$verbose,
+    'q|quiet'    => \$quiet,
     't|test'     => \$test,
     'f|filter=s' => \$filter,
     'p|prefix=s' => \$prefix,
@@ -173,7 +173,7 @@ my $reset_stage = $reset_stages{$stage};
              -r,   --root      <root directory for the analyses>
                         -----------
              -s,   --stage     <stage of pipeline to be restarted>
-             -v,   --verbose   <be extra verbose about what it is doing, writes to log file if specified in the config file>
+             -q,   --quiet     <suppress output to stdout/logfile>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
              -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
              -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
@@ -214,6 +214,7 @@ Examples:
 
 USAGE
 
+my $verbose = !$quiet
 $verbose ? Log::Log4perl->easy_init($INFO) : Log::Log4perl->easy_init($ERROR);
 my $logger = get_logger();
 
