@@ -484,7 +484,7 @@ while (<>) {
                         if ( -d $filepath ) {
                             unless ($test) { remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n" }
 
-                            if ( $fsu->file_exists($filepath, check_path => 1) ) {
+                            if ( $fsu->file_exists($filepath) ) {
                                 unless ($test) {
                                     if ($fsu->file_exists( $filepath, recurse => 1, wipe_out => 1 ) != 0)
                                     {
@@ -496,7 +496,7 @@ while (<>) {
                         }
                         elsif ( -e $filepath || ( !-e $filepath && -l $filepath ) ) {
                             unless ($test) { unlink $filepath or die "Unable to delete $filepath, error = $!\n" }
-                            if ( $fsu->file_exists($filepath, check_path => 1) ) {
+                            if ( $fsu->file_exists($filepath) ) {
                                 unless ($test) {
                                     if ($fsu->file_exists( $filepath, wipe_out => 1 ) != 0)
                                     {
