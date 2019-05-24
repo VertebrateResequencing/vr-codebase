@@ -258,7 +258,7 @@ if ( $delete && !$entity_op ) {
 }
 
 if ( defined($filter) ) {
-    if ( $stage eq 'mapped' || $stage eq 'snp_called' ) {
+    if ( $stage eq 'mapped' || $stage eq 'snp_called' || $stage eq 'rna_seq_expression' ) {
         $reference = $filter;
     }
     elsif ( $stage eq 'assembled' || $stage eq 'annotated' ) {
@@ -345,11 +345,9 @@ while (<>) {
             }
 
             for my $mapstats_id (@mapping_ids) {
-                my $mapping_prefix = '[0-9_]+';
-                if ( defined( $mapstats_id_to_obj{$mapstats_id} ) ) {
-                    $mapping_prefix = $mapstats_id_to_obj{$mapstats_id}->prefix;
-                }
-                next if ( defined($prefix) && $prefix ne $mapping_prefix );
+
+                next if ( defined($prefix) && defined($mapstats_id_to_obj{$mapstats_id}) && $prefix ne $mapstats_id_to_obj{$mapstats_id}->prefix );
+                my $mapping_prefix = $prefix || '[0-9_]+';
 
                 my $default_assembler = 'velvet';
                 my $assembler_regex = $assembler || "[[:alpha:]]*";
@@ -446,13 +444,16 @@ while (<>) {
                         "${assembler_regex}_iva_qc_done\$",
                     ],
                     rna_seq_expression => [
-                        "\.intergenic\.",               "calculate\_expression",
-                        "\.coverageplot\.gz\$",         "\.expression\.csv\$",
-                        "rna\_seq\_update\_db\_done\$", "rna\_seq\_cleanup\_done\$",
-                        "\.corrected\.bam\.bai\$",      "\.corrected\.bam\$",
-                        "\.featurecounts.csv\$",        "\.featurecounts.csv.summary\$"
+                        "^${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\.corrected\.bam",
+                        "^${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\.expression\.csv\$",
+                        "^${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\.featurecounts.csv",
+                        "^${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam.*\.coverageplot\.gz",
+                        "^${mapping_prefix}${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\_calculate\_expression\.(e|o|pl)\$",
+                        "^${mapping_prefix}${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\_calculate\_expression_done\$",
+                        "^${mapping_prefix}calculate\_expression\.jids\$",
+                        "^${mapping_prefix}rna\_seq\_update\_db\_done\$",
+                        "^${mapping_prefix}rna\_seq\_cleanup\_done\$"
                     ],
-
                     annotated => [
                         "^_${annotation_regex}_annotate\_assembly\.(e|o|pl|jids)\$",
                         "^_${annotation_regex}_annotate\_cleanup\_done\$",
