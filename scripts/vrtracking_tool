@@ -98,7 +98,7 @@ vrtracking_tool
               -q,   --quiet     <suppress output to stdout/logfile>
               -del, --delete    <use this flag to delete database entries rather than resetting flags>
               -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
-              -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
+              -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix - WARNING: This doesn't work reliably for all data>
               -t,   --test      <use this flag to try the tool without performing any delete/resetting operations>
               -h,   --help      <this message>
               
@@ -176,7 +176,7 @@ my $reset_stage = $reset_stages{$stage};
              -q,   --quiet     <suppress output to stdout/logfile>
              -del, --delete    <use this flag to delete database entries rather than resetting flags>
              -f,   --filter    <filter by reference (mapping/snpcalling) or by assemblier (annotation/assembly)>
-             -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix>
+             -p,   --prefix    <filter mappings/snp_calling to this mapstats prefix - WARNING: This doesn't work reliably for all data>
              -t,   --test      <use this flag to try the tool without performing any delete/resetting operations>
              -h,   --help      <this message>
 
