@@ -784,11 +784,11 @@ sub file_exists {
     
     if ($opts{wipe_out}) {
         if ($opts{recurse}) {
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/.*'});
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/?\$'});
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path LIKE ?}, undef, $file . '/%'});
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path = ?}, undef, $file);
         }
         else {
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash=? AND path=?},undef,$md5,$file);
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path = ?}, undef, $file);
         }
         if ( $$self{reconnect_db} )
         {
@@ -805,8 +805,8 @@ sub file_exists {
     
     # check the db
     unless ($opts{force_check}) {
-        my $sql = qq{select * from `file_status` where `hash` = ?};
-        my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
+        my $sql = qq{select * from `file_status` where `path` = ?};
+        my @row = $file_exists_dbh->selectrow_array($sql, undef, $file);
         if (@row) {
             if ($row[2] && $row[2] == 1) {
                 if ( $$self{reconnect_db} )
@@ -832,9 +832,9 @@ sub file_exists {
     # check the disk
     my $exists = -e $file ? 1 : 0;
     
-    # store result in db
-    my $sql = qq{insert into `file_status` (hash,path,status) values (?,?,?) ON DUPLICATE KEY UPDATE `status`=?};
-    $file_exists_dbh->do($sql, undef, $md5, $file, $exists, $exists) || $self->throw($file_exists_dbh->errstr);
+    # if we got to this stage, the file isn't stored in the db. Do so now. If the hash already exists for whatever reason, reuse it.
+    my $sql = qq{insert into `file_status` (hash,path,status) values (?,?,?) ON DUPLICATE KEY UPDATE `path`=?, `status`=?};
+    $file_exists_dbh->do($sql, undef, $md5, $file, $exists, $file, $exists) || $self->throw($file_exists_dbh->errstr);
 
     if ( $$self{reconnect_db} )
     {
