@@ -214,8 +214,7 @@ Examples:
 
 USAGE
 
-my $verbose = !$quiet
-$verbose ? Log::Log4perl->easy_init($INFO) : Log::Log4perl->easy_init($ERROR);
+$quiet ? Log::Log4perl->easy_init($ERROR) : Log::Log4perl->easy_init($INFO);
 my $logger = get_logger();
 
 if ($config) {
