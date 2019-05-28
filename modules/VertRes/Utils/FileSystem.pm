@@ -784,7 +784,7 @@ sub file_exists {
     
     if ($opts{wipe_out}) {
         if ($opts{recurse}) {
-            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path LIKE ?}, undef, $file . '/%'});
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path LIKE ?}, undef, $file . '/%');
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path = ?}, undef, $file);
         }
         else {
