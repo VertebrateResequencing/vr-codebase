@@ -403,7 +403,6 @@ while (<>) {
                         "^${mapping_prefix}merge_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
                         "^${mapping_prefix}statistics_${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.([oe](\.previous)?|pl)\$",
                         "^${mapping_prefix}mark_duplicates_[ps]e_${mapstats_id}\.([oe](\.previous)?|pl)\$",
-                        "^${mapping_prefix}job_status\$",
                         "^${mapping_prefix}split.jids\$"
                     ],
                     all => ["^[\\w]+"],
@@ -449,10 +448,11 @@ while (<>) {
                         "^${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\.featurecounts.csv",
                         "^${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam.*\.coverageplot\.gz",
                         "^${mapping_prefix}${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\_calculate\_expression\.(e|o|pl)\$",
-                        "^${mapping_prefix}${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\_calculate\_expression_done\$",
-                        "^${mapping_prefix}calculate\_expression\.jids\$",
-                        "^${mapping_prefix}rna\_seq\_update\_db\_done\$",
-                        "^${mapping_prefix}rna\_seq\_cleanup\_done\$"
+                        "^${mapping_prefix}${mapstats_id}\.[ps]e\.(markdup|raw\.sorted)\.bam\_calculate\_expression_done\$"
+                        #"^${mapping_prefix}_job_status\$",
+                        #"^${mapping_prefix}calculate\_expression\.jids\$",
+                        #"^${mapping_prefix}rna\_seq\_update\_db\_done\$",
+                        #"^${mapping_prefix}rna\_seq\_cleanup\_done\$"
                     ],
                     annotated => [
                         "^_${annotation_regex}_annotate\_assembly\.(e|o|pl|jids)\$",
