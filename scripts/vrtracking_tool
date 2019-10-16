@@ -363,7 +363,9 @@ while (<>) {
 
                 my %files_deleted = (
                     import   => [],
-                    qc       => ["^qc-sample\$"],
+                    qc       => ["^qc-sample\$",
+				 "*kraken\.report\$"
+                    ],
                     genotype => [
                         "^$qcdir\/$vrinput\.gtype\$",
                         "^$qcdir\/$vrinput\.gtype(x|y)\$",
@@ -395,8 +397,9 @@ while (<>) {
                         "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam\$",
                         "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam_graphs\$",
                         "^${mapstats_id}\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat|tmp|bad|bai|checked)\$",
-                        "^\.mapping_complete_[ps]e_${mapstats_id}\$",
-                        "^\.split_complete_[ps]e_${mapstats_id}\$",
+                        "^${mapstats_id}_job_status\$",
+			"^\.mapping_complete_[ps]e_${mapstats_id}\$",
+                        "^\.split_ciomplete_[ps]e_${mapstats_id}\$",
                         "^${mapping_prefix}split_[ps]e_${mapstats_id}\.([oe]|pl)\$",
                         "^split_[ps]e_${mapstats_id}\$",
                         "^${mapping_prefix}map_[ps]e_${mapstats_id}_[0-9]+\.[oe](\.previous)?\$",
