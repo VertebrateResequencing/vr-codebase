@@ -363,7 +363,9 @@ while (<>) {
 
                 my %files_deleted = (
                     import   => [],
-                    qc       => ["^qc-sample\$"],
+                    qc       => ["^qc-sample\$"
+				"*kraken\.report\$"
+				],
                     genotype => [
                         "^$qcdir\/$vrinput\.gtype\$",
                         "^$qcdir\/$vrinput\.gtype(x|y)\$",
