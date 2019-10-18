@@ -365,7 +365,7 @@ while (<>) {
                     import   => [],
                     qc       => [
 			"^qc-sample\$",
-			"*kraken\.report\$"
+			"kraken\.report\$"
 		    ],
                     genotype => [
                         "^$qcdir\/$vrinput\.gtype\$",
