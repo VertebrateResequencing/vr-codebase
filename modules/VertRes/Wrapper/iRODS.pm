@@ -28,7 +28,7 @@ use warnings;
 use base qw(VertRes::Base);
 
 
-our $defaults = { 'icommands'         => '/opt/renci/icommands/bin',
+our $defaults = { 'icommands'         => '/usr/bin',
                 };
 
 
