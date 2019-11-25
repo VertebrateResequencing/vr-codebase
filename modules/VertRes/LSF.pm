@@ -296,12 +296,12 @@ sub adjust_bsub_options
 
     if ( defined $queue )
     {
-        warn("$output_file: changing queue to long\n");     # this should be logged in the future
+        warn("$output_file: changing queue to $queue\n");     # this should be logged in the future
 
-        $opts =~ s/-q normal/-q long/;
-        if ( !($opts=~/-q/) ) { $opts .= ' -q long'; }
+        $opts =~ s/-q long/-q $queue/;
+        $opts =~ s/-q normal/-q $queue/;
+        if ( !($opts=~/-q/) ) { $opts .= " -q $queue"; }
     }
-
     return $opts;
 }
 

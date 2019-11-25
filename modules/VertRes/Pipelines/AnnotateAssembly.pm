@@ -249,7 +249,7 @@ sub annotate_assembly {
 
     my $job_name = $self->{prefix}.'annotate_assembly';
       
-    $self->delete_bsub_files($lane_path, $job_name);
+    #$self->delete_bsub_files($lane_path, $job_name);   #commenting this out to allow reruns with increased resources
     VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
     return $self->{No};
