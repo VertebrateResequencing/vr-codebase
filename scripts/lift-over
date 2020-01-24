@@ -30,8 +30,9 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "About: Calls liftOver to modify coordinates of tab-delimited files. Only the first and second column (chromosome and position)\n",
-        "   are modified, the rest of the line and comment lines (starting with #) are left unchanged.\n",
+        "About: Calls liftOver to modify coordinates of tab-delimited and bed files. Unless the file suffix is '.bed' or '.bed.gz',\n",
+        "       only the first and second column (chromosome and position) are modified, the rest of the line and comment lines\n",
+        "       (starting with #) are left unchanged.\n",
         "Usage: lift-over [OPTIONS] > out_file\n",
         "Options:\n",
         "   -a, --apply-log <file>          Apply log file from previous run, do not lift-over nor check the reference again.\n",
@@ -74,6 +75,7 @@ sub parse_params
         if ( !exists($$opts{new_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-n).\n") }
         if ( !exists($$opts{ori_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-o).\n") }
     }
+    $$opts{is_bed} = ($$opts{in_file}=~/\.bed$/i or $$opts{in_file}=~/\.bed\.gz$/i) ? 1 : 0;
     return $opts;
 }
 
@@ -92,11 +94,13 @@ sub run_liftover
     while (my $line=<$in_fh>)
     {
         if ( $line=~/^#/ ) { next; }
-        if ( !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
+        if ( $$opts{is_bed} && !($line=~/^(\S+)\s+(\d+)\s+(\d+)/) ) { error("Could not parse bed file: $line"); }
+        elsif ( !$$opts{is_bed} && !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
         my $chr = $1;
-        my $pos = $2;
+        my $beg = $$opts{is_bed} ? $2 : $2 - 1;
+        my $end = $$opts{is_bed} ? $3 : $2;
         if ( !($chr=~/^chr/) ) { $chr="chr$chr"; }
-        printf $bed_fh "%s\t%d\t%d\n",$chr,$pos-1,$pos;
+        printf $bed_fh "%s\t%d\t%d\n",$chr,$beg,$end;
     }
     close($bed_fh);
     close($in_fh);
@@ -114,40 +118,44 @@ sub run_liftover
     apply_tlog($opts);
 }
 
-sub match
-{
-    my ($ref_ori,$ref_new,$win) = @_;
-    my $rmismatch = 0;
-    my $match     = 0;
-    my $mismatch  = 0;
-    if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $rmismatch=1; }
-    for (my $i=0; $i<2*$win+1; $i++)
-    {
-        if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $match++; }
-        else { $mismatch++; }
-    }
-    return ($rmismatch,$match,$mismatch);
-}
-
 sub strand_aware_match
 {
-    my ($ref_ori,$ref_new,$win) = @_;
+    my ($ori,$new) = @_;
 
-    my ($fwd_rmismatch,$fwd_match,$fwd_mismatch) = match($ref_ori,$ref_new,$win);
+    my $out_fwd = { m=>0, mm=>0, len=>length($new)-length($ori), fwd_rev=>3 };  # fwd:1, rev:2
+    my $out_rev = { m=>0, mm=>0, len=>length($new)-length($ori), fwd_rev=>3 };
+    if ( $$out_fwd{len} ) { return $out_fwd; }
 
     my %map = ( A=>'T', C=>'G', G=>'C', T=>'A', N=>'N' );
-    my $rev_new;
-    my $len = length($ref_new);
-    for (my $i=$len-1; $i>=0; $i--)
-    {
-        my $base = substr($ref_new,$i,1);
-        if ( !exists($map{$base}) ) { error("Uh: $base?"); }
-        $rev_new .= $map{$base};
-    }
-    my ($rev_rmismatch,$rev_match,$rev_mismatch) = match($ref_ori,$rev_new,$win);
 
-    if ( $fwd_match>$rev_match ) { return ($fwd_rmismatch,$fwd_match,$fwd_mismatch); }
-    return ($rev_rmismatch,$rev_match,$rev_mismatch);
+    my $len = length($ori);
+    for (my $i=0; $i<$len; $i++)
+    {
+        my $ori_fwd = substr($ori,$i,1);
+        my $new_fwd = substr($new,$i,1);
+        my $new_rev = substr($new,$len-$i-1,1);
+        if ( !exists($map{$new_rev}) ) { error("Unknown base: $new_rev\n"); }
+        $new_rev = $map{$new_rev};
+
+        if ( $ori_fwd eq $new_fwd ) { $$out_fwd{m}++; }
+        else { $$out_fwd{mm}++; }
+
+        if ( $ori_fwd eq $new_rev ) { $$out_rev{m}++; }
+        else { $$out_rev{mm}++; }
+    }
+
+    my $out = $out_fwd;
+    if ( $$out_fwd{mm} < $$out_rev{mm} )
+    {
+        $$out_fwd{fwd_rev} = 1;
+        $out = $out_fwd;
+    }
+    elsif ( $$out_fwd{mm} > $$out_rev{mm} )
+    {
+        $$out_rev{fwd_rev} = 2;
+        $out = $out_rev;
+    }
+    return $out;
 }
 
 sub compare
@@ -165,19 +173,13 @@ sub compare
     my $pos_map = Reader->new(file=>$$opts{mapped});
     open(my $tlog_fh,'>',$$opts{tlog}) or error("$$opts{tlog}: $!");
 
-    my $match     = 0;
-    my $mismatch  = 0;
-    my $rmismatch = 0;
-    my $skipped   = 0;
-    my $ignored   = 0;
-    my $nlines    = 0;
-    my $nlifted   = 0;
+    my $num = {};
     my $win = $$opts{win};
     while (1)
     {
         my $ori = $pos_ori->next_line();
         if ( !$ori ) { last; }
-        $nlines++;
+        $$num{lines}++;
 
         my $unm = $pos_unm->next_line();
         if ( defined $unm )
@@ -185,66 +187,134 @@ sub compare
             if ( !defined $ori ) { error("Run out of ori lines?\n"); }
             if ( $$ori[0] eq $$unm[0] && $$ori[1] eq $$unm[1] && $$ori[2] eq $$unm[2] )
             {
-                print $tlog_fh "# skip\t$$ori[0]\t",$$ori[1]+1,"\n";
-                $skipped++;
+                my $chr = $$ori[0];
+                my $beg = $$opts{is_bed} ? $$ori[1] : $$ori[1] + 1;
+                my $end = $$opts{is_bed} ? "\t".$$ori[2] : '';
+                print $tlog_fh "# skip\t$chr\t$beg$end\n";
+                $$num{unmapped}++;
                 next;
             }
             $pos_unm->unread_line($unm);
         }
         my $map = $pos_map->next_line();
 
+        my $chr0 = $$ori[0];
+        my $beg0 = $$opts{is_bed} ? $$ori[1] : $$ori[1] + 1;
+        my $end0 = $$opts{is_bed} ? "\t".$$ori[2] : '';
+        my $chr1 = $$map[0];
+        my $beg1 = $$opts{is_bed} ? $$map[1] : $$map[1] + 1;
+        my $end1 = $$opts{is_bed} ? "\t".$$map[2] : '';
+
+        $$num{lifted}++;
+
         if ( !defined $fa_ori )
         {
-            printf $tlog_fh "%s\t%d\t->\t%s\t%d\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,0;
-            $nlifted++;
+            # fasta file not available, sequence checking cannot be performed
+            printf $tlog_fh "$chr0\t$beg0$end0\t->\t$chr1\t$beg1$end1\n";
             next;
         }
 
-        my $ref_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]+1+$win);
-        my $ref_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]+1+$win);
-        if ( !$ref_ori || !$ref_new ) 
+        my $flank0_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]);
+        my $flank0_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]);
+        my $ref_ori    = $fa_ori->get_slice($$ori[0],$$ori[1]+1,$$ori[2]);
+        my $ref_new    = $fa_new->get_slice($$map[0],$$map[1]+1,$$map[2]);
+        my $flank1_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+2,$$ori[1]+1+$win);
+        my $flank1_new = $fa_new->get_slice($$map[0],$$map[1]+2,$$map[1]+1+$win);
+
+        if ( !$flank0_ori or !$flank0_new or !$ref_ori or !$ref_new or !$flank1_ori or !$flank1_new ) 
         { 
             error(
-                sprintf("Error: the chain file suggests that $$ori[0]:%d is transformed to $$map[0]:%d, but the sequence is not accessible: \n", $$ori[1]+1,$$map[1]+1),
-                $ref_ori ? '' : sprintf("\t$$opts{ori_ref} $$ori[0]:%d (%d-%d)\n",$$ori[1]+1,$$ori[1]+1-$win,$$ori[1]+1+$win),
-                $ref_new ? '' : sprintf("\t$$opts{new_ref} $$map[0]:%d (%d-%d)\n",$$map[1]+1,$$map[1]+1-$win,$$map[1]+1+$win)
+                sprintf("Error: the chain file suggests that $$ori[0]:%d-%d is transformed to $$map[0]:%d-%d, but the sequence is not accessible: \n", $$ori[1]+1,$$ori[2],$$map[1]+1,$$map[2]),
+                $ref_ori ? '' : sprintf("\t$$opts{ori_ref} $$ori[0]:%d-%d (%d-%d)\n",$$ori[1]+1,$$ori[2],$$ori[1]+1-$win,$$ori[1]+1+$win),
+                $ref_new ? '' : sprintf("\t$$opts{new_ref} $$map[0]:%d-%d (%d-%d)\n",$$map[1]+1,$$map[2],$$map[1]+1-$win,$$map[1]+1+$win)
                 );
         }
 
-        $ref_ori = uc($ref_ori);
-        $ref_new = uc($ref_new);
+        my $cmp0 = strand_aware_match($flank0_ori,$flank0_new);
+        my $cmp1 = strand_aware_match($flank1_ori,$flank1_new);
+        my $cmpr = strand_aware_match($ref_ori,$ref_new);
+        
+        my $ok = ($$cmp0{mm} + $$cmp1{mm} + $$cmpr{mm} + abs($$cmpr{len})) ? 0 : 1;
 
-        my ($_rmismatch,$_matches,$_mismatches) = strand_aware_match($ref_ori,$ref_new,$win);
-        my $ok = 1;
-        if ( $_rmismatch or $_mismatches ) { $ok=0; }
-        $rmismatch += $_rmismatch;
-        $match     += $_matches;
-        $mismatch  += $_mismatches;
+        my $strand_mm = '';
+        if ( !($$cmp0{fwd_rev} & $$cmp1{fwd_rev} & $$cmpr{fwd_rev}) )
+        {
+            if ( !$ok ) { $strand_mm = ','; }
+            else
+            {
+                # This can happen when one base of the reference changes, say from A to T, and the
+                # flanking sequence stays the same.
+                $ok = 0;
 
-        my $_match = sprintf "%.2f%%", $_matches*100./(2*$win+1);
+                #   use Data::Dumper; print STDERR Dumper($cmp0,$cmpr,$cmp1);
+                #   print STDERR "flank0:\n";
+                #   printf STDERR "\t%s %d %d\t%s\n",$$ori[0],$$ori[1]+1-$win,$$ori[1],$flank0_ori;
+                #   printf STDERR "\t%s %d %d\t%s\n",$$map[0],$$map[1]+1-$win,$$map[1],$flank0_new;
+                #   print STDERR "seq:\n";
+                #   printf STDERR "\t%s %d %d\t%s\n",$$ori[0],$$ori[1]+1,$$ori[2],$ref_ori;
+                #   printf STDERR "\t%s %d %d\t%s\n",$$map[0],$$map[1]+1,$$map[2],$ref_new;
+                #   print STDERR "flank1:\n";
+                #   printf STDERR "\t%s %d %d\t%s\n",$$ori[0],$$ori[1]+2,$$ori[1]+1+$win,$flank1_ori;
+                #   printf STDERR "\t%s %d %d\t%s\n",$$map[0],$$map[1]+2,$$map[1]+1+$win,$flank1_new;
+                #   error("DEBUG ME: Can this really happen???");
+            }
+            $strand_mm = "strand_mm:$$cmp0{fwd_rev}$$cmpr{fwd_rev}$$cmp1{fwd_rev}";
+            $$num{strand}++;
+        }
+        elsif ( $ok && !($$cmpr{fwd_rev} & 1) )
+        {
+            $$num{rev}++;
+        }
+
         if ( $ok )
         {
-            printf $tlog_fh "%s\t%d\t->\t%s\t%d\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,$_match;
-            $nlifted++;
+            print $tlog_fh "$chr0\t$beg0$end0\t->\t$chr1\t$beg1$end1\tmatch:100%\n";
+            $$num{ok}++;
         }
-        else
+        elsif ( $$cmpr{len} )
         {
-            printf $tlog_fh "# ignored\t%s\t%d\t->\t%s\t%d\t%s\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,$_match,$_rmismatch?'-r':'+r';
-            $ignored++;
+            print $tlog_fh "# ignore\t$chr0\t$beg0$end0\t->\t$chr1\t$beg1$end1\tlen_diff:$$cmpr{len}$strand_mm\n";
+            $$num{len}++;
         }
+        elsif ( $$cmpr{mm} )
+        {
+            my $tgt_mm  = sprintf "%.2f%%", $$cmpr{m}*100./($$cmpr{mm}+$$cmpr{m});
+            my $flnk_mm = sprintf "%.2f%%", ($$cmp0{m}+$$cmp1{m})*100./($$cmp0{mm}+$$cmp0{m}+$$cmp1{mm}+$$cmp1{m});
+            print $tlog_fh "# ignore\t$chr0\t$beg0$end0\t->\t$chr1\t$beg1$end1\ttarget_mismatch:$tgt_mm,flank_mismatch:$flnk_mm$strand_mm\n";
+            $$num{tgt_mm}++;
+        }
+        elsif ( $$cmp0{mm}+$$cmp1{mm} )
+        {
+            my $flnk_mm = sprintf "%.2f%%", ($$cmp0{m}+$$cmp1{m})*100./($$cmp0{mm}+$$cmp0{m}+$$cmp1{mm}+$$cmp1{m});
+            print $tlog_fh "# ignore\t$chr0\t$beg0$end0\t->\t$chr1\t$beg1$end1\tflank_mismatch:$flnk_mm$strand_mm\n";
+            $$num{flnk_mm}++;
+        }
+        elsif ( !($$cmp0{fwd_rev} & $$cmp1{fwd_rev} & $$cmpr{fwd_rev}) )
+        {
+            print $tlog_fh "# ignore\t$chr0\t$beg0$end0\t->\t$chr1\t$beg1$end1\t$strand_mm\n";
+            $$num{strand_mm}++;
+        }
+        else { error("DEBUG ME: unexpected case!\n"); }
     }
     close($tlog_fh);
 
+    for my $key (qw(lines unmapped lifted ok len tgt_mm flnk_mm strand strand_mm rev))
+    {
+        if ( !exists($$num{$key}) ) { $$num{$key} = 0; }
+    }
 
     open(my $fh,'>',"$$opts{prefix}/liftover.stats") or error("$$opts{prefix}/liftover.stats: $!");
-    printf $fh "lifted over                             .. %.1f%% (%d)\n", $nlifted*100./$nlines,$nlifted;
-    printf $fh "unmapped                                .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
+    printf $fh "lifted over                          .. %.1f%% (%d)\n", $$num{lifted}*100./$$num{lines},$$num{lifted};
+    printf $fh "unmapped                             .. %.1f%% (%d)\n", $$num{unmapped}*100./$$num{lines},$$num{unmapped};
     if ( defined $fa_ori ) 
     {
-        printf $fh "ignored because of mismatches           .. %.1f%% (%d)\n", $ignored*100./$nlines,$ignored;
-        printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
-        printf $fh "flanking sequence mismatches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $mismatch*100./($match+$mismatch),$mismatch/(2*$win+1);
-        printf $fh "                  matches               .. %.1f%% (%d)\n", $match*100./($match+$mismatch), $match/(2*$win+1);
+        printf $fh "success, no mismatches               .. %.1f%% (%d)\n", $$num{ok}*100./$$num{lines},$$num{ok};
+        printf $fh "    - changed orientation            .. %.1f%% (%d)\n", $$num{rev}*100./$$num{lines},$$num{rev};
+        print  $fh "ignored because of\n";
+        printf $fh "    - length differences             .. %.1f%% (%d)\n", $$num{len}*100./$$num{lines},$$num{len};
+        printf $fh "    - mismatches in target sequence  .. %.1f%% (%d)\n", $$num{tgt_mm}*100./$$num{lines},$$num{tgt_mm};
+        printf $fh "    - flanking mismatches (%dbp win) .. %.1f%% (%d)\n", $win, $$num{flnk_mm}*100./$$num{lines},$$num{flnk_mm};
+        printf $fh "    - strand mismatch                .. %.1f%% (%d)\n", $$num{strand_mm}*100./$$num{lines},$$num{strand_mm};
     }
     close($fh);
 
@@ -276,18 +346,39 @@ sub apply_tlog
         if ( !$ori && !$tlog ) { last; }
         if ( !$ori && $tlog or $ori && !$tlog ) { error("FIXME: Different lengths?\n"); }
 
-        if ( $tlog=~/^# skip\t\S+\t\d+$/ ) { next; }
-        if ( $tlog=~/^# ignored\t\S+\t\d+/ ) { next; }
-        if ( !($tlog=~/^(\S+)\t(\d+)\t->\t(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
-        my $exp_chr = $1;
-        my $exp_pos = $2;
-        my $new_chr = $3;
-        my $new_pos = $4;
-        if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
-        my $ori_chr = $1;
-        my $ori_pos = $2;
-        if ( $exp_chr ne $ori_chr or $exp_pos ne $ori_pos ) { error("Out of sync, expected $exp_chr:$exp_pos got $ori_chr:$ori_pos\n"); }
-        print "$new_chr\t$new_pos$'";
+        if ( $tlog=~/^# skip\t\S+\t\d+/ ) { next; }
+        if ( $tlog=~/^# ignore\t\S+\t\d+/ ) { next; }
+
+        my @col = split(/\t/,$tlog);
+        if ( $$opts{is_bed} && $col[3] ne '->'  ) { error("Could not parse $$opts{tlog}: $tlog\n"); }
+        elsif ( !$$opts{is_bed} && $col[2] ne '->'  ) { error("Could not parse $$opts{tlog}: $tlog\n"); }
+
+        my $chr0 = $col[0];
+        my $beg0 = $col[1];
+        my $end0 = $$opts{is_bed} ? "\t$col[2]" : '';
+        my $chr1 = $$opts{is_bed} ? $col[4] : $col[3];
+        my $beg1 = $$opts{is_bed} ? $col[5] : $col[4];
+        my $end1 = $$opts{is_bed} ? "\t$col[6]" : '';
+
+        my ($chr,$beg,$end,$line);
+        if ( $$opts{is_bed} )
+        {
+            if ( !($ori=~/^(\S+)\t(\d+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
+            $chr = $1;
+            $beg = $2;
+            $end = "\t$3";
+            $line = $';
+        }
+        else
+        {
+            if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
+            $chr = $1;
+            $beg = $2;
+            $end = '';
+            $line = $';
+        }
+        if ( $chr ne $chr0 or $beg ne $beg0 or $end ne $end0 ) { error("The files $$opts{tlog} and $$opts{in_file} are out of sync:\n\t expected \"$chr0\t$beg0$end0\" got \"$chr\t$beg$end\"\n"); }
+        print "$chr1\t$beg1$end1$line";
     }
     close($tlog_fh);
 }
