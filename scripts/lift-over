@@ -38,7 +38,7 @@ sub error
         "   -a, --apply-log <file>          Apply log file from previous run, do not lift-over nor check the reference again.\n",
         "   -c, --chain-file <file>         The liftover chain file.\n",
         "   -i, --in <file>                 The file to be lifted over\n",
-        "   -l, --liftOver-opts <opts>      Options to be passed to liftOver\n",
+        "   -l, --liftOver <string>         lifOver executable and options to be passed to liftOver\n",
         "   -n, --new-ref <file>            The reference of the output file\n",
         "   -o, --ori-ref <file>            The reference of the input file\n",
         "   -p, --prefix <dir>              Output files prefix\n",
@@ -53,11 +53,11 @@ sub error
 
 sub parse_params
 {
-    my $opts = { win=>10, liftOver_bin=>'liftOver_x86_64', liftOver_opts=>'' };
+    my $opts = { win=>10, liftOver=>'liftOver' };
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-a' || $arg eq '--apply-log' ) { $$opts{tlog}=shift(@ARGV); next }
-        if ( $arg eq '-l' || $arg eq '--liftOver-opts' ) { $$opts{liftOver_opts}=shift(@ARGV); next }
+        if ( $arg eq '-l' || $arg eq '--liftOver' ) { $$opts{liftOver}=shift(@ARGV); next }
         if ( $arg eq '-n' || $arg eq '--new-ref' ) { $$opts{new_ref}=shift(@ARGV); next }
         if ( $arg eq '-o' || $arg eq '--ori-ref' ) { $$opts{ori_ref}=shift(@ARGV); next }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next }
@@ -108,7 +108,7 @@ sub run_liftover
     # Run liftover
     $$opts{mapped}   = "$$opts{prefix}/out.mapped";
     $$opts{unmapped} = "$$opts{prefix}/out.unmapped";
-    Utils::CMD("$$opts{liftOver_bin} $$opts{liftOver_opts} $$opts{ori_bed} $$opts{chain} $$opts{mapped} $$opts{unmapped}");
+    Utils::CMD("$$opts{liftOver} $$opts{ori_bed} $$opts{chain} $$opts{mapped} $$opts{unmapped}");
 
     # Check sanity
     $$opts{tlog} = "$$opts{prefix}/liftover.tlog";
