@@ -317,8 +317,6 @@ sub update_db {
     
     my $vrtrack = $vrlane->vrtrack;
     
-    return $$self{'Yes'} if $vrlane->is_processed('annotated');
-
     unless($vrlane->is_processed('annotated')){
       $vrtrack->transaction_start();
       $vrlane->is_processed('annotated',1);
