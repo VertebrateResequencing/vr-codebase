@@ -386,10 +386,10 @@ sub apply_tlog
 
         my $chr0 = $col[0];
         my $beg0 = $col[1];
-        my $end0 = $$opts{chr_beg_end} ? "\t$col[2]" : '';
+        my $end0 = $$opts{chr_beg_end} ? $col[2] : '';
         my $chr1 = $$opts{chr_beg_end} ? $col[4] : $col[3];
         my $beg1 = $$opts{chr_beg_end} ? $col[5] : $col[4];
-        my $end1 = $$opts{chr_beg_end} ? "\t$col[6]" : '';
+        my $end1 = $$opts{chr_beg_end} ? $col[6] : '';
 
         my ($chr,$beg,$end,$line);
         if ( exists($$opts{ichr}) )
@@ -398,7 +398,7 @@ sub apply_tlog
             chomp($ori[-1]);
             $chr = $ori[$$opts{ichr}];
             $beg = $ori[$$opts{ibeg}];
-            $end = $$opts{chr_beg_end} ? "\t$ori[$$opts{iend}]" : '';
+            $end = $$opts{chr_beg_end} ? $ori[$$opts{iend}] : '';
             $ori[$$opts{ichr}] = $chr1;
             $ori[$$opts{ibeg}] = $beg1;
             if ( $$opts{chr_beg_end} ) { $ori[$$opts{iend}] = $end1; }
@@ -409,8 +409,8 @@ sub apply_tlog
             if ( !($ori=~/^(\S+)\t(\d+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
             $chr = $1;
             $beg = $2;
-            $end = "\t$3";
-            $line = "$chr1\t$beg1$end1$'";
+            $end = $3;
+            $line = "$chr1\t$beg1\t$end1$'";
         }
         else
         {
