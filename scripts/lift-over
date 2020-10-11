@@ -32,10 +32,11 @@ sub error
     die
         "About: Calls liftOver to modify coordinates of tab-delimited and bed files. Unless the file suffix is '.bed' or '.bed.gz',\n",
         "       only the first and second column (chromosome and position) are modified, the rest of the line and comment lines\n",
-        "       (starting with #) are left unchanged.\n",
+        "       (starting with #) are left unchanged. Use the -C option if chr,beg,end are not the first three columns.\n",
         "Usage: lift-over [OPTIONS] > out_file\n",
         "Options:\n",
         "   -a, --apply-log <file>          Apply log file from previous run, do not lift-over nor check the reference again.\n",
+        "   -C, --columns chr,beg[,end]     The indices of chr,beg,end columns, 1-based [1,2,3]\n",
         "   -c, --chain-file <file>         The liftover chain file.\n",
         "   -i, --in <file>                 The file to be lifted over\n",
         "   -l, --liftOver <string>         lifOver executable and options to be passed to liftOver\n",
@@ -56,6 +57,7 @@ sub parse_params
     my $opts = { win=>10, liftOver=>'liftOver' };
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-C' || $arg eq '--columns' ) { $$opts{columns}=shift(@ARGV); next }
         if ( $arg eq '-a' || $arg eq '--apply-log' ) { $$opts{tlog}=shift(@ARGV); next }
         if ( $arg eq '-l' || $arg eq '--liftOver' ) { $$opts{liftOver}=shift(@ARGV); next }
         if ( $arg eq '-n' || $arg eq '--new-ref' ) { $$opts{new_ref}=shift(@ARGV); next }
@@ -75,7 +77,18 @@ sub parse_params
         if ( !exists($$opts{new_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-n).\n") }
         if ( !exists($$opts{ori_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-o).\n") }
     }
-    $$opts{is_bed} = ($$opts{in_file}=~/\.bed$/i or $$opts{in_file}=~/\.bed\.gz$/i) ? 1 : 0;
+    if ( exists($$opts{columns}) )
+    {
+        ($$opts{ichr},$$opts{ibeg},$$opts{iend}) = split(/,/,$$opts{columns});
+        $$opts{ichr}--;
+        $$opts{ibeg}--;
+        if ( defined($$opts{iend}) ) { $$opts{chr_beg_end} = 1; $$opts{iend}--; }
+    }
+    else
+    {
+        $$opts{is_bed} = ($$opts{in_file}=~/\.bed$/i or $$opts{in_file}=~/\.bed\.gz$/i) ? 1 : 0;
+        if ( $$opts{is_bed} ) { $$opts{chr_beg_end} = 1; }
+    }
     return $opts;
 }
 
@@ -94,11 +107,29 @@ sub run_liftover
     while (my $line=<$in_fh>)
     {
         if ( $line=~/^#/ ) { next; }
-        if ( $$opts{is_bed} && !($line=~/^(\S+)\s+(\d+)\s+(\d+)/) ) { error("Could not parse bed file: $line"); }
-        elsif ( !$$opts{is_bed} && !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
-        my $chr = $1;
-        my $beg = $$opts{is_bed} ? $2 : $2 - 1;
-        my $end = $$opts{is_bed} ? $3 : $2;
+        my ($chr,$beg,$end);
+        if ( exists($$opts{ichr}) )
+        {
+            my @col = split(/\t/,$line);
+            chomp($col[-1]);
+            $chr = $col[$$opts{ichr}];
+            $beg = $col[$$opts{ibeg}] - 1;
+            $end = $$opts{chr_beg_end} ? $col[$$opts{iend}] : $col[$$opts{ibeg}];
+        }
+        elsif ( $$opts{is_bed} )
+        {
+            if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)/) ) { error("Could not parse bed file: $line"); }
+            $chr = $1;
+            $beg = $2;
+            $end = $3;
+        }
+        else
+        {
+            if ( !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
+            $chr = $1;
+            $beg = $2 - 1;
+            $end = $2;
+        }
         if ( !($chr=~/^chr/) ) { $chr="chr$chr"; }
         printf $bed_fh "%s\t%d\t%d\n",$chr,$beg,$end;
     }
@@ -189,7 +220,7 @@ sub compare
             {
                 my $chr = $$ori[0];
                 my $beg = $$opts{is_bed} ? $$ori[1] : $$ori[1] + 1;
-                my $end = $$opts{is_bed} ? "\t".$$ori[2] : '';
+                my $end = $$opts{chr_beg_end} ? "\t".$$ori[2] : '';
                 print $tlog_fh "# skip\t$chr\t$beg$end\n";
                 $$num{unmapped}++;
                 next;
@@ -200,10 +231,10 @@ sub compare
 
         my $chr0 = $$ori[0];
         my $beg0 = $$opts{is_bed} ? $$ori[1] : $$ori[1] + 1;
-        my $end0 = $$opts{is_bed} ? "\t".$$ori[2] : '';
+        my $end0 = $$opts{chr_beg_end} ? "\t".$$ori[2] : '';
         my $chr1 = $$map[0];
         my $beg1 = $$opts{is_bed} ? $$map[1] : $$map[1] + 1;
-        my $end1 = $$opts{is_bed} ? "\t".$$map[2] : '';
+        my $end1 = $$opts{chr_beg_end} ? "\t".$$map[2] : '';
 
         $$num{lifted}++;
 
@@ -350,35 +381,46 @@ sub apply_tlog
         if ( $tlog=~/^# ignore\t\S+\t\d+/ ) { next; }
 
         my @col = split(/\t/,$tlog);
-        if ( $$opts{is_bed} && $col[3] ne '->'  ) { error("Could not parse $$opts{tlog}: $tlog\n"); }
-        elsif ( !$$opts{is_bed} && $col[2] ne '->'  ) { error("Could not parse $$opts{tlog}: $tlog\n"); }
+        if ( $$opts{chr_beg_end} && $col[3] ne '->'  ) { error("Could not parse $$opts{tlog}: $tlog\n"); }
+        elsif ( !$$opts{chr_beg_end} && $col[2] ne '->'  ) { error("Could not parse $$opts{tlog}: $tlog\n"); }
 
         my $chr0 = $col[0];
         my $beg0 = $col[1];
-        my $end0 = $$opts{is_bed} ? "\t$col[2]" : '';
-        my $chr1 = $$opts{is_bed} ? $col[4] : $col[3];
-        my $beg1 = $$opts{is_bed} ? $col[5] : $col[4];
-        my $end1 = $$opts{is_bed} ? "\t$col[6]" : '';
+        my $end0 = $$opts{chr_beg_end} ? "\t$col[2]" : '';
+        my $chr1 = $$opts{chr_beg_end} ? $col[4] : $col[3];
+        my $beg1 = $$opts{chr_beg_end} ? $col[5] : $col[4];
+        my $end1 = $$opts{chr_beg_end} ? "\t$col[6]" : '';
 
         my ($chr,$beg,$end,$line);
-        if ( $$opts{is_bed} )
+        if ( exists($$opts{ichr}) )
+        {
+            my @ori = split(/\t/,$ori);
+            chomp($ori[-1]);
+            $chr = $ori[$$opts{ichr}];
+            $beg = $ori[$$opts{ibeg}];
+            $end = $$opts{chr_beg_end} ? "\t$ori[$$opts{iend}]" : '';
+            $ori[$$opts{ichr}] = $chr1;
+            $ori[$$opts{ibeg}] = $beg1;
+            if ( $$opts{chr_beg_end} ) { $ori[$$opts{iend}] = $end1; }
+            $line = join("\t",@ori)."\n";
+        }
+        elsif ( $$opts{is_bed} )
         {
             if ( !($ori=~/^(\S+)\t(\d+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
             $chr = $1;
             $beg = $2;
             $end = "\t$3";
-            $line = $';
+            $line = "$chr1\t$beg1$end1$'";
         }
         else
         {
             if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
             $chr = $1;
             $beg = $2;
-            $end = '';
-            $line = $';
+            $line = "$chr1\t$beg1$'";
         }
         if ( $chr ne $chr0 or $beg ne $beg0 or $end ne $end0 ) { error("The files $$opts{tlog} and $$opts{in_file} are out of sync:\n\t expected \"$chr0\t$beg0$end0\" got \"$chr\t$beg$end\"\n"); }
-        print "$chr1\t$beg1$end1$line";
+        print $line;
     }
     close($tlog_fh);
 }
