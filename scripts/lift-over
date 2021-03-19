@@ -10,6 +10,7 @@ use Utils;
 use FindBin;
 use lib "$FindBin::Bin";
 use FaSlice;
+use Cwd;
 
 my $opts = parse_params();
 if ( exists($$opts{tlog}) )
@@ -55,6 +56,7 @@ sub error
 sub parse_params
 {
     my $opts = { win=>10, liftOver=>'liftOver' };
+    $$opts{about} = "Working directory: " . getcwd() . "\nCommand line: $0 " . join(' ',@ARGV) . "\n";
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-C' || $arg eq '--columns' ) { $$opts{columns}=shift(@ARGV); next }
@@ -74,8 +76,8 @@ sub parse_params
     {
         if ( !exists($$opts{chain}) ) { error("Missing the -c option.\n") }
         if ( !exists($$opts{prefix}) ) { error("Missing the -p option.\n") }
-        if ( !exists($$opts{new_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-n).\n") }
-        if ( !exists($$opts{ori_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-o).\n") }
+        if ( !exists($$opts{new_ref}) ) { warn("WARNING: The sanity check cannot be performed, missing the --new-ref option!\n") }
+        if ( !exists($$opts{ori_ref}) ) { warn("WARNING: The sanity check cannot be performed, missing the --ori-ref option!\n") }
     }
     if ( exists($$opts{columns}) )
     {
@@ -99,6 +101,10 @@ sub run_liftover
     my $out_bed = "$$opts{prefix}/out.bed";
 
     Utils::CMD("mkdir -p $$opts{prefix}");
+    open(my $fh,'>',"$$opts{prefix}/README") or error("$$opts{prefix}/README: $!");
+    print $fh "$$opts{about}\n";
+    print $fh "Check sanity of the transform in liftover.stats!\n\n";
+    close($fh) or error("close failed: $$opts{prefix}/README");
 
     # Convert the tab-delimited file to BED file and convert chrom names from N to chrN
     my $cmd = ( $$opts{in_file}=~/\.gz$/i ) ? "zcat $$opts{in_file} |" : "<$$opts{in_file}";
@@ -113,19 +119,21 @@ sub run_liftover
             my @col = split(/\t/,$line);
             chomp($col[-1]);
             $chr = $col[$$opts{ichr}];
-            $beg = $col[$$opts{ibeg}] - 1;
+            $beg = $col[$$opts{ibeg}];
             $end = $$opts{chr_beg_end} ? $col[$$opts{iend}] : $col[$$opts{ibeg}];
+            if ( !($beg=~/^\d+$/) or !($end=~/^\d+$/) ) { error("\nCould not parse the line:\n\t$line\n"); }
+            $beg--;
         }
         elsif ( $$opts{is_bed} )
         {
-            if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)/) ) { error("Could not parse bed file: $line"); }
+            if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)/) ) { error("\nCould not parse the line:\n\t$line"); }
             $chr = $1;
             $beg = $2;
             $end = $3;
         }
         else
         {
-            if ( !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
+            if ( !($line=~/^(\S+)\s+(\d+)/) ) { error("\nCould not parse the line:\n\t$line"); }
             $chr = $1;
             $beg = $2 - 1;
             $end = $2;
